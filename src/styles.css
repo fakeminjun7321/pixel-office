@@ -681,6 +681,88 @@ select option{ background:var(--panel); color:var(--text); }
   box-shadow:inset 0 0 24px rgba(0,0,0,.45);
 }
 
+/* =========================================================================
+   v3: HUD count badge (Artifacts), minimap, persona/memory, artifacts modal
+   ========================================================================= */
+
+/* small neon count badge that rides on a HUD button */
+.hud-badge{
+  font-size:9px; font-weight:800; line-height:1;
+  min-width:15px; padding:2px 4px; border-radius:8px;
+  color:#04121c; background:var(--cyan);
+  box-shadow:0 0 8px rgba(57,215,255,.5);
+}
+
+/* ---- minimap (bottom-right overview) ---------------------------------- */
+#minimap-wrap{
+  position:absolute; z-index:35; right:calc(var(--rail-w) + 24px); bottom:12px;
+  padding:5px; background:rgba(11,16,36,.92);
+  border:1px solid var(--panel-edge); border-radius:var(--radius);
+  box-shadow:0 8px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(57,215,255,.10);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+  line-height:0;
+}
+#minimap{
+  display:block; width:180px; height:120px;
+  image-rendering:pixelated; cursor:pointer; border-radius:3px;
+  background:var(--void);
+}
+@media (max-width:900px){ #minimap-wrap{ right:12px; } }
+
+/* ---- persona / memory section in agent panel -------------------------- */
+.persona-box{
+  flex:0 0 auto; margin:0 10px; padding:0;
+  background:var(--field); border:1px solid var(--divider); border-radius:5px;
+}
+.persona-summary{
+  cursor:pointer; list-style:none; padding:7px 10px;
+  font-size:9.5px; font-weight:800; letter-spacing:1px; text-transform:uppercase;
+  color:var(--text-dim); user-select:none;
+}
+.persona-summary::-webkit-details-marker{ display:none; }
+.persona-summary::after{ content:'▸'; float:right; color:var(--text-faint); transition:transform .12s; }
+.persona-box[open] .persona-summary::after{ transform:rotate(90deg); }
+.persona-summary:hover{ color:var(--cyan); }
+.persona-body{ padding:0 10px 10px; max-height:180px; overflow-y:auto; }
+.pe-field{ margin-bottom:8px; }
+.pe-key{ font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--text-faint); margin-bottom:2px; }
+.pe-val{ font-size:11px; color:var(--text); white-space:pre-wrap; word-break:break-word; line-height:1.4; }
+.pe-mem{
+  font-size:10.5px; color:var(--text-dim); line-height:1.45;
+  padding:3px 0 3px 8px; border-left:2px solid var(--purple); margin-bottom:4px;
+}
+.pe-mem .pe-imp{ color:var(--amber); font-weight:700; font-size:9px; margin-right:5px; }
+.pe-empty{ font-size:10px; color:var(--text-faint); padding:4px 0; }
+
+/* ---- artifacts modal list + viewer ------------------------------------ */
+.ar-list{ display:flex; flex-direction:column; gap:7px; }
+.ar-item{
+  display:flex; align-items:center; gap:9px;
+  padding:8px 10px; cursor:pointer;
+  background:var(--btn); border:1px solid var(--panel-edge); border-radius:5px;
+  border-left:3px solid var(--cyan);
+  transition:background .12s, border-color .12s, transform .06s;
+}
+.ar-item:hover{ background:var(--btn-hover); border-color:var(--cyan); transform:translateX(2px); }
+.ar-item.active{ box-shadow:0 0 0 1px var(--cyan), var(--glow-cyan-soft); }
+.ar-name{ flex:1 1 auto; min-width:0; font-size:12px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ar-meta{ flex:0 0 auto; font-size:9.5px; color:var(--text-faint); letter-spacing:.3px; }
+.ar-type{
+  flex:0 0 auto; font-size:9px; font-weight:700; text-transform:uppercase;
+  padding:1px 7px; border-radius:8px; color:var(--cyan);
+  border:1px solid rgba(57,215,255,.4); background:rgba(57,215,255,.08);
+}
+.ar-viewer{
+  margin-top:12px; font-family:var(--mono); font-size:12px; line-height:1.55; color:var(--text);
+  white-space:pre-wrap; word-break:break-word; max-height:40vh; overflow:auto; margin-bottom:0;
+  padding:12px 14px; background:var(--floor);
+  border:1px solid var(--panel-edge); border-radius:6px;
+  box-shadow:inset 0 0 24px rgba(0,0,0,.45);
+}
+.ar-viewer-head{ display:flex; align-items:center; gap:9px; margin-top:12px; }
+.ar-viewer-name{ flex:1 1 auto; min-width:0; font-size:11px; font-weight:700; color:var(--cyan); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ar-empty{ color:var(--text-faint); font-size:11px; text-align:center; padding:24px 8px; }
+
 /* reduced motion: calm all the loops */
 @media (prefers-reduced-motion:reduce){
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,

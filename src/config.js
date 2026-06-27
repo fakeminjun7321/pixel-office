@@ -155,10 +155,90 @@ window.App = window.App || {};
 'Handle whatever the instruction asks as competently as possible, end-to-end. Produce the real deliverable.\n' +
 'RESULT: line = one-sentence summary of what you delivered.';
 
-  // worker system = preamble + "\n\n" + body
-  function worker(body) { return WORKER_PREAMBLE + '\n\n' + body; }
+  // ---------------------------------------------------------------------------
+  // v3 §ARTIFACTS — appended to every worker instruction so concrete deliverables
+  // are emitted as fenced ```artifact:<filename.ext>``` blocks the Orchestrator
+  // can harvest. Also reinforces the trailing one-line RESULT: summary.
+  // ---------------------------------------------------------------------------
+  var WORKER_ARTIFACT_HINT =
+'\n\nDELIVERABLE FORMAT:\n' +
+'- If your task produces ANY concrete deliverable (code, a document, structured data, a config file),\n' +
+'  emit it as a fenced block whose info-string is "artifact:" + a sensible filename WITH extension, e.g.:\n' +
+'  ```artifact:login.js\n' +
+'  // the actual code here\n' +
+'  ```\n' +
+'  or  ```artifact:spec.md\n' +
+'  # the actual document here\n' +
+'  ```\n' +
+'  Put the FULL final content inside the block — not a snippet or a description of it.\n' +
+'- Use one artifact block per distinct file. Plain prose/analysis can stay outside any block.\n' +
+'- ALWAYS finish your message with a final line:  RESULT: <one-line summary of what you delivered>.';
+
+  // ---------------------------------------------------------------------------
+  // v3 §QA LOOP — system prompt for the QA reviewer pass. The reviewer reads a
+  // worker's deliverable and MUST reply with EXACTLY one of the two forms below
+  // so the Orchestrator can parse PASS/FAIL deterministically (reuse resultLine).
+  // ---------------------------------------------------------------------------
+  var QA_REVIEW_SYSTEM =
+'You are a strict QA reviewer inside an autonomous AI company. You are given ONE worker deliverable.\n' +
+'Judge it for correctness, completeness, and whether it actually satisfies the stated task — nothing else.\n' +
+'Be pragmatic: a deliverable that is correct and complete PASSES even if it could be marginally nicer.\n' +
+'Only FAIL for real, fixable defects (bugs, missing required pieces, factual/logical errors, broken format).\n' +
+'\n' +
+'You MUST reply with EXACTLY one line and NOTHING ELSE, in one of these two forms:\n' +
+'RESULT: PASS\n' +
+'RESULT: FAIL — <specific, actionable feedback the worker can act on in one revision>\n' +
+'\n' +
+'Do not add any other text, headings, markdown, or explanation. The feedback after "FAIL — " must be\n' +
+'concrete (quote the offending part, name the missing piece, give the exact fix).';
+
+  // worker system = preamble + "\n\n" + body  (artifact hint appended so EVERY worker emits artifacts)
+  function worker(body) { return WORKER_PREAMBLE + '\n\n' + body + WORKER_ARTIFACT_HINT; }
+
+  // ---------------------------------------------------------------------------
+  // v3 §6 ROLES[*].persona — short identity / plan / relationships strings used
+  // for agent flavor + memory-prompt prepends. Sensible defaults per role.
+  // ---------------------------------------------------------------------------
+  var PERSONAS = {
+    boss: {
+      identity: 'You are the Boss — the calm, decisive orchestrator who turns a fuzzy goal into a crisp plan.',
+      plan: 'Decompose, delegate to the right specialists, then synthesize their work into one clean answer.',
+      relationships: 'You trust your team; you push the engineer for rigor, the qa for honesty, and keep everyone unblocked.'
+    },
+    engineer: {
+      identity: 'You are the Engineer — pragmatic, precise, and allergic to hand-waving. You ship working code.',
+      plan: 'Read the spec, pick the simplest correct approach, write tight self-contained code, note assumptions.',
+      relationships: 'You respect the designer\'s specs, lean on the researcher for facts, and brace for QA\'s nitpicks.'
+    },
+    designer: {
+      identity: 'You are the Designer — visual, user-obsessed, exact with tokens (hex, px, spacing) not adjectives.',
+      plan: 'Anchor every choice to a user goal, give concrete layouts/specs the engineer can implement directly.',
+      relationships: 'You hand clean specs to the engineer and trade taste opinions with the writer.'
+    },
+    researcher: {
+      identity: 'You are the Researcher — curious, skeptical, and careful to separate sourced fact from inference.',
+      plan: 'Gather current, accurate info; cite sources; surface the most decision-relevant findings first.',
+      relationships: 'You feed facts to the writer and engineer and flag anything time-sensitive to the Boss.'
+    },
+    writer: {
+      identity: 'You are the Writer — clear, structured, and ruthless about cutting filler and clichés.',
+      plan: 'Match audience and tone, build strong scannable structure, preserve every fact from your inputs.',
+      relationships: 'You polish the researcher\'s findings and the engineer\'s notes into prose people actually read.'
+    },
+    qa: {
+      identity: 'You are QA — the loyal skeptic. Your job is to catch what everyone else missed.',
+      plan: 'Stress-test deliverables for correctness, completeness, and edge cases; give the minimal fix.',
+      relationships: 'You hold the engineer and designer to a high bar; the Boss relies on your honest verdict.'
+    },
+    generalist: {
+      identity: 'You are a Generalist Operator — versatile and reliable, you take any task end-to-end.',
+      plan: 'Understand the ask, pick a sensible approach, and produce the real deliverable without fuss.',
+      relationships: 'You fill gaps for the whole team and adapt to whatever the Boss needs next.'
+    }
+  };
 
   // §6.3 BOSS_DECOMPOSE_SYSTEM (Boss turn A — stored as ROLES.boss.system).
+  // v3: EXTENDED so each subtask may declare optional "deps" (DAG) and "verify" (QA loop).
   var BOSS_DECOMPOSE_SYSTEM =
 'You are the BOSS / orchestrator of an autonomous AI company. The user gives you ONE high-level goal.\n' +
 'Your job is ONLY to break it into focused subtasks for your worker agents and to plan the final synthesis.\n' +
@@ -181,7 +261,9 @@ window.App = window.App || {};
 '    { "role": "<one of the role keys>",\n' +
 '      "title": "<=6 word label shown on the kanban card",\n' +
 '      "instruction": "<the full, self-contained instruction for that worker>",\n' +
-'      "needsWeb": <true|false>\n' +
+'      "needsWeb": <true|false>,\n' +
+'      "deps": [<0-based indices of EARLIER plan items whose results this needs; [] if independent/parallel>],\n' +
+'      "verify": <optional true|false: true to have QA review this deliverable before it is accepted>\n' +
 '    }\n' +
 '  ],\n' +
 '  "final": "<one sentence telling yourself how to combine the workers\' results into the user\'s answer>"\n' +
@@ -191,6 +273,12 @@ window.App = window.App || {};
 '- 1 to 5 items in "plan". Each instruction must be complete on its own (the worker cannot see the user\'s\n' +
 '  original goal — only your instruction).\n' +
 '- Use only the role keys listed. If the goal is trivial/single-step, return a one-item plan.\n' +
+'- ALWAYS include "deps" on every item: [] if it can start immediately (independent — these run in\n' +
+'  PARALLEL), or the 0-based indices of the EARLIER items whose output it needs (e.g. item 2 needing\n' +
+'  items 0 and 1 -> "deps":[0,1]). Never reference an index >= this item\'s own position; never create\n' +
+'  cycles. Prefer [] so independent work runs concurrently; only list indices for genuine data needs.\n' +
+'- "verify" is OPTIONAL (default false). Set it true for high-stakes deliverables (code, key analysis)\n' +
+'  that should pass a QA review pass before being accepted.\n' +
 '- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
 
   // §6.3 BOSS_SYNTH_SYSTEM (Boss turn B).
@@ -213,31 +301,32 @@ window.App = window.App || {};
       label: 'Boss', color: roleColor.boss, model: 'claude-opus-4-8', glyph: 'hexnode',
       webSearchPreferred: false, system: BOSS_DECOMPOSE_SYSTEM,
       // synth prompt also stashed on the role for callers that look here (§6.3 turn B).
-      synthSystem: BOSS_SYNTH_SYSTEM
+      synthSystem: BOSS_SYNTH_SYSTEM,
+      persona: PERSONAS.boss
     },
     engineer: {
       label: 'Engineer', color: roleColor.engineer, model: 'claude-sonnet-4-6', glyph: 'wrench',
-      webSearchPreferred: false, system: worker(ENGINEER_BODY)
+      webSearchPreferred: false, system: worker(ENGINEER_BODY), persona: PERSONAS.engineer
     },
     designer: {
       label: 'Designer', color: roleColor.designer, model: 'claude-sonnet-4-6', glyph: 'palette',
-      webSearchPreferred: false, system: worker(DESIGNER_BODY)
+      webSearchPreferred: false, system: worker(DESIGNER_BODY), persona: PERSONAS.designer
     },
     researcher: {
       label: 'Researcher', color: roleColor.researcher, model: 'claude-sonnet-4-6', glyph: 'magnifier',
-      webSearchPreferred: true, system: worker(RESEARCHER_BODY)
+      webSearchPreferred: true, system: worker(RESEARCHER_BODY), persona: PERSONAS.researcher
     },
     writer: {
       label: 'Writer', color: roleColor.writer, model: 'claude-sonnet-4-6', glyph: 'pen',
-      webSearchPreferred: false, system: worker(WRITER_BODY)
+      webSearchPreferred: false, system: worker(WRITER_BODY), persona: PERSONAS.writer
     },
     qa: {
       label: 'QA', color: roleColor.qa, model: 'claude-haiku-4-5-20251001', glyph: 'check',
-      webSearchPreferred: false, system: worker(QA_BODY)
+      webSearchPreferred: false, system: worker(QA_BODY), persona: PERSONAS.qa
     },
     generalist: {
       label: 'Generalist', color: roleColor.generalist, model: 'claude-sonnet-4-6', glyph: 'star',
-      webSearchPreferred: false, system: worker(GENERALIST_BODY)
+      webSearchPreferred: false, system: worker(GENERALIST_BODY), persona: PERSONAS.generalist
     }
   };
 
@@ -265,11 +354,25 @@ window.App = window.App || {};
     BUBBLE_MS: 4500,     // default bubble lifetime if `ms` omitted
 
     // orchestration
-    MAX_CONCURRENT: 2,   // v2: gentler pacing — cap on simultaneously-running worker subtasks
+    MAX_CONCURRENT: 3,   // v3: raised from 2 to allow parallel waves of worker subtasks
     CULL_TEMP_AGENTS: true,
     TEMP_AGENT_TTL_MS: 60000,
     DIRECT_CHAT_BLOCKS: false,
     DELEGATE_STAGGER_MS: 1200,   // v2: slower stagger between delegations
+
+    // v3: QA review loop — how many times a failing verify-task may be revised.
+    QA_MAX_RETRIES: 2,
+
+    // v3: agent memory scoring (Agents.scoreMemories).
+    MEMORY_TOPK: 3,          // how many memories to surface per query
+    MEMORY_HALFLIFE_H: 24,   // recency half-life in hours for the decay term
+    MEMORY_CAP: 50,          // max memories retained per agent (single source of truth)
+
+    // v3: artifact store cap (oldest dropped past this).
+    ARTIFACT_MAX: 200,
+
+    // v3: watercooler chatter cooldown (ms between idle banter events).
+    CHATTER_COOLDOWN_MS: 25000,
 
     // API
     API_URL: 'https://api.anthropic.com/v1/messages',
@@ -307,9 +410,67 @@ window.App = window.App || {};
     BOSS_DECOMPOSE_SYSTEM: BOSS_DECOMPOSE_SYSTEM,
     BOSS_SYNTH_SYSTEM: BOSS_SYNTH_SYSTEM,
 
+    // v3: worker artifact-emission hint (Orchestrator appends to worker instructions)
+    // and the QA reviewer system prompt (Orchestrator QA loop).
+    WORKER_ARTIFACT_HINT: WORKER_ARTIFACT_HINT,
+    QA_REVIEW_SYSTEM: QA_REVIEW_SYSTEM,
+
+    // v3: watercooler banter pools. Orchestrator picks role-flavored lines (falls
+    // back to generic). Short, office-y, non-blocking; used when liveChatter=false.
+    CHATTER_LINES: {
+      generic: [
+        'Anyone else running on pure coffee today?',
+        'Did you see the new ticket queue? Wild.',
+        'I swear the office plant is judging me.',
+        'Two more tasks and I\'m taking a lap.',
+        'The neon sign flickered again — spooky.',
+        'How was your weekend? Mine was all side projects.',
+        'Standup felt shorter today, right?',
+        'Whoever fixed the printer: legend.'
+      ],
+      byRole: {
+        engineer: [
+          'Just refactored that mess — feels good.',
+          'It compiles. I\'m not touching it again.',
+          'Naming things is still the hardest problem.',
+          'I added one more test. Future me says thanks.'
+        ],
+        designer: [
+          'Bumped the spacing 4px and it finally breathes.',
+          'That magenta is doing a lot of heavy lifting.',
+          'Contrast ratio passes now — chef\'s kiss.',
+          'Can we please retire that drop shadow?'
+        ],
+        researcher: [
+          'Found three sources that actually agree. Rare.',
+          'The data\'s noisier than the lounge at lunch.',
+          'Citation hunting is my cardio.',
+          'Turns out the obvious answer was wrong again.'
+        ],
+        writer: [
+          'Cut 200 words and it reads twice as well.',
+          'Killed another adverb. They had it coming.',
+          'A good headline took me longer than the draft.',
+          'Tone check: do we sound human enough?'
+        ],
+        qa: [
+          'Found an edge case nobody asked about. You\'re welcome.',
+          'It works on my machine is not a test plan.',
+          'I love a clean PASS. So peaceful.',
+          'Reproduced it in three steps. Buckle up.'
+        ],
+        boss: [
+          'Great momentum today, team.',
+          'Let\'s keep the scope tight on this one.',
+          'Ship it once QA\'s happy.',
+          'Who needs anything unblocked?'
+        ]
+      }
+    },
+
     // persistence
     STORAGE_KEY: 'pixel_ai_company_v1',
-    SCHEMA_VERSION: 1,
+    SCHEMA_VERSION: 2,   // v3: bumped for artifacts/persona/memories/settings additions
 
     // enums + palette + roles
     TILES: TILES,

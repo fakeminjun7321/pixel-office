@@ -109,11 +109,30 @@ window.App = window.App || {};
       temp: !!spec.temp,
       _idleSince: nowMs(),
       _onArrive: null,
+      // v3: persona (identity/plan/relationships) + episodic memory.
+      persona: resolvePersona(rdef, spec),
+      memories: Array.isArray(spec.memories) ? spec.memories.slice() : [],
+      _attention: false,
     };
 
     if (s && Array.isArray(s.agents)) s.agents.push(agent);
     return agent;
   };
+
+  // resolvePersona(roleDef, spec) → {identity, plan, relationships} (all strings).
+  // Prefer spec.persona, then ROLES[role].persona, then a generic default.
+  function resolvePersona(rdef, spec) {
+    var p = (spec && spec.persona) || (rdef && rdef.persona) || null;
+    function str(v) { return (typeof v === 'string') ? v : (v == null ? '' : String(v)); }
+    if (p && typeof p === 'object') {
+      return {
+        identity: str(p.identity),
+        plan: str(p.plan),
+        relationships: str(p.relationships),
+      };
+    }
+    return { identity: '', plan: '', relationships: '' };
+  }
 
   // remove(agentId) — abort its stream, free desk implicitly, drop, clear selection.
   Agents.remove = function (agentId) {
@@ -204,6 +223,99 @@ window.App = window.App || {};
     if (!agent) return;
     var dur = (typeof ms === 'number') ? ms : (CFG().BUBBLE_MS || 4500);
     agent.bubble = { text: truncate(String(text == null ? '' : text), 64), until: nowMs() + dur };
+  };
+
+  // ===========================================================================
+  // v3: MEMORY + ATTENTION API (orchestrator calls these)
+  // ===========================================================================
+
+  // addMemory(agent, text, importance) — push {t, text, importance(0..10)}.
+  // Clamps importance, ignores empty text, caps the array at MEMORY_CAP (50).
+  Agents.addMemory = function (agent, text, importance) {
+    if (!agent) return;
+    text = String(text == null ? '' : text).trim();
+    if (!text) return;
+    if (!Array.isArray(agent.memories)) agent.memories = [];
+    var imp = Number(importance);
+    if (!isFinite(imp)) imp = 1;
+    if (imp < 0) imp = 0; else if (imp > 10) imp = 10;
+    agent.memories.push({ t: nowMs(), text: truncate(text, 240), importance: imp });
+    var cap = CFG().MEMORY_CAP || 50;
+    if (agent.memories.length > cap) {
+      // drop the oldest entries (front of the array)
+      agent.memories.splice(0, agent.memories.length - cap);
+    }
+  };
+
+  // scoreMemories(query, memories) → top-K MemoryEntry[] (highest score first).
+  // score = tokenOverlapRelevance(query,text) + recencyDecay(t) + importance/10.
+  // Pure JS, no deps, empty-safe.
+  Agents.scoreMemories = function (query, memories) {
+    if (!Array.isArray(memories) || !memories.length) return [];
+    var k = CFG().MEMORY_TOPK || 3;
+    var halflifeH = CFG().MEMORY_HALFLIFE_H || 24;
+    var halflifeMs = Math.max(1, halflifeH) * 3600 * 1000;
+    var now = nowMs();
+
+    var qTokens = tokenize(query);
+    var qSet = {};
+    for (var qi = 0; qi < qTokens.length; qi++) qSet[qTokens[qi]] = true;
+    var qCount = qTokens.length;
+
+    var scored = [];
+    for (var i = 0; i < memories.length; i++) {
+      var m = memories[i];
+      if (!m || typeof m.text !== 'string') continue;
+
+      // token-overlap relevance (Jaccard-ish: matched / query tokens, 0..1)
+      var rel = 0;
+      if (qCount > 0) {
+        var mTokens = tokenize(m.text);
+        var mSet = {}, matched = 0;
+        for (var j = 0; j < mTokens.length; j++) mSet[mTokens[j]] = true;
+        for (var t in qSet) { if (qSet.hasOwnProperty(t) && mSet[t]) matched++; }
+        rel = matched / qCount;
+      }
+
+      // recency decay (0..1): 1 at t=now, halves every halflife.
+      var age = now - (typeof m.t === 'number' ? m.t : now);
+      if (age < 0) age = 0;
+      var recency = Math.pow(0.5, age / halflifeMs);
+
+      // importance contribution (0..1)
+      var imp = Number(m.importance);
+      if (!isFinite(imp)) imp = 0;
+      if (imp < 0) imp = 0; else if (imp > 10) imp = 10;
+
+      var score = rel + recency + (imp / 10);
+      scored.push({ m: m, score: score, idx: i });
+    }
+
+    scored.sort(function (a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.idx - a.idx; // tie-break: newer (later in array) first
+    });
+
+    var out = [];
+    for (var r = 0; r < scored.length && out.length < k; r++) out.push(scored[r].m);
+    return out;
+  };
+
+  // tokenize(str) → lowercase word tokens (len ≥ 2). Pure, empty-safe.
+  function tokenize(str) {
+    str = String(str == null ? '' : str).toLowerCase();
+    var raw = str.split(/[^a-z0-9가-힣]+/);
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      if (raw[i] && raw[i].length >= 2) out.push(raw[i]);
+    }
+    return out;
+  }
+
+  // setAttention(agent, on) — toggle the pulsing "!" marker (drawn in Agents.draw).
+  Agents.setAttention = function (agent, on) {
+    if (!agent) return;
+    agent._attention = !!on;
   };
 
   // ===========================================================================
@@ -499,6 +611,12 @@ window.App = window.App || {};
           var headY = scr.y - 26 * (size / 16);
           art.drawBubble(ctx, a.bubble.text, scr.x, headY, size, a.color);
         }
+
+        // v3: pulsing yellow "!" attention marker above the head (drawn here, not
+        // in pixelart.js). Sits a touch above the nameplate so it stays visible.
+        if (a._attention) {
+          drawAttentionMarker(ctx, scr.x, scr.y, size);
+        }
       } catch (e) { /* one bad sprite must not break the pass */ }
     }
   };
@@ -634,6 +752,39 @@ window.App = window.App || {};
   // ===========================================================================
   // INTERNAL HELPERS
   // ===========================================================================
+
+  // drawAttentionMarker(ctx, feetX, feetY, size) — a pulsing yellow "!" above the
+  // agent's head. Self-contained ctx drawing (does NOT touch pixelart.js). Guarded
+  // by the caller's try/catch but kept defensive anyway.
+  function drawAttentionMarker(ctx, feetX, feetY, size) {
+    var sc = size / 16;
+    // Pulse 0..1 from the clock so it animates without per-agent state.
+    var pulse = 0.5 + 0.5 * Math.sin(nowMs() / 220);
+    var headY = feetY - 40 * sc;          // above the nameplate
+    var r = (5 + 1.5 * pulse) * sc;        // glowing disc radius
+    var alpha = 0.55 + 0.45 * pulse;
+    var yellow = (CFG().palette && CFG().palette.yellow) ||
+      (PA() && PA().palette && PA().palette.yellow) || '#ffe14d';
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // soft glow disc
+    ctx.beginPath();
+    ctx.fillStyle = yellow;
+    ctx.shadowColor = yellow;
+    ctx.shadowBlur = 8 * sc * pulse;
+    ctx.arc(feetX, headY, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // the "!" glyph in dark ink on the disc
+    ctx.globalAlpha = Math.min(1, alpha + 0.2);
+    ctx.fillStyle = '#1a1320';
+    ctx.font = 'bold ' + Math.round(9 * sc) + 'px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('!', feetX, headY + 0.5 * sc);
+    ctx.restore();
+  }
 
   function cellCenter(gx, gy) {
     var w = WORLD();

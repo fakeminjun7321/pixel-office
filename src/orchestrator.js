@@ -64,6 +64,38 @@ window.App = window.App || {};
     } catch (e) {}
   }
 
+  // ===========================================================================
+  // ATTENTION — flag agents needing the user (no-key / rate-limit / error) and
+  //   keep the document-title badge in sync. Guarded everywhere.
+  // ===========================================================================
+  function attentionCount() {
+    var s = STATE(), n = 0;
+    if (!s || !Array.isArray(s.agents)) return 0;
+    for (var i = 0; i < s.agents.length; i++) {
+      if (s.agents[i] && s.agents[i]._attention) n++;
+    }
+    return n;
+  }
+  function syncAttentionBadge() {
+    try { if (App.UI && App.UI.setAttentionBadge) App.UI.setAttentionBadge(attentionCount()); } catch (e) {}
+  }
+  function raiseAttention(agent) {
+    try {
+      var ag = AGENTS();
+      if (ag && ag.setAttention && agent) ag.setAttention(agent, true);
+      else if (agent) agent._attention = true;
+    } catch (e) {}
+    syncAttentionBadge();
+  }
+  function clearAttention(agent) {
+    try {
+      var ag = AGENTS();
+      if (ag && ag.setAttention && agent) ag.setAttention(agent, false);
+      else if (agent) agent._attention = false;
+    } catch (e) {}
+    syncAttentionBadge();
+  }
+
   var Orchestrator = {};
   Orchestrator.PLAN_SCHEMA_VERSION = 1;
 
@@ -76,6 +108,157 @@ window.App = window.App || {};
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
     if (prov === 'openai') return !!set.openaiKey;
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+  }
+
+  // slugify a title for artifact filenames (lowercase, dashes, no exotic chars).
+  function slug(s) {
+    return String(s || 'artifact')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'artifact';
+  }
+  // map a code-fence language hint → file extension.
+  function extForLang(lang) {
+    var L = String(lang || '').toLowerCase().trim();
+    var map = {
+      js: '.js', javascript: '.js', jsx: '.jsx', ts: '.ts', typescript: '.ts', tsx: '.tsx',
+      py: '.py', python: '.py', rb: '.rb', ruby: '.rb', go: '.go', rs: '.rs', rust: '.rs',
+      java: '.java', c: '.c', cpp: '.cpp', 'c++': '.cpp', cs: '.cs', php: '.php', swift: '.swift',
+      kt: '.kt', kotlin: '.kt', sh: '.sh', bash: '.sh', zsh: '.sh', sql: '.sql',
+      html: '.html', css: '.css', scss: '.scss', json: '.json', yaml: '.yml', yml: '.yml',
+      xml: '.xml', md: '.md', markdown: '.md', txt: '.txt', text: '.txt', toml: '.toml',
+    };
+    return map[L] || (L ? ('.' + L.replace(/[^a-z0-9]/g, '').slice(0, 6)) : '.txt');
+  }
+  // classify an artifact type from filename extension / fence lang.
+  function artifactType(name, lang) {
+    var n = String(name || '').toLowerCase();
+    if (/\.(md|markdown)$/.test(n) || /^(md|markdown)$/.test(String(lang || '').toLowerCase())) return 'markdown';
+    if (/\.(json|csv|tsv|ya?ml|xml|toml)$/.test(n)) return 'data';
+    if (/\.(txt|text)$/.test(n)) return 'text';
+    if (/\.[a-z0-9]+$/.test(n)) return 'code';
+    return 'text';
+  }
+
+  // ===========================================================================
+  // ARTIFACTS — parse fenced blocks out of worker output and store them.
+  // ```artifact:<filename.ext>\n<content>\n```  → Artifact named by filename.
+  // a plain ```lang code block → name = slug(task.title)+ext(lang).
+  // ===========================================================================
+  function parseArtifacts(text, task, agent) {
+    var out = [];
+    try {
+      if (!text) return out;
+      var src = String(text);
+      // Match fenced blocks: capture info string + body. Tolerate ``` or ~~~.
+      var re = /(^|\n)([`~]{3,})[ \t]*([^\n`~]*)\n([\s\S]*?)\n\2[ \t]*(?=\n|$)/g;
+      var m, autoIdx = 0;
+      while ((m = re.exec(src)) !== null) {
+        var info = String(m[3] || '').trim();
+        var body = m[4] != null ? m[4] : '';
+        var am = info.match(/^artifact:(\S+)/i);
+        var name, lang = '';
+        if (am) {
+          name = am[1];
+          lang = name.indexOf('.') >= 0 ? name.split('.').pop() : '';
+        } else {
+          // plain code block: only capture ones with a language hint (skip prose fences)
+          lang = info.split(/\s+/)[0] || '';
+          if (!lang) continue;
+          var suffix = autoIdx > 0 ? ('-' + (autoIdx + 1)) : '';
+          name = slug(task && task.title) + suffix + extForLang(lang);
+        }
+        autoIdx++;
+        out.push({
+          name: name,
+          type: artifactType(name, lang),
+          content: body,
+          taskId: task ? task.id : null,
+          agentId: agent ? agent.id : null,
+        });
+      }
+    } catch (e) {}
+    return out;
+  }
+
+  // pushArtifacts — dedupe by name+taskId (overwrite on retry); cap ARTIFACT_MAX.
+  function pushArtifacts(list) {
+    try {
+      var s = STATE();
+      if (!s) return;
+      if (!Array.isArray(s.artifacts)) s.artifacts = [];
+      var cap = CFG().ARTIFACT_MAX || 200;
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i];
+        if (!a || !a.name) continue;
+        var existing = null;
+        for (var j = 0; j < s.artifacts.length; j++) {
+          var e = s.artifacts[j];
+          if (e && e.name === a.name && e.taskId === a.taskId) { existing = e; break; }
+        }
+        if (existing) {
+          existing.type = a.type;
+          existing.content = a.content;
+          existing.agentId = a.agentId;
+          existing.t = nowMs();
+        } else {
+          s.artifacts.push({
+            id: uid('art'),
+            name: a.name, type: a.type, content: a.content,
+            taskId: a.taskId, agentId: a.agentId, t: nowMs(),
+          });
+        }
+      }
+      // cap (drop oldest)
+      if (s.artifacts.length > cap) s.artifacts.splice(0, s.artifacts.length - cap);
+      try { if (App.UI && App.UI.refreshArtifacts) App.UI.refreshArtifacts(); } catch (e) {}
+    } catch (e) {}
+  }
+
+  // ===========================================================================
+  // MEMORY helpers — persona + relevant memory block injection.
+  // ===========================================================================
+  function importanceHeuristic(task, text) {
+    var imp = 5;
+    try {
+      if (task && task.verify) imp += 2;                 // verified work matters more
+      if (task && task._retries) imp += 1;               // hard-won
+      var t = String(text || '');
+      if (/RESULT:\s*FAIL/i.test(t)) imp += 1;
+      if (t.length > 1200) imp += 1;                      // substantial deliverable
+    } catch (e) {}
+    return Math.max(0, Math.min(10, imp));
+  }
+
+  // personaBlock(agent) — short identity/plan/relationships preamble for prompts.
+  function personaBlock(agent) {
+    try {
+      var p = agent && agent.persona;
+      if (!p) return '';
+      var lines = [];
+      if (p.identity) lines.push('Identity: ' + p.identity);
+      if (p.plan) lines.push('Your approach: ' + p.plan);
+      if (p.relationships) lines.push('Team: ' + p.relationships);
+      if (!lines.length) return '';
+      return 'WHO YOU ARE:\n' + lines.join('\n');
+    } catch (e) { return ''; }
+  }
+
+  // memoryBlock(agent, query) — top-K relevant memories as a short note.
+  function memoryBlock(agent, query) {
+    try {
+      var ag = AGENTS();
+      if (!ag || !ag.scoreMemories || !agent || !Array.isArray(agent.memories) || !agent.memories.length) return '';
+      var top = ag.scoreMemories(query || '', agent.memories) || [];
+      if (!top.length) return '';
+      var lines = [];
+      for (var i = 0; i < top.length; i++) {
+        if (top[i] && top[i].text) lines.push('- ' + truncate(top[i].text, 160));
+      }
+      if (!lines.length) return '';
+      return 'YOUR RELEVANT MEMORY:\n' + lines.join('\n');
+    } catch (e) { return ''; }
   }
 
   // ===========================================================================
@@ -200,7 +383,12 @@ window.App = window.App || {};
     var settings = STATE().settings || {};
     var roleDef = ROLES().boss || {};
     var sys = roleDef.system || '';
-    var userMsg = 'GOAL:\n' + userText + '\n\nReturn the JSON plan now.';
+    var pre = [];
+    var personaP = personaBlock(boss);
+    if (personaP) { pre.push(personaP); pre.push(''); }
+    var memP = memoryBlock(boss, userText);
+    if (memP) { pre.push(memP); pre.push(''); }
+    var userMsg = pre.join('\n') + 'GOAL:\n' + userText + '\n\nReturn the JSON plan now.';
 
     var raw = '';
     if (boss) boss.busy = true;   // claim BEFORE stream (onError can fire synchronously on no-key/no-model)
@@ -264,6 +452,8 @@ window.App = window.App || {};
     }
 
     var stagger = CFG().DELEGATE_STAGGER_MS || 600;
+    var idxToId = {};   // plan index → child task id (for DAG dep resolution)
+    var created = [];
     for (var i = 0; i < items.length; i++) {
       (function (it, idx) {
         var t = {
@@ -282,10 +472,18 @@ window.App = window.App || {};
             ? it.needsWeb
             : !!(ROLES()[it.role] && ROLES()[it.role].webSearchPreferred),
           _depIndex: idx, // position in plan (for dependency ordering)
+          _depPlanIdx: Array.isArray(it.deps) ? it.deps.slice() : null, // declared deps (plan indices)
+          _depIds: null,  // resolved below (plan idx → child task id)
+          verify: !!it.verify,
+          _retries: 0,
+          _qaDone: false,
+          _feedback: null,
           _ctrl: null,
         };
         s.tasks.push(t);
         root.subtaskIds.push(t.id);
+        idxToId[idx] = t.id;
+        created.push(t);
 
         // staggered delegation bubble from the boss.
         setTimeout(function () {
@@ -295,6 +493,24 @@ window.App = window.App || {};
           refreshBoard();
         }, stagger * idx);
       })(items[i], i);
+    }
+
+    // Resolve declared deps (plan indices) → child task ids. Self / out-of-range
+    // / forward refs are dropped so we never deadlock.
+    for (var c = 0; c < created.length; c++) {
+      var ct = created[c];
+      if (!ct._depPlanIdx) continue;
+      var ids = [];
+      for (var d = 0; d < ct._depPlanIdx.length; d++) {
+        var pi = ct._depPlanIdx[d];
+        if (typeof pi !== 'number') continue;
+        if (pi === ct._depIndex) continue;             // no self-dep
+        var depId = idxToId[pi];
+        if (depId && depId !== ct.id) ids.push(depId);
+      }
+      // keep [] when deps were declared-but-empty (explicit parallel); _depPlanIdx
+      // is null only when the plan omitted deps entirely (→ legacy fallback).
+      ct._depIds = ids;
     }
 
     refreshBoard();
@@ -347,7 +563,19 @@ window.App = window.App || {};
         var needsWeb = (typeof it.needsWeb === 'boolean')
           ? it.needsWeb
           : !!(roles[role] && roles[role].webSearchPreferred);
-        out.push({ role: role, title: title, instruction: instruction, needsWeb: needsWeb });
+        // optional DAG deps: array of earlier-subtask indices this one needs.
+        var deps = null;
+        if (Array.isArray(it.deps)) {
+          deps = [];
+          for (var di = 0; di < it.deps.length; di++) {
+            var dv = it.deps[di];
+            if (typeof dv === 'number' && isFinite(dv)) deps.push(dv | 0);
+          }
+          // keep [] as an explicit "no deps" (→ runs in parallel); only an absent
+          // it.deps stays null (→ legacy all-earlier-siblings serial fallback).
+        }
+        var verify = (typeof it.verify === 'boolean') ? it.verify : false;
+        out.push({ role: role, title: title, instruction: instruction, needsWeb: needsWeb, deps: deps, verify: verify });
         if (out.length >= 5) break;
       }
       if (out.length === 0) return null;
@@ -415,8 +643,22 @@ window.App = window.App || {};
   // It is runnable iff every earlier sibling is `done` (error counts as resolved
   // so a failed predecessor doesn't deadlock; its result is simply absent).
   // ===========================================================================
+  function isTerminal(t) { return t && (t.status === 'done' || t.status === 'error'); }
+
   function depsSatisfied(task) {
     if (!task.parentId) return true;          // standalone tasks have no deps
+
+    // DAG: if deps were DECLARED (array present, even empty), gate ONLY on those.
+    // [] → no deps → runnable immediately (parallel wave). [i,..] → wait for them.
+    if (Array.isArray(task._depIds)) {
+      for (var d = 0; d < task._depIds.length; d++) {
+        var dep = taskById(task._depIds[d]);
+        if (dep && !isTerminal(dep)) return false;
+      }
+      return true;
+    }
+
+    // Back-compat: depend on ALL earlier siblings in the same plan.
     if (typeof task._depIndex !== 'number') return true;
     var sibs = childrenOf(task.parentId);
     for (var i = 0; i < sibs.length; i++) {
@@ -447,6 +689,9 @@ window.App = window.App || {};
     agent.currentTaskId = task.id;
     task.assignee = agent.id;
     task.status = 'running';
+
+    // (re)assignment clears any prior attention flag on this agent.
+    clearAttention(agent);
 
     var roleLabel = (ROLES()[task.role] && ROLES()[task.role].label) || task.role;
     log('Boss', agent.name || roleLabel, 'msg', '@' + (agent.name || roleLabel) + ': ' + task.title);
@@ -546,7 +791,7 @@ window.App = window.App || {};
           failTask(task, '(empty result)');
           return;
         }
-        finishTask(task, text);
+        onWorkerResult(task, text);
       },
       onError: function (err) {
         var msg = (err && err.message) || 'error';
@@ -570,25 +815,181 @@ window.App = window.App || {};
     var s = STATE(); if (s && s._activeStreams) s._activeStreams[agent.id] = handle;
   }
 
-  // buildWorkerUserContent — instruction + any done-predecessor results (orch.md §4.2).
+  // depResults(task) — the done results of this task's DECLARED deps, else (fallback)
+  // earlier siblings. Returns Task[] in dependency/order.
+  function depResults(task) {
+    var out = [];
+    if (!task || !task.parentId) return out;
+    if (Array.isArray(task._depIds)) {   // declared deps (incl. [] → no upstream context)
+      for (var d = 0; d < task._depIds.length; d++) {
+        var dep = taskById(task._depIds[d]);
+        if (dep && dep.status === 'done' && dep.result) out.push(dep);
+      }
+      return out;
+    }
+    if (typeof task._depIndex !== 'number') return out;
+    var sibs = childrenOf(task.parentId).filter(function (s) {
+      return typeof s._depIndex === 'number' && s._depIndex < task._depIndex && s.status === 'done' && s.result;
+    });
+    sibs.sort(function (a, b) { return a._depIndex - b._depIndex; });
+    return sibs;
+  }
+
+  // buildWorkerUserContent — persona + relevant memory + dep results + instruction
+  //   (+ QA feedback on retry) + the artifact-emission hint.
   function buildWorkerUserContent(task) {
     var parts = [];
-    if (task.parentId && typeof task._depIndex === 'number') {
-      var sibs = childrenOf(task.parentId).filter(function (s) {
-        return typeof s._depIndex === 'number' && s._depIndex < task._depIndex && s.status === 'done' && s.result;
-      });
-      sibs.sort(function (a, b) { return a._depIndex - b._depIndex; });
-      if (sibs.length) {
-        parts.push('CONTEXT — results from earlier subtasks you can build on:');
-        for (var i = 0; i < sibs.length; i++) {
-          var roleLabel = (ROLES()[sibs[i].role] && ROLES()[sibs[i].role].label) || sibs[i].role;
-          parts.push('[' + roleLabel + ' — ' + sibs[i].title + ']\n' + sibs[i].result);
-        }
-        parts.push('');
+    var agent = AGENTS() && AGENTS().byId ? AGENTS().byId(task.assignee) : null;
+
+    var persona = personaBlock(agent);
+    if (persona) { parts.push(persona); parts.push(''); }
+
+    var mem = memoryBlock(agent, (task.desc || '') + ' ' + (task.title || ''));
+    if (mem) { parts.push(mem); parts.push(''); }
+
+    var deps = depResults(task);
+    if (deps.length) {
+      parts.push('CONTEXT — results from earlier subtasks you can build on:');
+      for (var i = 0; i < deps.length; i++) {
+        var roleLabel = (ROLES()[deps[i].role] && ROLES()[deps[i].role].label) || deps[i].role;
+        parts.push('[' + roleLabel + ' — ' + deps[i].title + ']\n' + deps[i].result);
       }
+      parts.push('');
     }
+
     parts.push('YOUR TASK:\n' + task.desc);
+
+    // QA feedback from a previous failed review → tell the worker to fix it.
+    if (task._feedback) {
+      parts.push('');
+      parts.push('REVISION REQUIRED — a reviewer rejected your previous attempt. Address this specific feedback and re-deliver the corrected result:\n' + task._feedback);
+    }
+
+    // Artifact-emission hint (config-owned; guarded fallback).
+    var hint = CFG().WORKER_ARTIFACT_HINT;
+    if (hint) { parts.push(''); parts.push(String(hint)); }
+
     return parts.join('\n');
+  }
+
+  // ===========================================================================
+  // onWorkerResult — a worker stream produced `text`. Extract artifacts, write a
+  //   memory, then either run a QA review (verify tasks) or finalize terminal.
+  // ===========================================================================
+  function onWorkerResult(task, text) {
+    var ag = AGENTS();
+    var agent = ag && ag.byId ? ag.byId(task.assignee) : null;
+
+    // 1) Artifacts: parse fenced blocks (dedupe by name+taskId → overwrite on retry).
+    try { pushArtifacts(parseArtifacts(text, task, agent)); } catch (e) {}
+
+    // 2) Memory: remember what this agent just did.
+    try {
+      if (agent && ag && ag.addMemory) {
+        var summ = resultLine(text) || task.title || 'completed a task';
+        ag.addMemory(agent, summ, importanceHeuristic(task, text));
+      }
+    } catch (e) {}
+
+    // Stash the produced text so QA / finalize can use it.
+    task.result = text;
+
+    // 3) QA loop: a verify task isn't terminal until it PASSes (or retries exhaust).
+    if (task.verify && !task._qaDone && CFG().QA_REVIEW_SYSTEM) {
+      runQAReview(task, text, agent);
+      return;
+    }
+
+    finishTask(task, text);
+  }
+
+  // runQAReview — stream a QA verdict; PASS → finalize, FAIL → retry (bounded).
+  function runQAReview(task, text, worker) {
+    var ag = AGENTS();
+    var settings = STATE().settings || {};
+
+    // Pick the QA role/agent model (haiku by default). Reuse the same creds rules.
+    var qaRole = ROLES().qa || {};
+    var qaAgent = (ag && ag.byRole) ? (ag.byRole('qa') || [])[0] : null;
+    var qaModel = (qaAgent && qaAgent.model) || qaRole.model || CFG().FAST_MODEL || settings.defaultModel;
+
+    // No creds for QA → skip review gracefully (finalize as-is; never deadlock).
+    if (!hasCredsFor(qaModel)) { finishTask(task, text); return; }
+
+    var sys = CFG().QA_REVIEW_SYSTEM;
+    var artifactText = qaReviewContent(task, text);
+    log('QA', (worker ? worker.name : task.role), 'msg', '🔍 reviewing: ' + truncate(task.title, 40));
+    if (qaAgent) { try { ag.say(qaAgent, '🔍 reviewing…', 3000); } catch (e) {} }
+
+    var acc = '';
+    var handle = App.API.stream({
+      apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
+      model: qaModel,
+      system: sys,
+      messages: [{ role: 'user', content: artifactText }],
+      onText: function (d) { acc += d; },
+      onDone: function (res) {
+        var verdict = (res && res.text) || acc || '';
+        var line = resultLine(verdict) || verdict;
+        var pass = /\bPASS\b/i.test(line) && !/\bFAIL\b/i.test(line);
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__qa_' + task.id];
+        if (pass) {
+          log('QA', 'Boss', 'result', '✓ PASS: ' + truncate(task.title, 40));
+          task._qaDone = true;
+          finishTask(task, text);
+        } else {
+          var feedback = extractFeedback(line) || extractFeedback(verdict) || 'address correctness/completeness issues';
+          if ((task._retries || 0) < (CFG().QA_MAX_RETRIES || 2)) {
+            task._retries = (task._retries || 0) + 1;
+            task._feedback = feedback;
+            log('QA', (worker ? worker.name : task.role), 'msg', '✗ FAIL → revise (' + task._retries + '): ' + truncate(feedback, 60));
+            // release the worker and re-queue for another attempt.
+            if (worker) {
+              try {
+                worker.busy = false; worker.currentTaskId = null;
+                ag.setState(worker, 'idle');
+                ag.say(worker, '✍ revising…', 3000);
+                var s3 = STATE(); if (s3 && s3._activeStreams) delete s3._activeStreams[worker.id];
+              } catch (e) {}
+            }
+            task.status = 'queued';
+            task.assignee = null;
+            refreshBoard();
+            saveSoon();
+          } else {
+            // retries exhausted → accept the last result, note QA done.
+            log('QA', 'Boss', 'result', '⚠ FAIL but retries exhausted — accepting: ' + truncate(task.title, 40));
+            task._qaDone = true;
+            finishTask(task, text);
+          }
+        }
+      },
+      onError: function (err) {
+        // QA review itself failed → don't deadlock; accept the worker result.
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__qa_' + task.id];
+        log('QA', 'Boss', 'system', 'QA review error — accepting result: ' + ((err && err.message) || 'error'));
+        task._qaDone = true;
+        finishTask(task, text);
+      },
+    });
+    var s = STATE(); if (s && s._activeStreams) s._activeStreams['__qa_' + task.id] = handle;
+  }
+
+  // qaReviewContent — what the reviewer reads: the deliverable + its instruction.
+  function qaReviewContent(task, text) {
+    var parts = [];
+    parts.push('TASK INSTRUCTION:\n' + (task.desc || task.title || ''));
+    parts.push('');
+    parts.push('WORKER DELIVERABLE TO REVIEW:\n' + String(text || ''));
+    return parts.join('\n');
+  }
+
+  // extractFeedback — pull the actionable part after "FAIL —" / "FAIL:".
+  function extractFeedback(s) {
+    if (!s) return '';
+    var m = String(s).match(/FAIL\s*[—\-:]\s*(.+)$/im);
+    return m ? m[1].trim() : '';
   }
 
   // ===========================================================================
@@ -607,6 +1008,7 @@ window.App = window.App || {};
       agent.stats.tasksDone += 1;
       ag.setState(agent, 'idle');
       ag.say(agent, '✓ done', 2500);
+      clearAttention(agent);
       // honor a deferred break request (set while the agent was busy), else maybe wander.
       if (agent._wantBreak) {
         agent._wantBreak = false;
@@ -636,6 +1038,8 @@ window.App = window.App || {};
       if (msg === 'NO_KEY') ag.say(agent, '🔑 set your API key in Settings', 4000);
       else ag.say(agent, '⚠ error', 3500);
       var s = STATE(); if (s && s._activeStreams) delete s._activeStreams[agent.id];
+      // Flag for the user: no-key / rate-limit (429) / any API error.
+      raiseAttention(agent);
     }
     var label = agent ? agent.name : task.role;
     log(label, 'Boss', 'error', 'API error' + (status ? ' (' + status + ')' : '') + ': ' + (msg || ''));
@@ -755,6 +1159,189 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // WATERCOOLER — sparse idle banter between two non-boss agents.
+  //   Cooldown-gated, non-blocking. Canned lines by default; ONE batched LLM call
+  //   when settings.liveChatter && creds. Writes the topic to both memories.
+  // ===========================================================================
+  var _lastChatter = 0;       // in state._time seconds
+  var _chatterActive = false;
+
+  function idleNonBoss() {
+    var s = STATE(), out = [];
+    if (!s || !Array.isArray(s.agents)) return out;
+    for (var i = 0; i < s.agents.length; i++) {
+      var a = s.agents[i];
+      if (!a || a.role === 'boss') continue;
+      if (a.state !== 'idle') continue;
+      if (agentBusy(a)) continue;
+      if (a._attention) continue;
+      out.push(a);
+    }
+    return out;
+  }
+
+  function chatterLineFor(role) {
+    var C = CFG().CHATTER_LINES || {};
+    var pool = [];
+    try {
+      if (C.byRole && C.byRole[role] && C.byRole[role].length) pool = pool.concat(C.byRole[role]);
+      if (C.generic && C.generic.length) pool = pool.concat(C.generic);
+    } catch (e) {}
+    if (!pool.length) pool = ['nice work team', 'coffee time? ☕', 'how was your weekend?', 'good sync 🤝'];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function maybeWatercooler() {
+    try {
+      var s = STATE();
+      if (!s) return;
+      if (_chatterActive) return;
+      if (!queueIsEmpty()) return;
+      if (s._meetingActive) return;
+      var cd = (CFG().CHATTER_COOLDOWN_MS || 25000) / 1000;
+      if ((s._time - _lastChatter) < cd) return;
+
+      var pool = idleNonBoss();
+      if (pool.length < 2) return;
+
+      // pick 2 distinct.
+      var a = pool[Math.floor(Math.random() * pool.length)];
+      var b = pool[Math.floor(Math.random() * pool.length)];
+      var guard = 0;
+      while (b === a && guard++ < 8) b = pool[Math.floor(Math.random() * pool.length)];
+      if (a === b) return;
+
+      _lastChatter = s._time;
+      _chatterActive = true;
+      startWatercooler(a, b);
+    } catch (e) { _chatterActive = false; }
+  }
+
+  function startWatercooler(a, b) {
+    var ag = AGENTS();
+    var settings = STATE().settings || {};
+
+    // Walk both to adjacent break/meeting spots.
+    var spots = (WORLD() && WORLD().breakSpots) ? WORLD().breakSpots() : [];
+    if ((!spots || spots.length < 2) && WORLD() && WORLD().meetingSeats) spots = WORLD().meetingSeats();
+    spots = spots || [];
+
+    var arrived = 0;
+    function onArrive() {
+      arrived++;
+      if (arrived < 2) return;
+      // Both in place → run the exchange.
+      if (settings.liveChatter && hasCredsFor((a.model || settings.defaultModel))) {
+        liveChatter(a, b);
+      } else {
+        cannedChatter(a, b);
+      }
+    }
+
+    try {
+      if (spots[0]) ag.goToCell(a, spots[0].gx, spots[0].gy, onArrive); else onArrive();
+      if (spots[1]) ag.goToCell(b, spots[1].gx, spots[1].gy, onArrive); else onArrive();
+    } catch (e) { cannedChatter(a, b); }
+  }
+
+  function cannedChatter(a, b) {
+    var ag = AGENTS();
+    var pair = [a, b];
+    var turns = 2 + Math.floor(Math.random() * 3); // 2-4 turns
+    var i = 0;
+    var topicLine = null;
+    function step() {
+      try {
+        if (i >= turns) { endWatercooler(a, b, topicLine); return; }
+        var sp = pair[i % 2];
+        var line = chatterLineFor(sp.role);
+        if (!topicLine) topicLine = line;
+        ag.say(sp, line, 3200);
+        log(sp.name || sp.role, 'all', 'msg', line);
+        i++;
+        setTimeout(step, 1600 + Math.floor(Math.random() * 900));
+      } catch (e) { endWatercooler(a, b, topicLine); }
+    }
+    step();
+  }
+
+  function liveChatter(a, b) {
+    var ag = AGENTS();
+    var settings = STATE().settings || {};
+    var aLabel = (ROLES()[a.role] && ROLES()[a.role].label) || a.role;
+    var bLabel = (ROLES()[b.role] && ROLES()[b.role].label) || b.role;
+    var sys = "You are scripting a SHORT, light office watercooler exchange between two coworkers at an AI software company. " +
+      "Keep it casual and brief: 2-4 total lines, alternating speakers, <=12 words each. No work assignments. " +
+      "Output ONLY lines in the form 'NAME: text', nothing else.";
+    var content = "Speaker A is " + (a.name || aLabel) + " (" + aLabel + "). Speaker B is " + (b.name || bLabel) + " (" + bLabel + "). Write their quick break-room chat.";
+
+    var acc = '';
+    var handle = App.API.stream({
+      apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
+      model: (a.model || settings.defaultModel || CFG().FAST_MODEL),
+      system: sys,
+      messages: [{ role: 'user', content: content }],
+      onText: function (d) { acc += d; },
+      onDone: function (res) {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__chatter'];
+        var txt = (res && res.text) || acc || '';
+        playScriptedChatter(a, b, txt);
+      },
+      onError: function () {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__chatter'];
+        cannedChatter(a, b); // graceful fallback
+      },
+    });
+    var s = STATE(); if (s && s._activeStreams) s._activeStreams['__chatter'] = handle;
+  }
+
+  function playScriptedChatter(a, b, txt) {
+    var ag = AGENTS();
+    var lines = String(txt || '').split(/\n+/).map(function (l) { return l.trim(); })
+      .filter(function (l) { return l; }).slice(0, 4);
+    if (!lines.length) { cannedChatter(a, b); return; }
+    var pair = [a, b];
+    var i = 0, topicLine = null;
+    function step() {
+      try {
+        if (i >= lines.length) { endWatercooler(a, b, topicLine); return; }
+        var raw = lines[i];
+        var sp = pair[i % 2];
+        var line = raw.replace(/^[^:]{0,24}:\s*/, '');   // drop "Name:" prefix if present
+        if (!topicLine) topicLine = line;
+        ag.say(sp, truncate(line, 60), 3200);
+        log(sp.name || sp.role, 'all', 'msg', truncate(line, 80));
+        i++;
+        setTimeout(step, 1700 + Math.floor(Math.random() * 900));
+      } catch (e) { endWatercooler(a, b, topicLine); }
+    }
+    step();
+  }
+
+  function endWatercooler(a, b, topicLine) {
+    try {
+      var ag = AGENTS();
+      // remember the chat (low importance).
+      if (topicLine && ag && ag.addMemory) {
+        try { ag.addMemory(a, 'watercooler: ' + truncate(topicLine, 80), 1); } catch (e) {}
+        try { ag.addMemory(b, 'watercooler: ' + truncate(topicLine, 80), 1); } catch (e) {}
+      }
+      // return both to desks if still idle & free.
+      [a, b].forEach(function (agt) {
+        if (!agt) return;
+        if (agentBusy(agt)) return;
+        var hx = (typeof agt.homeGx === 'number') ? agt.homeGx : agt.gx;
+        var hy = (typeof agt.homeGy === 'number') ? agt.homeGy : agt.gy;
+        ag.goToCell(agt, hx, hy, (function (x) {
+          return function () { if (!agentBusy(x)) ag.setState(x, 'idle'); };
+        })(agt));
+      });
+    } catch (e) {}
+    _chatterActive = false;
+  }
+
+  // ===========================================================================
   // synthesize(rootTask) — meeting choreography + final boss call.
   // ===========================================================================
   Orchestrator.synthesize = function (rootTask) {
@@ -828,10 +1415,23 @@ window.App = window.App || {};
         rootTask.status = 'done';
         rootTask.result = text || '(no synthesis produced)';
         s._meetingActive = false;
+        // Push the final answer as an Artifact (overwrite per root on re-run).
+        try {
+          pushArtifacts([{
+            name: 'final-answer.md', type: 'markdown',
+            content: rootTask.result,
+            taskId: rootTask.id, agentId: boss ? boss.id : null,
+          }]);
+        } catch (e) {}
+        // Boss remembers the outcome.
+        try {
+          if (boss && ag.addMemory) ag.addMemory(boss, 'Delivered: ' + truncate(rootTask.title, 80), 6);
+        } catch (e) {}
         if (boss) {
           boss.busy = false;
           ag.setState(boss, 'idle');
           ag.say(boss, 'Done ✓', 4000);
+          clearAttention(boss);
         }
         // disperse participants back to their desks; send the boss home too.
         disperse(participants, boss);
@@ -848,6 +1448,7 @@ window.App = window.App || {};
         }
         refreshBoard();
         try { if (App.UI && App.UI.showFinalResult) App.UI.showFinalResult(rootTask); } catch (e) {}
+        try { if (App.UI && App.UI.notifyDone) App.UI.notifyDone(rootTask); } catch (e) {}
         saveSoon();
         if (s && s._activeStreams) delete s._activeStreams['__boss_synth'];
       },
@@ -879,6 +1480,11 @@ window.App = window.App || {};
 
   function buildSynthUserContent(rootTask) {
     var parts = [];
+    var boss = (AGENTS() && AGENTS().byRole) ? (AGENTS().byRole('boss') || [])[0] : null;
+    var persona = personaBlock(boss);
+    if (persona) { parts.push(persona); parts.push(''); }
+    var mem = memoryBlock(boss, rootTask.desc || rootTask.title || '');
+    if (mem) { parts.push(mem); parts.push(''); }
     parts.push("USER'S ORIGINAL GOAL:\n" + (rootTask.desc || ''));
     var guidance = (rootTask._plan && rootTask._plan.final) ||
       'Combine all worker results into a single coherent answer for the user.';
@@ -930,7 +1536,7 @@ window.App = window.App || {};
       if (!s || !Array.isArray(s.tasks)) return;
       if (s.paused) return;
 
-      var maxConc = CFG().MAX_CONCURRENT || 4;
+      var maxConc = CFG().MAX_CONCURRENT || 3;
 
       // 1) flip blocked → queued when deps satisfied.
       for (var b = 0; b < s.tasks.length; b++) {
@@ -966,6 +1572,9 @@ window.App = window.App || {};
 
       // 3) synthesis trigger: any root with all children terminal & not yet synthesized.
       checkRootsForSynthesis(s);
+
+      // 4) watercooler: sparse idle banter when nothing is queued/running.
+      maybeWatercooler();
     } catch (e) {
       // tick must never throw into the loop.
       try { console && console.warn && console.warn('[Orchestrator.tick]', e); } catch (e2) {}

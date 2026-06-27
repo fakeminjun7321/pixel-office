@@ -117,10 +117,16 @@ window.App = window.App || {};
       if (s && !s.paused && App.Orchestrator && App.Orchestrator.tick) App.Orchestrator.tick();
     } catch (e) { warnOnce('orchestrator.tick', e); }
 
+    // --- follow-camera: gently ease the camera toward the followed agent ---
+    try { followCamera(s); } catch (e) { warnOnce('main.followCamera', e); }
+
     // --- draw (guarded) ---
     try {
       Main.draw();
     } catch (e) { warnOnce('main.draw', e); }
+
+    // --- minimap overlay (guarded; never throws into the loop) ---
+    try { if (App.UI && App.UI.drawMinimap) App.UI.drawMinimap(); } catch (e) { warnOnce('ui.drawMinimap', e); }
 
     // --- periodic autosave on meaningful change ---
     _saveAccum += dt;
@@ -198,6 +204,37 @@ window.App = window.App || {};
     // 5) FX overlay LAST (scanlines + bloom + vignette).
     try { if (art.drawFX) art.drawFX(ctx, cssW, cssH, s._time); } catch (e) {}
   };
+
+  // ---------------------------------------------------------------------------
+  // follow-camera — ease the camera so the followed agent stays centered.
+  //   Gentle lerp; clamps after. No-op (and never throws) when nothing to follow.
+  // ---------------------------------------------------------------------------
+  function followCamera(s) {
+    if (!s || !s._followId || !s.camera) return;
+    var agents = s.agents;
+    if (!Array.isArray(agents)) return;
+    var a = null;
+    for (var i = 0; i < agents.length; i++) {
+      if (agents[i] && agents[i].id === s._followId) { a = agents[i]; break; }
+    }
+    if (!a) { s._followId = null; return; } // followed agent gone
+    var ax = (typeof a.x === 'number') ? a.x : null;
+    var ay = (typeof a.y === 'number') ? a.y : null;
+    if (ax == null || ay == null) return;
+
+    var cfg = CFG();
+    var pps = (cfg.PIXEL || 3) * s.camera.zoom;
+    if (!(pps > 0)) return;
+    // desired camera top-left so the agent sits at viewport center.
+    var vw = _canvas ? (_canvas.clientWidth || (_canvas.width / _dpr)) : 0;
+    var vh = _canvas ? (_canvas.clientHeight || (_canvas.height / _dpr)) : 0;
+    var targetX = ax - (vw / 2) / pps;
+    var targetY = ay - (vh / 2) / pps;
+    var lerp = 0.08; // small factor → gentle glide
+    s.camera.x += (targetX - s.camera.x) * lerp;
+    s.camera.y += (targetY - s.camera.y) * lerp;
+    if (WORLD() && WORLD().clampCamera) WORLD().clampCamera();
+  }
 
   // Find the agent currently seated at this furniture's seat (for monitor content).
   function seatedAgentFor(f, s) {

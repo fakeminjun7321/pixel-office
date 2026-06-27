@@ -60,6 +60,9 @@
       <button id="btn-settings"    class="btn"        type="button" title="Settings">
         <span class="btn-ico">⚙</span><span class="btn-lbl">Settings</span>
       </button>
+      <button id="btn-artifacts"   class="btn"        type="button" title="Artifacts produced by agents">
+        <span class="btn-ico">📦</span><span class="btn-lbl">Artifacts</span><span id="artifacts-badge" class="hud-badge hidden">0</span>
+      </button>
 
       <span class="hud-sep" aria-hidden="true"></span>
 
@@ -112,6 +115,14 @@
       </div>
       <button id="panel-agent-close" class="panel-x" type="button" title="Close" aria-label="Close panel">✕</button>
     </header>
+
+    <!-- Persona / memory (read-only) — filled by App.UI.refreshPersonaPanel() -->
+    <details id="panel-agent-persona" class="persona-box">
+      <summary class="persona-summary">PERSONA &amp; MEMORY</summary>
+      <div id="panel-agent-persona-body" class="persona-body">
+        <!-- identity / plan / relationships + recent memories injected here -->
+      </div>
+    </details>
 
     <div id="panel-agent-transcript" class="transcript" aria-live="polite">
       <!-- chat turns injected by App.UI.appendTranscript() -->
@@ -310,5 +321,13 @@
        App.UI.toast() injects/clears children. (SPEC §8)
        ================================================================== -->
   <div id="toast" aria-live="assertive" aria-atomic="true"></div>
+
+  <!-- ==================================================================
+       MINIMAP (#minimap-wrap) — overview of the office + viewport rect.
+       App.UI.drawMinimap() paints it each frame; pointerdown centers camera.
+       ================================================================== -->
+  <div id="minimap-wrap" aria-label="Minimap">
+    <canvas id="minimap" width="180" height="120"></canvas>
+  </div>
 
 </div><!-- /#app -->

@@ -70,6 +70,7 @@ window.App = window.App || {};
       on($('btn-task'), 'click', function () { UI.openTaskBoard(); });
       on($('btn-add-agent'), 'click', function () { UI.openAddAgent(); });
       on($('btn-settings'), 'click', function () { UI.openSettings(); });
+      on($('btn-artifacts'), 'click', function () { UI.openArtifacts(); });
       on($('btn-layout'), 'click', function () { UI.toggleLayoutEdit(); });
       on($('btn-zoom-in'), 'click', function () { UI.zoomIn(); });
       on($('btn-zoom-out'), 'click', function () { UI.zoomOut(); });
@@ -128,6 +129,14 @@ window.App = window.App || {};
       on(canvas, 'pointercancel', UI.onCanvasPointerUp);
       on(canvas, 'wheel', UI.onWheel);
 
+      // Minimap: pointerdown centers the camera on the clicked world point.
+      var minimap = $('minimap');
+      on(minimap, 'pointerdown', UI.onMinimapPointerDown);
+
+      // Double-click empty floor clears follow-camera.
+      var canvasDbl = $('world-canvas');
+      on(canvasDbl, 'dblclick', function () { STATE() && (STATE()._followId = null); });
+
       // Global "Coffee break" control (sends all idle non-boss agents on break).
       ensureCoffeeBreakButton();
 
@@ -138,6 +147,7 @@ window.App = window.App || {};
       // so its .on/aria-checked state matches App.state before Settings is opened.
       setWebSearchSwitch(!!(App.state && App.state.settings && App.state.settings.webSearch));
 
+      UI.refreshArtifacts();
       UI.refresh();
     } catch (e) {
       try { console && console.warn && console.warn('[UI.init]', e); } catch (e2) {}
@@ -477,6 +487,7 @@ window.App = window.App || {};
     var text = (input.value || '').trim();
     if (!text) return;
     input.value = '';
+    requestNotifyPermission(); // polite, one-time, on this user gesture
     if (ORCH() && ORCH().runBossTask) {
       ORCH().runBossTask(text);
       UI.openTaskBoard(); // surface the board so the user sees the decomposition
@@ -501,10 +512,12 @@ window.App = window.App || {};
     var s = STATE();
     if (!s) return;
     s.selectedAgentId = agentId;
+    s._followId = agentId; // follow-camera tracks the selected agent
     var panel = $('panel-agent');
     show(panel);
     ensureBreakButton();
     refreshSelectedPanel();
+    refreshPersonaPanel(agentId);
     renderTranscript(agentId);
     startPanelPreview();
     UI.refreshAgentList(); // highlight selected row
@@ -554,7 +567,7 @@ window.App = window.App || {};
 
   UI.closeAgentPanel = function () {
     var s = STATE();
-    if (s) s.selectedAgentId = null;
+    if (s) { s.selectedAgentId = null; s._followId = null; }
     hide($('panel-agent'));
     stopPanelPreview();
     UI.refreshAgentList();
@@ -575,6 +588,50 @@ window.App = window.App || {};
     // accent
     var accent = $('panel-agent');
     if (accent) accent.style.setProperty('--accent', a.color || '#9b5cff');
+    // keep persona/memory in sync while the panel is open
+    refreshPersonaPanel(a.id);
+  }
+
+  // Read-only persona + recent memories for the open agent panel.
+  function refreshPersonaPanel(agentId) {
+    var body = $('panel-agent-persona-body');
+    if (!body) return;
+    clear(body);
+    var a = AGENTS() && AGENTS().byId ? AGENTS().byId(agentId) : null;
+    if (!a) return;
+
+    var p = a.persona || {};
+    var addField = function (key, val) {
+      val = (val == null ? '' : String(val)).trim();
+      if (!val) return;
+      var f = el('div', 'pe-field');
+      f.appendChild(el('div', 'pe-key', key));
+      f.appendChild(el('div', 'pe-val', val));
+      body.appendChild(f);
+    };
+    addField('Identity', p.identity);
+    addField('Plan', p.plan);
+    addField('Relationships', p.relationships);
+    if (!body.firstChild) body.appendChild(el('div', 'pe-empty', 'No persona defined.'));
+
+    // recent memories (latest ~8, newest first)
+    var memWrap = el('div', 'pe-field');
+    memWrap.appendChild(el('div', 'pe-key', 'Recent memory'));
+    var mems = Array.isArray(a.memories) ? a.memories : [];
+    if (!mems.length) {
+      memWrap.appendChild(el('div', 'pe-empty', 'No memories yet.'));
+    } else {
+      var recent = mems.slice(-8).reverse();
+      for (var i = 0; i < recent.length; i++) {
+        var m = recent[i] || {};
+        var line = el('div', 'pe-mem');
+        var imp = Math.round(Number(m.importance) || 0);
+        line.appendChild(el('span', 'pe-imp', '◆' + imp));
+        line.appendChild(document.createTextNode(String(m.text || '')));
+        memWrap.appendChild(line);
+      }
+    }
+    body.appendChild(memWrap);
   }
 
   function shortModel(m) {
@@ -882,6 +939,7 @@ window.App = window.App || {};
     if (sw) settings.webSearch = (sw.getAttribute('aria-checked') === 'true');
     if (App.Store && App.Store.save) App.Store.save();
     hide($('modal-settings'));
+    requestNotifyPermission(); // polite, one-time, on this user gesture
     UI.toast('Settings saved');
   }
 
@@ -1300,6 +1358,449 @@ window.App = window.App || {};
     };
     loop();
   }
+
+  // ===========================================================================
+  // ARTIFACTS  (badge + modal + per-item copy/download + store-only ZIP)
+  // ===========================================================================
+  var _arSel = null; // currently-viewed artifact id
+
+  UI.refreshArtifacts = function () {
+    var s = STATE();
+    var arts = (s && Array.isArray(s.artifacts)) ? s.artifacts : [];
+    var badge = $('artifacts-badge');
+    if (badge) {
+      badge.textContent = String(arts.length);
+      if (arts.length > 0) show(badge); else hide(badge);
+    }
+    // if the modal is open, re-render its list
+    if ($('modal-artifacts')) renderArtifactList();
+  };
+
+  UI.openArtifacts = function () {
+    var root = $('modal-root');
+    if (!root) { UI.toast('Artifacts unavailable'); return; }
+    var prev = $('modal-artifacts');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-artifacts';
+    var scrim = el('div', 'modal-scrim');
+    on(scrim, 'click', function () { closeArtifacts(); });
+
+    var card = el('div', 'modal-card');
+    card.appendChild(el('div', 'panel-accent'));
+
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', '📦 ARTIFACTS'));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', function () { closeArtifacts(); });
+    head.appendChild(x);
+
+    var bodyEl = el('div', 'modal-body');
+    var list = el('div', 'ar-list'); list.id = 'ar-list';
+    bodyEl.appendChild(list);
+    var viewerHead = el('div', 'ar-viewer-head hidden'); viewerHead.id = 'ar-viewer-head';
+    bodyEl.appendChild(viewerHead);
+    var viewer = el('pre', 'ar-viewer hidden'); viewer.id = 'ar-viewer';
+    bodyEl.appendChild(viewer);
+
+    var foot = el('footer', 'modal-foot');
+    var zipBtn = el('button', 'btn', '⤓ Download all (.zip)');
+    zipBtn.type = 'button';
+    on(zipBtn, 'click', function () { downloadAllZip(); });
+    var close = el('button', 'btn btn-primary', 'Close');
+    close.type = 'button';
+    on(close, 'click', function () { closeArtifacts(); });
+    foot.appendChild(zipBtn); foot.appendChild(close);
+
+    card.appendChild(head); card.appendChild(bodyEl); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+
+    _arSel = null;
+    renderArtifactList();
+  };
+
+  function closeArtifacts() {
+    var m = $('modal-artifacts');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+    _arSel = null;
+  }
+
+  function renderArtifactList() {
+    var list = $('ar-list');
+    if (!list) return;
+    clear(list);
+    var s = STATE();
+    var arts = (s && Array.isArray(s.artifacts)) ? s.artifacts : [];
+    if (!arts.length) {
+      list.appendChild(el('div', 'ar-empty', 'No artifacts yet. Dispatch a goal — workers emit code/docs/data here.'));
+      hideArtifactViewer();
+      return;
+    }
+    for (var i = arts.length - 1; i >= 0; i--) { // newest first
+      (function (art) {
+        var item = el('div', 'ar-item');
+        if (_arSel === art.id) item.classList.add('active');
+        item.appendChild(el('span', 'ar-type', art.type || 'text'));
+        item.appendChild(el('span', 'ar-name', art.name || '(unnamed)'));
+        var a = AGENTS() && AGENTS().byId ? AGENTS().byId(art.agentId) : null;
+        var sz = byteLen(art.content || '');
+        item.appendChild(el('span', 'ar-meta', (a ? a.name + ' · ' : '') + humanSize(sz)));
+        on(item, 'click', function () { viewArtifact(art.id); });
+        list.appendChild(item);
+      })(arts[i]);
+    }
+  }
+
+  function findArtifact(id) {
+    var s = STATE();
+    var arts = (s && Array.isArray(s.artifacts)) ? s.artifacts : [];
+    for (var i = 0; i < arts.length; i++) if (arts[i] && arts[i].id === id) return arts[i];
+    return null;
+  }
+
+  function hideArtifactViewer() {
+    hide($('ar-viewer')); hide($('ar-viewer-head'));
+  }
+
+  function viewArtifact(id) {
+    _arSel = id;
+    var art = findArtifact(id);
+    var viewer = $('ar-viewer');
+    var vhead = $('ar-viewer-head');
+    if (!art || !viewer || !vhead) return;
+    show(viewer); show(vhead);
+    viewer.textContent = String(art.content || '');
+    clear(vhead);
+    vhead.appendChild(el('span', 'ar-viewer-name', art.name || '(unnamed)'));
+    var copy = el('button', 'btn btn-sq', '⧉'); copy.type = 'button'; copy.title = 'Copy';
+    on(copy, 'click', function () {
+      try { if (navigator.clipboard) navigator.clipboard.writeText(art.content || ''); UI.toast('Copied ' + art.name); } catch (e) {}
+    });
+    var dl = el('button', 'btn btn-sq', '⤓'); dl.type = 'button'; dl.title = 'Download';
+    on(dl, 'click', function () { downloadOne(art); });
+    vhead.appendChild(copy); vhead.appendChild(dl);
+    renderArtifactList(); // re-mark active
+  }
+
+  function downloadOne(art) {
+    try {
+      var blob = new Blob([String(art.content || '')], { type: 'text/plain' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = safeFilename(art.name || 'artifact.txt');
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    } catch (e) { UI.showError('Download failed: ' + (e && e.message)); }
+  }
+
+  function downloadAllZip() {
+    var s = STATE();
+    var arts = (s && Array.isArray(s.artifacts)) ? s.artifacts : [];
+    if (!arts.length) { UI.toast('No artifacts to download'); return; }
+    try {
+      // dedupe filenames so the zip is valid
+      var used = {};
+      var files = [];
+      for (var i = 0; i < arts.length; i++) {
+        var nm = safeFilename(arts[i].name || ('artifact-' + i + '.txt'));
+        if (used[nm]) {
+          var dot = nm.lastIndexOf('.');
+          var base = dot > 0 ? nm.slice(0, dot) : nm;
+          var ext = dot > 0 ? nm.slice(dot) : '';
+          var k = used[nm];
+          while (used[base + '-' + k + ext]) k++;
+          used[nm] = k + 1;
+          nm = base + '-' + k + ext;
+        }
+        used[nm] = (used[nm] || 0) + 1;
+        files.push({ name: nm, data: utf8Bytes(String(arts[i].content || '')) });
+      }
+      var zip = makeStoreZip(files);
+      var blob = new Blob([zip], { type: 'application/zip' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'neon-works-artifacts-' + Date.now() + '.zip';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      UI.toast('Downloaded ' + files.length + ' artifact(s)');
+    } catch (e) { UI.showError('ZIP failed: ' + (e && e.message)); }
+  }
+
+  // ---- inline store-only (no-compression) ZIP writer -----------------------
+  // CRC32 table.
+  var _crcTable = null;
+  function crc32(bytes) {
+    if (!_crcTable) {
+      _crcTable = [];
+      for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        _crcTable[n] = c >>> 0;
+      }
+    }
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ _crcTable[(crc ^ bytes[i]) & 0xFF];
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  function utf8Bytes(str) {
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str);
+    // fallback manual UTF-8 encode
+    var out = [];
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) { out.push(0xC0 | (c >> 6), 0x80 | (c & 0x3F)); }
+      else { out.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F)); }
+    }
+    return new Uint8Array(out);
+  }
+  // build a store-only zip from [{name, data:Uint8Array}]
+  function makeStoreZip(files) {
+    var chunks = [];     // local records
+    var central = [];    // central dir records
+    var offset = 0;
+    function u16(n) { return [n & 0xFF, (n >>> 8) & 0xFF]; }
+    function u32(n) { return [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF]; }
+    for (var i = 0; i < files.length; i++) {
+      var nameBytes = utf8Bytes(files[i].name);
+      var data = files[i].data;
+      var crc = crc32(data);
+      var local = [].concat(
+        u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0),
+        u32(crc), u32(data.length), u32(data.length),
+        u16(nameBytes.length), u16(0)
+      );
+      chunks.push(new Uint8Array(local));
+      chunks.push(nameBytes);
+      chunks.push(data);
+      var cen = [].concat(
+        u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+        u32(crc), u32(data.length), u32(data.length),
+        u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0),
+        u32(0), u32(offset)
+      );
+      central.push({ head: new Uint8Array(cen), name: nameBytes });
+      offset += local.length + nameBytes.length + data.length;
+    }
+    var centralStart = offset;
+    var centralSize = 0;
+    for (var j = 0; j < central.length; j++) {
+      chunks.push(central[j].head);
+      chunks.push(central[j].name);
+      centralSize += central[j].head.length + central[j].name.length;
+    }
+    var end = [].concat(
+      u32(0x06054b50), u16(0), u16(0),
+      u16(files.length), u16(files.length),
+      u32(centralSize), u32(centralStart), u16(0)
+    );
+    chunks.push(new Uint8Array(end));
+    // concat all chunks
+    var total = 0;
+    for (var k = 0; k < chunks.length; k++) total += chunks[k].length;
+    var out = new Uint8Array(total);
+    var pos = 0;
+    for (var m = 0; m < chunks.length; m++) { out.set(chunks[m], pos); pos += chunks[m].length; }
+    return out;
+  }
+
+  function safeFilename(name) {
+    return String(name || 'file.txt').replace(/[\/\\:*?"<>|]+/g, '_').replace(/^\.+/, '').slice(0, 120) || 'file.txt';
+  }
+  function byteLen(str) { return utf8Bytes(String(str || '')).length; }
+  function humanSize(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(1) + ' MB';
+  }
+
+  // ===========================================================================
+  // ATTENTION badge · COMPLETION chime · NOTIFICATION
+  // ===========================================================================
+  // setAttentionBadge(n) — reflect attention-needing agent count in the tab title.
+  UI.setAttentionBadge = function (n) {
+    if (typeof document === 'undefined') return;
+    n = Math.max(0, Number(n) || 0);
+    try { document.title = (n > 0 ? '(' + n + ') ' : '') + 'NEON//WORKS'; } catch (e) {}
+  };
+
+  var _audioCtx = null;
+  function getAudioCtx() {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!_audioCtx) _audioCtx = new AC();
+      if (_audioCtx.state === 'suspended' && _audioCtx.resume) { try { _audioCtx.resume(); } catch (e) {} }
+      return _audioCtx;
+    } catch (e) { return null; }
+  }
+  function playChime() {
+    var ctx = getAudioCtx();
+    if (!ctx) return;
+    try {
+      var now = ctx.currentTime;
+      var tones = [880, 1320]; // two-tone
+      for (var i = 0; i < tones.length; i++) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = tones[i];
+        var t0 = now + i * 0.12;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(t0); osc.stop(t0 + 0.24);
+      }
+    } catch (e) {}
+  }
+
+  function requestNotifyPermission() {
+    try {
+      if (typeof Notification === 'undefined') return;
+      if (Notification.permission === 'default' && Notification.requestPermission) {
+        var r = Notification.requestPermission();
+        if (r && r.catch) r.catch(function () {});
+      }
+    } catch (e) {}
+  }
+
+  // notifyDone(rootTask) — chime (if enabled), OS notification (if granted),
+  // and clear the attention tab badge.
+  UI.notifyDone = function (rootTask) {
+    var s = STATE();
+    var settings = (s && s.settings) || {};
+    if (settings.sound !== false) playChime(); // default-on
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        var title = (rootTask && (rootTask.title || rootTask.desc)) ? truncate(rootTask.title || rootTask.desc, 60) : 'Goal complete';
+        new Notification('NEON//WORKS — done', { body: title });
+      }
+    } catch (e) {}
+    UI.setAttentionBadge(0);
+  };
+
+  // ===========================================================================
+  // MINIMAP — overview render + click-to-center
+  // ===========================================================================
+  UI.drawMinimap = function () {
+    var canvas = $('minimap');
+    if (!canvas || !canvas.getContext) return;
+    var s = STATE();
+    var w = WORLD();
+    var cfg = CFG();
+    if (!s || !s.layout) return;
+    var ctx = canvas.getContext('2d');
+    var cw = canvas.width, ch = canvas.height;
+    var L = s.layout;
+    var cols = L.cols || cfg.GRID_COLS || 46;
+    var rows = L.rows || cfg.GRID_ROWS || 30;
+    var TILE = cfg.TILE || 16;
+    var worldW = cols * TILE, worldH = rows * TILE;
+
+    // fit world into canvas with letterboxing
+    var pad = 4;
+    var scale = Math.min((cw - pad * 2) / worldW, (ch - pad * 2) / worldH);
+    if (!(scale > 0)) return;
+    var offX = (cw - worldW * scale) / 2;
+    var offY = (ch - worldH * scale) / 2;
+    var wx = function (x) { return offX + x * scale; };
+    var wy = function (y) { return offY + y * scale; };
+
+    var pal = (cfg.palette) || {};
+    try {
+      ctx.clearRect(0, 0, cw, ch);
+      // floor backdrop
+      ctx.fillStyle = pal.floor || '#0d1226';
+      ctx.fillRect(offX, offY, worldW * scale, worldH * scale);
+      ctx.strokeStyle = pal.gridLine || '#1c2b55';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(offX + 0.5, offY + 0.5, worldW * scale, worldH * scale);
+
+      // furniture bounds
+      var furn = L.furniture || [];
+      ctx.fillStyle = 'rgba(46,87,184,.55)';
+      for (var fi = 0; fi < furn.length; fi++) {
+        var f = furn[fi]; if (!f) continue;
+        var fx = (f.gx || 0) * TILE, fy = (f.gy || 0) * TILE;
+        var fw = (f.w || 1) * TILE, fh = (f.h || 1) * TILE;
+        ctx.fillRect(wx(fx), wy(fy), Math.max(1, fw * scale), Math.max(1, fh * scale));
+      }
+
+      // agent dots (role colors)
+      var agents = s.agents || [];
+      for (var ai = 0; ai < agents.length; ai++) {
+        var a = agents[ai]; if (!a) continue;
+        var ax = (typeof a.x === 'number') ? a.x : (a.gx || 0) * TILE;
+        var ay = (typeof a.y === 'number') ? a.y : (a.gy || 0) * TILE;
+        var col = a.color || ((ROLES()[a.role] && ROLES()[a.role].color)) || '#9b5cff';
+        ctx.fillStyle = col;
+        var px = wx(ax), py = wy(ay);
+        ctx.beginPath();
+        ctx.arc(px, py, (s._followId === a.id) ? 3 : 2, 0, Math.PI * 2);
+        ctx.fill();
+        if (s.selectedAgentId === a.id) {
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+
+      // viewport rectangle (current camera view)
+      if (w && w.screenToWorld) {
+        var canvasEl = $('world-canvas');
+        var vw = canvasEl ? (canvasEl.clientWidth || canvasEl.width) : 0;
+        var vh = canvasEl ? (canvasEl.clientHeight || canvasEl.height) : 0;
+        var tl = w.screenToWorld(0, 0);
+        var br = w.screenToWorld(vw, vh);
+        if (tl && br) {
+          ctx.strokeStyle = pal.cyan || '#39d7ff';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(wx(tl.x) + 0.5, wy(tl.y) + 0.5,
+            Math.max(2, (br.x - tl.x) * scale), Math.max(2, (br.y - tl.y) * scale));
+        }
+      }
+    } catch (e) {}
+  };
+
+  UI.onMinimapPointerDown = function (e) {
+    var canvas = $('minimap');
+    var s = STATE();
+    var w = WORLD();
+    var cfg = CFG();
+    if (!canvas || !s || !s.layout) return;
+    var L = s.layout;
+    var cols = L.cols || cfg.GRID_COLS || 46;
+    var rows = L.rows || cfg.GRID_ROWS || 30;
+    var TILE = cfg.TILE || 16;
+    var worldW = cols * TILE, worldH = rows * TILE;
+    var cw = canvas.width, ch = canvas.height;
+    var pad = 4;
+    var scale = Math.min((cw - pad * 2) / worldW, (ch - pad * 2) / worldH);
+    if (!(scale > 0)) return;
+    var offX = (cw - worldW * scale) / 2;
+    var offY = (ch - worldH * scale) / 2;
+
+    var rect = canvas.getBoundingClientRect();
+    // account for CSS-vs-buffer scaling
+    var sx = (e.clientX - rect.left) * (cw / (rect.width || cw));
+    var sy = (e.clientY - rect.top) * (ch / (rect.height || ch));
+    var worldX = (sx - offX) / scale;
+    var worldY = (sy - offY) / scale;
+
+    // center camera on that world point
+    if (s.camera) {
+      s._followId = null; // a manual minimap jump cancels follow
+      var canvasEl = $('world-canvas');
+      var vw = canvasEl ? (canvasEl.clientWidth || canvasEl.width) : 0;
+      var vh = canvasEl ? (canvasEl.clientHeight || canvasEl.height) : 0;
+      var pps = (cfg.PIXEL || 3) * s.camera.zoom;
+      s.camera.x = worldX - (vw / 2) / pps;
+      s.camera.y = worldY - (vh / 2) / pps;
+      if (w && w.clampCamera) w.clampCamera();
+    }
+  };
 
   // ===========================================================================
   // PUBLISH + §7.10 compat alias

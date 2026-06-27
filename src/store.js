@@ -125,7 +125,91 @@ window.App = window.App || {};
       bossModel: c.BOSS_MODEL || 'claude-opus-4-8',
       webSearch: true,
       theme: 'neon',
+      sound: true,            // v3: completion chime on/off
+      liveChatter: false,     // v3: watercooler uses an LLM call when true; canned lines when false
     };
+  }
+
+  // v3: cap helper for memory/artifact arrays.
+  function artifactMax() {
+    var n = cfg().ARTIFACT_MAX;
+    return (typeof n === 'number' && n > 0) ? n : 200;
+  }
+
+  // v3: persona default from ROLES[role].persona (or a generic shape). Always
+  // returns the {identity, plan, relationships} string-triple, never throws.
+  function defaultPersona(role) {
+    var roles = rolesTable();
+    var p = (roles[role] && roles[role].persona) ||
+            (roles.generalist && roles.generalist.persona) || null;
+    if (p && typeof p === 'object') {
+      return {
+        identity: String(p.identity || ''),
+        plan: String(p.plan || ''),
+        relationships: String(p.relationships || ''),
+      };
+    }
+    return { identity: '', plan: '', relationships: '' };
+  }
+
+  // v3: sanitize a persisted persona blob into the string-triple.
+  function normalizePersona(p, role) {
+    if (!p || typeof p !== 'object') return defaultPersona(role);
+    return {
+      identity: String(p.identity || ''),
+      plan: String(p.plan || ''),
+      relationships: String(p.relationships || ''),
+    };
+  }
+
+  // v3: sanitize a persisted memories array into MemoryEntry[] (cap 50).
+  function normalizeMemories(arr) {
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var m = arr[i];
+      if (!m || typeof m !== 'object') continue;
+      var imp = (typeof m.importance === 'number') ? m.importance : 0;
+      imp = clamp(imp, 0, 10);
+      out.push({
+        t: (typeof m.t === 'number') ? m.t : nowMs(),
+        text: (m.text == null) ? '' : String(m.text),
+        importance: imp,
+      });
+    }
+    if (out.length > 50) out = out.slice(out.length - 50);
+    return out;
+  }
+
+  // v3: sanitize one Artifact for persistence/load.
+  function normalizeArtifact(a) {
+    if (!a || typeof a !== 'object') return null;
+    var type = a.type;
+    if (type !== 'code' && type !== 'markdown' && type !== 'data' && type !== 'text') {
+      type = 'text';
+    }
+    return {
+      id: a.id || uid('art'),
+      name: (a.name == null) ? 'artifact' : String(a.name),
+      type: type,
+      content: (a.content == null) ? '' : String(a.content),
+      taskId: (a.taskId == null) ? null : String(a.taskId),
+      agentId: (a.agentId == null) ? null : String(a.agentId),
+      t: (typeof a.t === 'number') ? a.t : nowMs(),
+    };
+  }
+
+  // v3: normalize + cap an artifacts array (keep most recent ARTIFACT_MAX).
+  function normalizeArtifacts(arr) {
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var na = normalizeArtifact(arr[i]);
+      if (na) out.push(na);
+    }
+    var cap = artifactMax();
+    if (out.length > cap) out = out.slice(out.length - cap);
+    return out;
   }
 
   // 빈/안전한 기본 레이아웃(World가 아직 없을 때의 최후 폴백).
@@ -162,6 +246,7 @@ window.App = window.App || {};
       agents: [],
       tasks: [],
       log: [],
+      artifacts: [],          // v3: Artifact[] (persisted, capped at ARTIFACT_MAX)
       camera: defaultCamera(),
       layout: emptyLayout(),
       settings: defaultSettings(),
@@ -173,6 +258,7 @@ window.App = window.App || {};
       _time: 0,
       _meetingActive: false,
       _activeStreams: {},
+      _followId: null,        // v3: agent id the camera follows (runtime-only)
     };
   }
 
@@ -188,6 +274,7 @@ window.App = window.App || {};
     if (!Array.isArray(s.agents)) s.agents = [];
     if (!Array.isArray(s.tasks)) s.tasks = [];
     if (!Array.isArray(s.log)) s.log = [];
+    if (!Array.isArray(s.artifacts)) s.artifacts = [];
     if (!s.camera || typeof s.camera !== 'object') s.camera = def.camera;
     if (!s.layout || typeof s.layout !== 'object') s.layout = def.layout;
     if (!s.settings || typeof s.settings !== 'object') s.settings = def.settings;
@@ -197,6 +284,7 @@ window.App = window.App || {};
     if (typeof s._time !== 'number') s._time = 0;
     if (typeof s._meetingActive === 'undefined') s._meetingActive = false;
     if (!s._activeStreams || typeof s._activeStreams !== 'object') s._activeStreams = {};
+    if (typeof s._followId === 'undefined') s._followId = null;
     return s;
   }
 
@@ -253,8 +341,12 @@ window.App = window.App || {};
         : { tasksDone: 0, tokensIn: 0, tokensOut: 0 },
       busy: false,
       temp: false,            // temp agents are never persisted; loaded ones are permanent
+      // v3: persona + memories (default from ROLES if absent on disk)
+      persona: normalizePersona(a.persona, role),
+      memories: normalizeMemories(a.memories),
       _idleSince: 0,
       _onArrive: null,
+      _attention: false,      // v3: runtime-only attention marker
     };
     return agent;
   }
@@ -286,7 +378,10 @@ window.App = window.App || {};
             tokensOut: a.stats.tokensOut || 0,
           }
         : { tasksDone: 0, tokensIn: 0, tokensOut: 0 },
-      // STRIPPED: x,y,path,anim,bubble,busy,temp,_idleSince,_onArrive
+      // v3: persist persona + memories (so accumulated context survives reload)
+      persona: normalizePersona(a.persona, a.role),
+      memories: normalizeMemories(a.memories),
+      // STRIPPED: x,y,path,anim,bubble,busy,temp,_idleSince,_onArrive,_attention
     };
   }
 
@@ -307,6 +402,7 @@ window.App = window.App || {};
       createdAt: t.createdAt || nowMs(),
       role: t.role || 'generalist',
       needsWeb: !!t.needsWeb,
+      verify: !!t.verify,   // v3: keep the QA-gate flag so it survives reload (DAG dep order is lossy on mid-run reload — acceptable)
       // STRIPPED: _ctrl and any _*
     };
   }
@@ -347,6 +443,9 @@ window.App = window.App || {};
     // log: cap last 500
     var log = Array.isArray(s.log) ? s.log.slice(-500) : [];
 
+    // v3: artifacts — normalize + cap (deep cloned via normalize copy)
+    var artifacts = normalizeArtifacts(s.artifacts);
+
     // layout: deep clone so we never persist live references
     var layout = deepClone(s.layout) || emptyLayout();
 
@@ -359,11 +458,12 @@ window.App = window.App || {};
       agents: agents,
       tasks: tasks,
       log: log,
+      artifacts: artifacts,
       layout: layout,
       settings: settings,
       selectedAgentId: s.selectedAgentId || null,
       camera: clampCameraValue(s.camera),
-      // NOT persisted: _time,_meetingActive,_activeStreams, layoutEdit, paused
+      // NOT persisted: _time,_meetingActive,_activeStreams,_followId, layoutEdit, paused
     };
     return blob;
   }
@@ -422,6 +522,7 @@ window.App = window.App || {};
         createdAt: rt.createdAt || nowMs(),
         role: rt.role || 'generalist',
         needsWeb: !!rt.needsWeb,
+        verify: !!rt.verify,   // v3: restore QA-gate flag
         _ctrl: null,
       });
     }
@@ -436,6 +537,12 @@ window.App = window.App || {};
       var e = capped[li];
       if (e && typeof e === 'object') s.log.push(e);
     }
+
+    // --- artifacts (normalize + cap) ---
+    var rebuiltArtifacts = normalizeArtifacts(blob.artifacts);
+    if (!Array.isArray(s.artifacts)) s.artifacts = [];
+    s.artifacts.length = 0;
+    for (var aj = 0; aj < rebuiltArtifacts.length; aj++) s.artifacts.push(rebuiltArtifacts[aj]);
 
     // --- settings (merge over defaults) ---
     s.settings = Object.assign(defaultSettings(), (blob.settings && typeof blob.settings === 'object') ? blob.settings : {});
@@ -461,6 +568,7 @@ window.App = window.App || {};
     s._time = 0;
     s._meetingActive = false;
     s._activeStreams = {};
+    s._followId = null;       // v3: never restore camera-follow from disk
 
     return s;
   }
@@ -484,10 +592,23 @@ window.App = window.App || {};
       if (v === target) return blob;
 
       // v0 (unversioned legacy) -> v1: nothing structural to change yet; stamp it.
-      // Future versions: add stepwise upgrades here (v1->v2, etc.).
       if (v < 1) {
         blob.v = 1;
         v = 1;
+      }
+      // v1 -> v2 (v3 feature set): artifacts/persona/memories + new settings.
+      // All new fields are filled with safe defaults by applyBlob/rebuildAgent's
+      // normalizers, so this step is a forward no-op beyond ensuring the shapes
+      // exist on the blob (defensive; old saves simply gain defaults on load).
+      if (v < 2) {
+        if (!Array.isArray(blob.artifacts)) blob.artifacts = [];
+        if (blob.settings && typeof blob.settings === 'object') {
+          if (typeof blob.settings.sound === 'undefined') blob.settings.sound = true;
+          if (typeof blob.settings.liveChatter === 'undefined') blob.settings.liveChatter = false;
+        }
+        // agent.persona/memories left absent here -> rebuildAgent supplies defaults.
+        blob.v = 2;
+        v = 2;
       }
       // Always stamp to current after running known steps.
       blob.v = target;
@@ -554,8 +675,13 @@ window.App = window.App || {};
       stats: { tasksDone: 0, tokensIn: 0, tokensOut: 0 },
       busy: false,
       temp: !!spec.temp,
+      // v3: persona + memories (Agents.create normally owns this; mirror here for
+      // the inline fallback so store-only seeding still produces complete agents)
+      persona: normalizePersona(spec.persona, role),
+      memories: Array.isArray(spec.memories) ? normalizeMemories(spec.memories) : [],
       _idleSince: 0,
       _onArrive: null,
+      _attention: false,
     };
     s.agents.push(agent);
     return agent;
@@ -592,6 +718,8 @@ window.App = window.App || {};
       s.agents.length = 0;
       s.tasks.length = 0;
       s.log.length = 0;
+      if (!Array.isArray(s.artifacts)) s.artifacts = [];
+      s.artifacts.length = 0;
       s.settings = defaultSettings();
       s.camera = defaultCamera();
       s.selectedAgentId = null;
@@ -600,6 +728,7 @@ window.App = window.App || {};
       s._time = 0;
       s._meetingActive = false;
       s._activeStreams = {};
+      s._followId = null;
 
       // 3) place the 4 default agents at desks (§9: boss, engineer, designer, researcher)
       var collected = collectDeskSeats(s.layout);
@@ -778,7 +907,7 @@ window.App = window.App || {};
     } catch (e) {
       logErr('exportJSON', e);
       // 빈 회사라도 유효한 JSON 반환
-      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
+      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
     }
   }
 

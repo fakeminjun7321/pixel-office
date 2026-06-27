@@ -688,6 +688,88 @@ select option{ background:var(--panel); color:var(--text); }
   box-shadow:inset 0 0 24px rgba(0,0,0,.45);
 }
 
+/* =========================================================================
+   v3: HUD count badge (Artifacts), minimap, persona/memory, artifacts modal
+   ========================================================================= */
+
+/* small neon count badge that rides on a HUD button */
+.hud-badge{
+  font-size:9px; font-weight:800; line-height:1;
+  min-width:15px; padding:2px 4px; border-radius:8px;
+  color:#04121c; background:var(--cyan);
+  box-shadow:0 0 8px rgba(57,215,255,.5);
+}
+
+/* ---- minimap (bottom-right overview) ---------------------------------- */
+#minimap-wrap{
+  position:absolute; z-index:35; right:calc(var(--rail-w) + 24px); bottom:12px;
+  padding:5px; background:rgba(11,16,36,.92);
+  border:1px solid var(--panel-edge); border-radius:var(--radius);
+  box-shadow:0 8px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(57,215,255,.10);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+  line-height:0;
+}
+#minimap{
+  display:block; width:180px; height:120px;
+  image-rendering:pixelated; cursor:pointer; border-radius:3px;
+  background:var(--void);
+}
+@media (max-width:900px){ #minimap-wrap{ right:12px; } }
+
+/* ---- persona / memory section in agent panel -------------------------- */
+.persona-box{
+  flex:0 0 auto; margin:0 10px; padding:0;
+  background:var(--field); border:1px solid var(--divider); border-radius:5px;
+}
+.persona-summary{
+  cursor:pointer; list-style:none; padding:7px 10px;
+  font-size:9.5px; font-weight:800; letter-spacing:1px; text-transform:uppercase;
+  color:var(--text-dim); user-select:none;
+}
+.persona-summary::-webkit-details-marker{ display:none; }
+.persona-summary::after{ content:'▸'; float:right; color:var(--text-faint); transition:transform .12s; }
+.persona-box[open] .persona-summary::after{ transform:rotate(90deg); }
+.persona-summary:hover{ color:var(--cyan); }
+.persona-body{ padding:0 10px 10px; max-height:180px; overflow-y:auto; }
+.pe-field{ margin-bottom:8px; }
+.pe-key{ font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--text-faint); margin-bottom:2px; }
+.pe-val{ font-size:11px; color:var(--text); white-space:pre-wrap; word-break:break-word; line-height:1.4; }
+.pe-mem{
+  font-size:10.5px; color:var(--text-dim); line-height:1.45;
+  padding:3px 0 3px 8px; border-left:2px solid var(--purple); margin-bottom:4px;
+}
+.pe-mem .pe-imp{ color:var(--amber); font-weight:700; font-size:9px; margin-right:5px; }
+.pe-empty{ font-size:10px; color:var(--text-faint); padding:4px 0; }
+
+/* ---- artifacts modal list + viewer ------------------------------------ */
+.ar-list{ display:flex; flex-direction:column; gap:7px; }
+.ar-item{
+  display:flex; align-items:center; gap:9px;
+  padding:8px 10px; cursor:pointer;
+  background:var(--btn); border:1px solid var(--panel-edge); border-radius:5px;
+  border-left:3px solid var(--cyan);
+  transition:background .12s, border-color .12s, transform .06s;
+}
+.ar-item:hover{ background:var(--btn-hover); border-color:var(--cyan); transform:translateX(2px); }
+.ar-item.active{ box-shadow:0 0 0 1px var(--cyan), var(--glow-cyan-soft); }
+.ar-name{ flex:1 1 auto; min-width:0; font-size:12px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ar-meta{ flex:0 0 auto; font-size:9.5px; color:var(--text-faint); letter-spacing:.3px; }
+.ar-type{
+  flex:0 0 auto; font-size:9px; font-weight:700; text-transform:uppercase;
+  padding:1px 7px; border-radius:8px; color:var(--cyan);
+  border:1px solid rgba(57,215,255,.4); background:rgba(57,215,255,.08);
+}
+.ar-viewer{
+  margin-top:12px; font-family:var(--mono); font-size:12px; line-height:1.55; color:var(--text);
+  white-space:pre-wrap; word-break:break-word; max-height:40vh; overflow:auto; margin-bottom:0;
+  padding:12px 14px; background:var(--floor);
+  border:1px solid var(--panel-edge); border-radius:6px;
+  box-shadow:inset 0 0 24px rgba(0,0,0,.45);
+}
+.ar-viewer-head{ display:flex; align-items:center; gap:9px; margin-top:12px; }
+.ar-viewer-name{ flex:1 1 auto; min-width:0; font-size:11px; font-weight:700; color:var(--cyan); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ar-empty{ color:var(--text-faint); font-size:11px; text-align:center; padding:24px 8px; }
+
 /* reduced motion: calm all the loops */
 @media (prefers-reduced-motion:reduce){
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,
@@ -758,6 +840,9 @@ select option{ background:var(--panel); color:var(--text); }
       <button id="btn-settings"    class="btn"        type="button" title="Settings">
         <span class="btn-ico">⚙</span><span class="btn-lbl">Settings</span>
       </button>
+      <button id="btn-artifacts"   class="btn"        type="button" title="Artifacts produced by agents">
+        <span class="btn-ico">📦</span><span class="btn-lbl">Artifacts</span><span id="artifacts-badge" class="hud-badge hidden">0</span>
+      </button>
 
       <span class="hud-sep" aria-hidden="true"></span>
 
@@ -810,6 +895,14 @@ select option{ background:var(--panel); color:var(--text); }
       </div>
       <button id="panel-agent-close" class="panel-x" type="button" title="Close" aria-label="Close panel">✕</button>
     </header>
+
+    <!-- Persona / memory (read-only) — filled by App.UI.refreshPersonaPanel() -->
+    <details id="panel-agent-persona" class="persona-box">
+      <summary class="persona-summary">PERSONA &amp; MEMORY</summary>
+      <div id="panel-agent-persona-body" class="persona-body">
+        <!-- identity / plan / relationships + recent memories injected here -->
+      </div>
+    </details>
 
     <div id="panel-agent-transcript" class="transcript" aria-live="polite">
       <!-- chat turns injected by App.UI.appendTranscript() -->
@@ -1009,6 +1102,14 @@ select option{ background:var(--panel); color:var(--text); }
        ================================================================== -->
   <div id="toast" aria-live="assertive" aria-atomic="true"></div>
 
+  <!-- ==================================================================
+       MINIMAP (#minimap-wrap) — overview of the office + viewport rect.
+       App.UI.drawMinimap() paints it each frame; pointerdown centers camera.
+       ================================================================== -->
+  <div id="minimap-wrap" aria-label="Minimap">
+    <canvas id="minimap" width="180" height="120"></canvas>
+  </div>
+
 </div><!-- /#app -->
 <script>
 // =============================================================================
@@ -1168,10 +1269,90 @@ window.App = window.App || {};
 'Handle whatever the instruction asks as competently as possible, end-to-end. Produce the real deliverable.\n' +
 'RESULT: line = one-sentence summary of what you delivered.';
 
-  // worker system = preamble + "\n\n" + body
-  function worker(body) { return WORKER_PREAMBLE + '\n\n' + body; }
+  // ---------------------------------------------------------------------------
+  // v3 §ARTIFACTS — appended to every worker instruction so concrete deliverables
+  // are emitted as fenced ```artifact:<filename.ext>``` blocks the Orchestrator
+  // can harvest. Also reinforces the trailing one-line RESULT: summary.
+  // ---------------------------------------------------------------------------
+  var WORKER_ARTIFACT_HINT =
+'\n\nDELIVERABLE FORMAT:\n' +
+'- If your task produces ANY concrete deliverable (code, a document, structured data, a config file),\n' +
+'  emit it as a fenced block whose info-string is "artifact:" + a sensible filename WITH extension, e.g.:\n' +
+'  ```artifact:login.js\n' +
+'  // the actual code here\n' +
+'  ```\n' +
+'  or  ```artifact:spec.md\n' +
+'  # the actual document here\n' +
+'  ```\n' +
+'  Put the FULL final content inside the block — not a snippet or a description of it.\n' +
+'- Use one artifact block per distinct file. Plain prose/analysis can stay outside any block.\n' +
+'- ALWAYS finish your message with a final line:  RESULT: <one-line summary of what you delivered>.';
+
+  // ---------------------------------------------------------------------------
+  // v3 §QA LOOP — system prompt for the QA reviewer pass. The reviewer reads a
+  // worker's deliverable and MUST reply with EXACTLY one of the two forms below
+  // so the Orchestrator can parse PASS/FAIL deterministically (reuse resultLine).
+  // ---------------------------------------------------------------------------
+  var QA_REVIEW_SYSTEM =
+'You are a strict QA reviewer inside an autonomous AI company. You are given ONE worker deliverable.\n' +
+'Judge it for correctness, completeness, and whether it actually satisfies the stated task — nothing else.\n' +
+'Be pragmatic: a deliverable that is correct and complete PASSES even if it could be marginally nicer.\n' +
+'Only FAIL for real, fixable defects (bugs, missing required pieces, factual/logical errors, broken format).\n' +
+'\n' +
+'You MUST reply with EXACTLY one line and NOTHING ELSE, in one of these two forms:\n' +
+'RESULT: PASS\n' +
+'RESULT: FAIL — <specific, actionable feedback the worker can act on in one revision>\n' +
+'\n' +
+'Do not add any other text, headings, markdown, or explanation. The feedback after "FAIL — " must be\n' +
+'concrete (quote the offending part, name the missing piece, give the exact fix).';
+
+  // worker system = preamble + "\n\n" + body  (artifact hint appended so EVERY worker emits artifacts)
+  function worker(body) { return WORKER_PREAMBLE + '\n\n' + body + WORKER_ARTIFACT_HINT; }
+
+  // ---------------------------------------------------------------------------
+  // v3 §6 ROLES[*].persona — short identity / plan / relationships strings used
+  // for agent flavor + memory-prompt prepends. Sensible defaults per role.
+  // ---------------------------------------------------------------------------
+  var PERSONAS = {
+    boss: {
+      identity: 'You are the Boss — the calm, decisive orchestrator who turns a fuzzy goal into a crisp plan.',
+      plan: 'Decompose, delegate to the right specialists, then synthesize their work into one clean answer.',
+      relationships: 'You trust your team; you push the engineer for rigor, the qa for honesty, and keep everyone unblocked.'
+    },
+    engineer: {
+      identity: 'You are the Engineer — pragmatic, precise, and allergic to hand-waving. You ship working code.',
+      plan: 'Read the spec, pick the simplest correct approach, write tight self-contained code, note assumptions.',
+      relationships: 'You respect the designer\'s specs, lean on the researcher for facts, and brace for QA\'s nitpicks.'
+    },
+    designer: {
+      identity: 'You are the Designer — visual, user-obsessed, exact with tokens (hex, px, spacing) not adjectives.',
+      plan: 'Anchor every choice to a user goal, give concrete layouts/specs the engineer can implement directly.',
+      relationships: 'You hand clean specs to the engineer and trade taste opinions with the writer.'
+    },
+    researcher: {
+      identity: 'You are the Researcher — curious, skeptical, and careful to separate sourced fact from inference.',
+      plan: 'Gather current, accurate info; cite sources; surface the most decision-relevant findings first.',
+      relationships: 'You feed facts to the writer and engineer and flag anything time-sensitive to the Boss.'
+    },
+    writer: {
+      identity: 'You are the Writer — clear, structured, and ruthless about cutting filler and clichés.',
+      plan: 'Match audience and tone, build strong scannable structure, preserve every fact from your inputs.',
+      relationships: 'You polish the researcher\'s findings and the engineer\'s notes into prose people actually read.'
+    },
+    qa: {
+      identity: 'You are QA — the loyal skeptic. Your job is to catch what everyone else missed.',
+      plan: 'Stress-test deliverables for correctness, completeness, and edge cases; give the minimal fix.',
+      relationships: 'You hold the engineer and designer to a high bar; the Boss relies on your honest verdict.'
+    },
+    generalist: {
+      identity: 'You are a Generalist Operator — versatile and reliable, you take any task end-to-end.',
+      plan: 'Understand the ask, pick a sensible approach, and produce the real deliverable without fuss.',
+      relationships: 'You fill gaps for the whole team and adapt to whatever the Boss needs next.'
+    }
+  };
 
   // §6.3 BOSS_DECOMPOSE_SYSTEM (Boss turn A — stored as ROLES.boss.system).
+  // v3: EXTENDED so each subtask may declare optional "deps" (DAG) and "verify" (QA loop).
   var BOSS_DECOMPOSE_SYSTEM =
 'You are the BOSS / orchestrator of an autonomous AI company. The user gives you ONE high-level goal.\n' +
 'Your job is ONLY to break it into focused subtasks for your worker agents and to plan the final synthesis.\n' +
@@ -1194,7 +1375,9 @@ window.App = window.App || {};
 '    { "role": "<one of the role keys>",\n' +
 '      "title": "<=6 word label shown on the kanban card",\n' +
 '      "instruction": "<the full, self-contained instruction for that worker>",\n' +
-'      "needsWeb": <true|false>\n' +
+'      "needsWeb": <true|false>,\n' +
+'      "deps": [<0-based indices of EARLIER plan items whose results this needs; [] if independent/parallel>],\n' +
+'      "verify": <optional true|false: true to have QA review this deliverable before it is accepted>\n' +
 '    }\n' +
 '  ],\n' +
 '  "final": "<one sentence telling yourself how to combine the workers\' results into the user\'s answer>"\n' +
@@ -1204,6 +1387,12 @@ window.App = window.App || {};
 '- 1 to 5 items in "plan". Each instruction must be complete on its own (the worker cannot see the user\'s\n' +
 '  original goal — only your instruction).\n' +
 '- Use only the role keys listed. If the goal is trivial/single-step, return a one-item plan.\n' +
+'- ALWAYS include "deps" on every item: [] if it can start immediately (independent — these run in\n' +
+'  PARALLEL), or the 0-based indices of the EARLIER items whose output it needs (e.g. item 2 needing\n' +
+'  items 0 and 1 -> "deps":[0,1]). Never reference an index >= this item\'s own position; never create\n' +
+'  cycles. Prefer [] so independent work runs concurrently; only list indices for genuine data needs.\n' +
+'- "verify" is OPTIONAL (default false). Set it true for high-stakes deliverables (code, key analysis)\n' +
+'  that should pass a QA review pass before being accepted.\n' +
 '- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
 
   // §6.3 BOSS_SYNTH_SYSTEM (Boss turn B).
@@ -1226,31 +1415,32 @@ window.App = window.App || {};
       label: 'Boss', color: roleColor.boss, model: 'claude-opus-4-8', glyph: 'hexnode',
       webSearchPreferred: false, system: BOSS_DECOMPOSE_SYSTEM,
       // synth prompt also stashed on the role for callers that look here (§6.3 turn B).
-      synthSystem: BOSS_SYNTH_SYSTEM
+      synthSystem: BOSS_SYNTH_SYSTEM,
+      persona: PERSONAS.boss
     },
     engineer: {
       label: 'Engineer', color: roleColor.engineer, model: 'claude-sonnet-4-6', glyph: 'wrench',
-      webSearchPreferred: false, system: worker(ENGINEER_BODY)
+      webSearchPreferred: false, system: worker(ENGINEER_BODY), persona: PERSONAS.engineer
     },
     designer: {
       label: 'Designer', color: roleColor.designer, model: 'claude-sonnet-4-6', glyph: 'palette',
-      webSearchPreferred: false, system: worker(DESIGNER_BODY)
+      webSearchPreferred: false, system: worker(DESIGNER_BODY), persona: PERSONAS.designer
     },
     researcher: {
       label: 'Researcher', color: roleColor.researcher, model: 'claude-sonnet-4-6', glyph: 'magnifier',
-      webSearchPreferred: true, system: worker(RESEARCHER_BODY)
+      webSearchPreferred: true, system: worker(RESEARCHER_BODY), persona: PERSONAS.researcher
     },
     writer: {
       label: 'Writer', color: roleColor.writer, model: 'claude-sonnet-4-6', glyph: 'pen',
-      webSearchPreferred: false, system: worker(WRITER_BODY)
+      webSearchPreferred: false, system: worker(WRITER_BODY), persona: PERSONAS.writer
     },
     qa: {
       label: 'QA', color: roleColor.qa, model: 'claude-haiku-4-5-20251001', glyph: 'check',
-      webSearchPreferred: false, system: worker(QA_BODY)
+      webSearchPreferred: false, system: worker(QA_BODY), persona: PERSONAS.qa
     },
     generalist: {
       label: 'Generalist', color: roleColor.generalist, model: 'claude-sonnet-4-6', glyph: 'star',
-      webSearchPreferred: false, system: worker(GENERALIST_BODY)
+      webSearchPreferred: false, system: worker(GENERALIST_BODY), persona: PERSONAS.generalist
     }
   };
 
@@ -1278,11 +1468,25 @@ window.App = window.App || {};
     BUBBLE_MS: 4500,     // default bubble lifetime if `ms` omitted
 
     // orchestration
-    MAX_CONCURRENT: 2,   // v2: gentler pacing — cap on simultaneously-running worker subtasks
+    MAX_CONCURRENT: 3,   // v3: raised from 2 to allow parallel waves of worker subtasks
     CULL_TEMP_AGENTS: true,
     TEMP_AGENT_TTL_MS: 60000,
     DIRECT_CHAT_BLOCKS: false,
     DELEGATE_STAGGER_MS: 1200,   // v2: slower stagger between delegations
+
+    // v3: QA review loop — how many times a failing verify-task may be revised.
+    QA_MAX_RETRIES: 2,
+
+    // v3: agent memory scoring (Agents.scoreMemories).
+    MEMORY_TOPK: 3,          // how many memories to surface per query
+    MEMORY_HALFLIFE_H: 24,   // recency half-life in hours for the decay term
+    MEMORY_CAP: 50,          // max memories retained per agent (single source of truth)
+
+    // v3: artifact store cap (oldest dropped past this).
+    ARTIFACT_MAX: 200,
+
+    // v3: watercooler chatter cooldown (ms between idle banter events).
+    CHATTER_COOLDOWN_MS: 25000,
 
     // API
     API_URL: 'https://api.anthropic.com/v1/messages',
@@ -1320,9 +1524,67 @@ window.App = window.App || {};
     BOSS_DECOMPOSE_SYSTEM: BOSS_DECOMPOSE_SYSTEM,
     BOSS_SYNTH_SYSTEM: BOSS_SYNTH_SYSTEM,
 
+    // v3: worker artifact-emission hint (Orchestrator appends to worker instructions)
+    // and the QA reviewer system prompt (Orchestrator QA loop).
+    WORKER_ARTIFACT_HINT: WORKER_ARTIFACT_HINT,
+    QA_REVIEW_SYSTEM: QA_REVIEW_SYSTEM,
+
+    // v3: watercooler banter pools. Orchestrator picks role-flavored lines (falls
+    // back to generic). Short, office-y, non-blocking; used when liveChatter=false.
+    CHATTER_LINES: {
+      generic: [
+        'Anyone else running on pure coffee today?',
+        'Did you see the new ticket queue? Wild.',
+        'I swear the office plant is judging me.',
+        'Two more tasks and I\'m taking a lap.',
+        'The neon sign flickered again — spooky.',
+        'How was your weekend? Mine was all side projects.',
+        'Standup felt shorter today, right?',
+        'Whoever fixed the printer: legend.'
+      ],
+      byRole: {
+        engineer: [
+          'Just refactored that mess — feels good.',
+          'It compiles. I\'m not touching it again.',
+          'Naming things is still the hardest problem.',
+          'I added one more test. Future me says thanks.'
+        ],
+        designer: [
+          'Bumped the spacing 4px and it finally breathes.',
+          'That magenta is doing a lot of heavy lifting.',
+          'Contrast ratio passes now — chef\'s kiss.',
+          'Can we please retire that drop shadow?'
+        ],
+        researcher: [
+          'Found three sources that actually agree. Rare.',
+          'The data\'s noisier than the lounge at lunch.',
+          'Citation hunting is my cardio.',
+          'Turns out the obvious answer was wrong again.'
+        ],
+        writer: [
+          'Cut 200 words and it reads twice as well.',
+          'Killed another adverb. They had it coming.',
+          'A good headline took me longer than the draft.',
+          'Tone check: do we sound human enough?'
+        ],
+        qa: [
+          'Found an edge case nobody asked about. You\'re welcome.',
+          'It works on my machine is not a test plan.',
+          'I love a clean PASS. So peaceful.',
+          'Reproduced it in three steps. Buckle up.'
+        ],
+        boss: [
+          'Great momentum today, team.',
+          'Let\'s keep the scope tight on this one.',
+          'Ship it once QA\'s happy.',
+          'Who needs anything unblocked?'
+        ]
+      }
+    },
+
     // persistence
     STORAGE_KEY: 'pixel_ai_company_v1',
-    SCHEMA_VERSION: 1,
+    SCHEMA_VERSION: 2,   // v3: bumped for artifacts/persona/memories/settings additions
 
     // enums + palette + roles
     TILES: TILES,
@@ -4494,7 +4756,91 @@ window.App = window.App || {};
       bossModel: c.BOSS_MODEL || 'claude-opus-4-8',
       webSearch: true,
       theme: 'neon',
+      sound: true,            // v3: completion chime on/off
+      liveChatter: false,     // v3: watercooler uses an LLM call when true; canned lines when false
     };
+  }
+
+  // v3: cap helper for memory/artifact arrays.
+  function artifactMax() {
+    var n = cfg().ARTIFACT_MAX;
+    return (typeof n === 'number' && n > 0) ? n : 200;
+  }
+
+  // v3: persona default from ROLES[role].persona (or a generic shape). Always
+  // returns the {identity, plan, relationships} string-triple, never throws.
+  function defaultPersona(role) {
+    var roles = rolesTable();
+    var p = (roles[role] && roles[role].persona) ||
+            (roles.generalist && roles.generalist.persona) || null;
+    if (p && typeof p === 'object') {
+      return {
+        identity: String(p.identity || ''),
+        plan: String(p.plan || ''),
+        relationships: String(p.relationships || ''),
+      };
+    }
+    return { identity: '', plan: '', relationships: '' };
+  }
+
+  // v3: sanitize a persisted persona blob into the string-triple.
+  function normalizePersona(p, role) {
+    if (!p || typeof p !== 'object') return defaultPersona(role);
+    return {
+      identity: String(p.identity || ''),
+      plan: String(p.plan || ''),
+      relationships: String(p.relationships || ''),
+    };
+  }
+
+  // v3: sanitize a persisted memories array into MemoryEntry[] (cap 50).
+  function normalizeMemories(arr) {
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var m = arr[i];
+      if (!m || typeof m !== 'object') continue;
+      var imp = (typeof m.importance === 'number') ? m.importance : 0;
+      imp = clamp(imp, 0, 10);
+      out.push({
+        t: (typeof m.t === 'number') ? m.t : nowMs(),
+        text: (m.text == null) ? '' : String(m.text),
+        importance: imp,
+      });
+    }
+    if (out.length > 50) out = out.slice(out.length - 50);
+    return out;
+  }
+
+  // v3: sanitize one Artifact for persistence/load.
+  function normalizeArtifact(a) {
+    if (!a || typeof a !== 'object') return null;
+    var type = a.type;
+    if (type !== 'code' && type !== 'markdown' && type !== 'data' && type !== 'text') {
+      type = 'text';
+    }
+    return {
+      id: a.id || uid('art'),
+      name: (a.name == null) ? 'artifact' : String(a.name),
+      type: type,
+      content: (a.content == null) ? '' : String(a.content),
+      taskId: (a.taskId == null) ? null : String(a.taskId),
+      agentId: (a.agentId == null) ? null : String(a.agentId),
+      t: (typeof a.t === 'number') ? a.t : nowMs(),
+    };
+  }
+
+  // v3: normalize + cap an artifacts array (keep most recent ARTIFACT_MAX).
+  function normalizeArtifacts(arr) {
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var na = normalizeArtifact(arr[i]);
+      if (na) out.push(na);
+    }
+    var cap = artifactMax();
+    if (out.length > cap) out = out.slice(out.length - cap);
+    return out;
   }
 
   // 빈/안전한 기본 레이아웃(World가 아직 없을 때의 최후 폴백).
@@ -4531,6 +4877,7 @@ window.App = window.App || {};
       agents: [],
       tasks: [],
       log: [],
+      artifacts: [],          // v3: Artifact[] (persisted, capped at ARTIFACT_MAX)
       camera: defaultCamera(),
       layout: emptyLayout(),
       settings: defaultSettings(),
@@ -4542,6 +4889,7 @@ window.App = window.App || {};
       _time: 0,
       _meetingActive: false,
       _activeStreams: {},
+      _followId: null,        // v3: agent id the camera follows (runtime-only)
     };
   }
 
@@ -4557,6 +4905,7 @@ window.App = window.App || {};
     if (!Array.isArray(s.agents)) s.agents = [];
     if (!Array.isArray(s.tasks)) s.tasks = [];
     if (!Array.isArray(s.log)) s.log = [];
+    if (!Array.isArray(s.artifacts)) s.artifacts = [];
     if (!s.camera || typeof s.camera !== 'object') s.camera = def.camera;
     if (!s.layout || typeof s.layout !== 'object') s.layout = def.layout;
     if (!s.settings || typeof s.settings !== 'object') s.settings = def.settings;
@@ -4566,6 +4915,7 @@ window.App = window.App || {};
     if (typeof s._time !== 'number') s._time = 0;
     if (typeof s._meetingActive === 'undefined') s._meetingActive = false;
     if (!s._activeStreams || typeof s._activeStreams !== 'object') s._activeStreams = {};
+    if (typeof s._followId === 'undefined') s._followId = null;
     return s;
   }
 
@@ -4622,8 +4972,12 @@ window.App = window.App || {};
         : { tasksDone: 0, tokensIn: 0, tokensOut: 0 },
       busy: false,
       temp: false,            // temp agents are never persisted; loaded ones are permanent
+      // v3: persona + memories (default from ROLES if absent on disk)
+      persona: normalizePersona(a.persona, role),
+      memories: normalizeMemories(a.memories),
       _idleSince: 0,
       _onArrive: null,
+      _attention: false,      // v3: runtime-only attention marker
     };
     return agent;
   }
@@ -4655,7 +5009,10 @@ window.App = window.App || {};
             tokensOut: a.stats.tokensOut || 0,
           }
         : { tasksDone: 0, tokensIn: 0, tokensOut: 0 },
-      // STRIPPED: x,y,path,anim,bubble,busy,temp,_idleSince,_onArrive
+      // v3: persist persona + memories (so accumulated context survives reload)
+      persona: normalizePersona(a.persona, a.role),
+      memories: normalizeMemories(a.memories),
+      // STRIPPED: x,y,path,anim,bubble,busy,temp,_idleSince,_onArrive,_attention
     };
   }
 
@@ -4676,6 +5033,7 @@ window.App = window.App || {};
       createdAt: t.createdAt || nowMs(),
       role: t.role || 'generalist',
       needsWeb: !!t.needsWeb,
+      verify: !!t.verify,   // v3: keep the QA-gate flag so it survives reload (DAG dep order is lossy on mid-run reload — acceptable)
       // STRIPPED: _ctrl and any _*
     };
   }
@@ -4716,6 +5074,9 @@ window.App = window.App || {};
     // log: cap last 500
     var log = Array.isArray(s.log) ? s.log.slice(-500) : [];
 
+    // v3: artifacts — normalize + cap (deep cloned via normalize copy)
+    var artifacts = normalizeArtifacts(s.artifacts);
+
     // layout: deep clone so we never persist live references
     var layout = deepClone(s.layout) || emptyLayout();
 
@@ -4728,11 +5089,12 @@ window.App = window.App || {};
       agents: agents,
       tasks: tasks,
       log: log,
+      artifacts: artifacts,
       layout: layout,
       settings: settings,
       selectedAgentId: s.selectedAgentId || null,
       camera: clampCameraValue(s.camera),
-      // NOT persisted: _time,_meetingActive,_activeStreams, layoutEdit, paused
+      // NOT persisted: _time,_meetingActive,_activeStreams,_followId, layoutEdit, paused
     };
     return blob;
   }
@@ -4791,6 +5153,7 @@ window.App = window.App || {};
         createdAt: rt.createdAt || nowMs(),
         role: rt.role || 'generalist',
         needsWeb: !!rt.needsWeb,
+        verify: !!rt.verify,   // v3: restore QA-gate flag
         _ctrl: null,
       });
     }
@@ -4805,6 +5168,12 @@ window.App = window.App || {};
       var e = capped[li];
       if (e && typeof e === 'object') s.log.push(e);
     }
+
+    // --- artifacts (normalize + cap) ---
+    var rebuiltArtifacts = normalizeArtifacts(blob.artifacts);
+    if (!Array.isArray(s.artifacts)) s.artifacts = [];
+    s.artifacts.length = 0;
+    for (var aj = 0; aj < rebuiltArtifacts.length; aj++) s.artifacts.push(rebuiltArtifacts[aj]);
 
     // --- settings (merge over defaults) ---
     s.settings = Object.assign(defaultSettings(), (blob.settings && typeof blob.settings === 'object') ? blob.settings : {});
@@ -4830,6 +5199,7 @@ window.App = window.App || {};
     s._time = 0;
     s._meetingActive = false;
     s._activeStreams = {};
+    s._followId = null;       // v3: never restore camera-follow from disk
 
     return s;
   }
@@ -4853,10 +5223,23 @@ window.App = window.App || {};
       if (v === target) return blob;
 
       // v0 (unversioned legacy) -> v1: nothing structural to change yet; stamp it.
-      // Future versions: add stepwise upgrades here (v1->v2, etc.).
       if (v < 1) {
         blob.v = 1;
         v = 1;
+      }
+      // v1 -> v2 (v3 feature set): artifacts/persona/memories + new settings.
+      // All new fields are filled with safe defaults by applyBlob/rebuildAgent's
+      // normalizers, so this step is a forward no-op beyond ensuring the shapes
+      // exist on the blob (defensive; old saves simply gain defaults on load).
+      if (v < 2) {
+        if (!Array.isArray(blob.artifacts)) blob.artifacts = [];
+        if (blob.settings && typeof blob.settings === 'object') {
+          if (typeof blob.settings.sound === 'undefined') blob.settings.sound = true;
+          if (typeof blob.settings.liveChatter === 'undefined') blob.settings.liveChatter = false;
+        }
+        // agent.persona/memories left absent here -> rebuildAgent supplies defaults.
+        blob.v = 2;
+        v = 2;
       }
       // Always stamp to current after running known steps.
       blob.v = target;
@@ -4923,8 +5306,13 @@ window.App = window.App || {};
       stats: { tasksDone: 0, tokensIn: 0, tokensOut: 0 },
       busy: false,
       temp: !!spec.temp,
+      // v3: persona + memories (Agents.create normally owns this; mirror here for
+      // the inline fallback so store-only seeding still produces complete agents)
+      persona: normalizePersona(spec.persona, role),
+      memories: Array.isArray(spec.memories) ? normalizeMemories(spec.memories) : [],
       _idleSince: 0,
       _onArrive: null,
+      _attention: false,
     };
     s.agents.push(agent);
     return agent;
@@ -4961,6 +5349,8 @@ window.App = window.App || {};
       s.agents.length = 0;
       s.tasks.length = 0;
       s.log.length = 0;
+      if (!Array.isArray(s.artifacts)) s.artifacts = [];
+      s.artifacts.length = 0;
       s.settings = defaultSettings();
       s.camera = defaultCamera();
       s.selectedAgentId = null;
@@ -4969,6 +5359,7 @@ window.App = window.App || {};
       s._time = 0;
       s._meetingActive = false;
       s._activeStreams = {};
+      s._followId = null;
 
       // 3) place the 4 default agents at desks (§9: boss, engineer, designer, researcher)
       var collected = collectDeskSeats(s.layout);
@@ -5147,7 +5538,7 @@ window.App = window.App || {};
     } catch (e) {
       logErr('exportJSON', e);
       // 빈 회사라도 유효한 JSON 반환
-      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
+      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
     }
   }
 
@@ -5394,11 +5785,30 @@ window.App = window.App || {};
       temp: !!spec.temp,
       _idleSince: nowMs(),
       _onArrive: null,
+      // v3: persona (identity/plan/relationships) + episodic memory.
+      persona: resolvePersona(rdef, spec),
+      memories: Array.isArray(spec.memories) ? spec.memories.slice() : [],
+      _attention: false,
     };
 
     if (s && Array.isArray(s.agents)) s.agents.push(agent);
     return agent;
   };
+
+  // resolvePersona(roleDef, spec) → {identity, plan, relationships} (all strings).
+  // Prefer spec.persona, then ROLES[role].persona, then a generic default.
+  function resolvePersona(rdef, spec) {
+    var p = (spec && spec.persona) || (rdef && rdef.persona) || null;
+    function str(v) { return (typeof v === 'string') ? v : (v == null ? '' : String(v)); }
+    if (p && typeof p === 'object') {
+      return {
+        identity: str(p.identity),
+        plan: str(p.plan),
+        relationships: str(p.relationships),
+      };
+    }
+    return { identity: '', plan: '', relationships: '' };
+  }
 
   // remove(agentId) — abort its stream, free desk implicitly, drop, clear selection.
   Agents.remove = function (agentId) {
@@ -5489,6 +5899,99 @@ window.App = window.App || {};
     if (!agent) return;
     var dur = (typeof ms === 'number') ? ms : (CFG().BUBBLE_MS || 4500);
     agent.bubble = { text: truncate(String(text == null ? '' : text), 64), until: nowMs() + dur };
+  };
+
+  // ===========================================================================
+  // v3: MEMORY + ATTENTION API (orchestrator calls these)
+  // ===========================================================================
+
+  // addMemory(agent, text, importance) — push {t, text, importance(0..10)}.
+  // Clamps importance, ignores empty text, caps the array at MEMORY_CAP (50).
+  Agents.addMemory = function (agent, text, importance) {
+    if (!agent) return;
+    text = String(text == null ? '' : text).trim();
+    if (!text) return;
+    if (!Array.isArray(agent.memories)) agent.memories = [];
+    var imp = Number(importance);
+    if (!isFinite(imp)) imp = 1;
+    if (imp < 0) imp = 0; else if (imp > 10) imp = 10;
+    agent.memories.push({ t: nowMs(), text: truncate(text, 240), importance: imp });
+    var cap = CFG().MEMORY_CAP || 50;
+    if (agent.memories.length > cap) {
+      // drop the oldest entries (front of the array)
+      agent.memories.splice(0, agent.memories.length - cap);
+    }
+  };
+
+  // scoreMemories(query, memories) → top-K MemoryEntry[] (highest score first).
+  // score = tokenOverlapRelevance(query,text) + recencyDecay(t) + importance/10.
+  // Pure JS, no deps, empty-safe.
+  Agents.scoreMemories = function (query, memories) {
+    if (!Array.isArray(memories) || !memories.length) return [];
+    var k = CFG().MEMORY_TOPK || 3;
+    var halflifeH = CFG().MEMORY_HALFLIFE_H || 24;
+    var halflifeMs = Math.max(1, halflifeH) * 3600 * 1000;
+    var now = nowMs();
+
+    var qTokens = tokenize(query);
+    var qSet = {};
+    for (var qi = 0; qi < qTokens.length; qi++) qSet[qTokens[qi]] = true;
+    var qCount = qTokens.length;
+
+    var scored = [];
+    for (var i = 0; i < memories.length; i++) {
+      var m = memories[i];
+      if (!m || typeof m.text !== 'string') continue;
+
+      // token-overlap relevance (Jaccard-ish: matched / query tokens, 0..1)
+      var rel = 0;
+      if (qCount > 0) {
+        var mTokens = tokenize(m.text);
+        var mSet = {}, matched = 0;
+        for (var j = 0; j < mTokens.length; j++) mSet[mTokens[j]] = true;
+        for (var t in qSet) { if (qSet.hasOwnProperty(t) && mSet[t]) matched++; }
+        rel = matched / qCount;
+      }
+
+      // recency decay (0..1): 1 at t=now, halves every halflife.
+      var age = now - (typeof m.t === 'number' ? m.t : now);
+      if (age < 0) age = 0;
+      var recency = Math.pow(0.5, age / halflifeMs);
+
+      // importance contribution (0..1)
+      var imp = Number(m.importance);
+      if (!isFinite(imp)) imp = 0;
+      if (imp < 0) imp = 0; else if (imp > 10) imp = 10;
+
+      var score = rel + recency + (imp / 10);
+      scored.push({ m: m, score: score, idx: i });
+    }
+
+    scored.sort(function (a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.idx - a.idx; // tie-break: newer (later in array) first
+    });
+
+    var out = [];
+    for (var r = 0; r < scored.length && out.length < k; r++) out.push(scored[r].m);
+    return out;
+  };
+
+  // tokenize(str) → lowercase word tokens (len ≥ 2). Pure, empty-safe.
+  function tokenize(str) {
+    str = String(str == null ? '' : str).toLowerCase();
+    var raw = str.split(/[^a-z0-9가-힣]+/);
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      if (raw[i] && raw[i].length >= 2) out.push(raw[i]);
+    }
+    return out;
+  }
+
+  // setAttention(agent, on) — toggle the pulsing "!" marker (drawn in Agents.draw).
+  Agents.setAttention = function (agent, on) {
+    if (!agent) return;
+    agent._attention = !!on;
   };
 
   // ===========================================================================
@@ -5784,6 +6287,12 @@ window.App = window.App || {};
           var headY = scr.y - 26 * (size / 16);
           art.drawBubble(ctx, a.bubble.text, scr.x, headY, size, a.color);
         }
+
+        // v3: pulsing yellow "!" attention marker above the head (drawn here, not
+        // in pixelart.js). Sits a touch above the nameplate so it stays visible.
+        if (a._attention) {
+          drawAttentionMarker(ctx, scr.x, scr.y, size);
+        }
       } catch (e) { /* one bad sprite must not break the pass */ }
     }
   };
@@ -5919,6 +6428,39 @@ window.App = window.App || {};
   // ===========================================================================
   // INTERNAL HELPERS
   // ===========================================================================
+
+  // drawAttentionMarker(ctx, feetX, feetY, size) — a pulsing yellow "!" above the
+  // agent's head. Self-contained ctx drawing (does NOT touch pixelart.js). Guarded
+  // by the caller's try/catch but kept defensive anyway.
+  function drawAttentionMarker(ctx, feetX, feetY, size) {
+    var sc = size / 16;
+    // Pulse 0..1 from the clock so it animates without per-agent state.
+    var pulse = 0.5 + 0.5 * Math.sin(nowMs() / 220);
+    var headY = feetY - 40 * sc;          // above the nameplate
+    var r = (5 + 1.5 * pulse) * sc;        // glowing disc radius
+    var alpha = 0.55 + 0.45 * pulse;
+    var yellow = (CFG().palette && CFG().palette.yellow) ||
+      (PA() && PA().palette && PA().palette.yellow) || '#ffe14d';
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // soft glow disc
+    ctx.beginPath();
+    ctx.fillStyle = yellow;
+    ctx.shadowColor = yellow;
+    ctx.shadowBlur = 8 * sc * pulse;
+    ctx.arc(feetX, headY, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // the "!" glyph in dark ink on the disc
+    ctx.globalAlpha = Math.min(1, alpha + 0.2);
+    ctx.fillStyle = '#1a1320';
+    ctx.font = 'bold ' + Math.round(9 * sc) + 'px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('!', feetX, headY + 0.5 * sc);
+    ctx.restore();
+  }
 
   function cellCenter(gx, gy) {
     var w = WORLD();
@@ -6114,6 +6656,38 @@ window.App = window.App || {};
     } catch (e) {}
   }
 
+  // ===========================================================================
+  // ATTENTION — flag agents needing the user (no-key / rate-limit / error) and
+  //   keep the document-title badge in sync. Guarded everywhere.
+  // ===========================================================================
+  function attentionCount() {
+    var s = STATE(), n = 0;
+    if (!s || !Array.isArray(s.agents)) return 0;
+    for (var i = 0; i < s.agents.length; i++) {
+      if (s.agents[i] && s.agents[i]._attention) n++;
+    }
+    return n;
+  }
+  function syncAttentionBadge() {
+    try { if (App.UI && App.UI.setAttentionBadge) App.UI.setAttentionBadge(attentionCount()); } catch (e) {}
+  }
+  function raiseAttention(agent) {
+    try {
+      var ag = AGENTS();
+      if (ag && ag.setAttention && agent) ag.setAttention(agent, true);
+      else if (agent) agent._attention = true;
+    } catch (e) {}
+    syncAttentionBadge();
+  }
+  function clearAttention(agent) {
+    try {
+      var ag = AGENTS();
+      if (ag && ag.setAttention && agent) ag.setAttention(agent, false);
+      else if (agent) agent._attention = false;
+    } catch (e) {}
+    syncAttentionBadge();
+  }
+
   var Orchestrator = {};
   Orchestrator.PLAN_SCHEMA_VERSION = 1;
 
@@ -6126,6 +6700,157 @@ window.App = window.App || {};
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
     if (prov === 'openai') return !!set.openaiKey;
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+  }
+
+  // slugify a title for artifact filenames (lowercase, dashes, no exotic chars).
+  function slug(s) {
+    return String(s || 'artifact')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'artifact';
+  }
+  // map a code-fence language hint → file extension.
+  function extForLang(lang) {
+    var L = String(lang || '').toLowerCase().trim();
+    var map = {
+      js: '.js', javascript: '.js', jsx: '.jsx', ts: '.ts', typescript: '.ts', tsx: '.tsx',
+      py: '.py', python: '.py', rb: '.rb', ruby: '.rb', go: '.go', rs: '.rs', rust: '.rs',
+      java: '.java', c: '.c', cpp: '.cpp', 'c++': '.cpp', cs: '.cs', php: '.php', swift: '.swift',
+      kt: '.kt', kotlin: '.kt', sh: '.sh', bash: '.sh', zsh: '.sh', sql: '.sql',
+      html: '.html', css: '.css', scss: '.scss', json: '.json', yaml: '.yml', yml: '.yml',
+      xml: '.xml', md: '.md', markdown: '.md', txt: '.txt', text: '.txt', toml: '.toml',
+    };
+    return map[L] || (L ? ('.' + L.replace(/[^a-z0-9]/g, '').slice(0, 6)) : '.txt');
+  }
+  // classify an artifact type from filename extension / fence lang.
+  function artifactType(name, lang) {
+    var n = String(name || '').toLowerCase();
+    if (/\.(md|markdown)$/.test(n) || /^(md|markdown)$/.test(String(lang || '').toLowerCase())) return 'markdown';
+    if (/\.(json|csv|tsv|ya?ml|xml|toml)$/.test(n)) return 'data';
+    if (/\.(txt|text)$/.test(n)) return 'text';
+    if (/\.[a-z0-9]+$/.test(n)) return 'code';
+    return 'text';
+  }
+
+  // ===========================================================================
+  // ARTIFACTS — parse fenced blocks out of worker output and store them.
+  // ```artifact:<filename.ext>\n<content>\n```  → Artifact named by filename.
+  // a plain ```lang code block → name = slug(task.title)+ext(lang).
+  // ===========================================================================
+  function parseArtifacts(text, task, agent) {
+    var out = [];
+    try {
+      if (!text) return out;
+      var src = String(text);
+      // Match fenced blocks: capture info string + body. Tolerate ``` or ~~~.
+      var re = /(^|\n)([`~]{3,})[ \t]*([^\n`~]*)\n([\s\S]*?)\n\2[ \t]*(?=\n|$)/g;
+      var m, autoIdx = 0;
+      while ((m = re.exec(src)) !== null) {
+        var info = String(m[3] || '').trim();
+        var body = m[4] != null ? m[4] : '';
+        var am = info.match(/^artifact:(\S+)/i);
+        var name, lang = '';
+        if (am) {
+          name = am[1];
+          lang = name.indexOf('.') >= 0 ? name.split('.').pop() : '';
+        } else {
+          // plain code block: only capture ones with a language hint (skip prose fences)
+          lang = info.split(/\s+/)[0] || '';
+          if (!lang) continue;
+          var suffix = autoIdx > 0 ? ('-' + (autoIdx + 1)) : '';
+          name = slug(task && task.title) + suffix + extForLang(lang);
+        }
+        autoIdx++;
+        out.push({
+          name: name,
+          type: artifactType(name, lang),
+          content: body,
+          taskId: task ? task.id : null,
+          agentId: agent ? agent.id : null,
+        });
+      }
+    } catch (e) {}
+    return out;
+  }
+
+  // pushArtifacts — dedupe by name+taskId (overwrite on retry); cap ARTIFACT_MAX.
+  function pushArtifacts(list) {
+    try {
+      var s = STATE();
+      if (!s) return;
+      if (!Array.isArray(s.artifacts)) s.artifacts = [];
+      var cap = CFG().ARTIFACT_MAX || 200;
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i];
+        if (!a || !a.name) continue;
+        var existing = null;
+        for (var j = 0; j < s.artifacts.length; j++) {
+          var e = s.artifacts[j];
+          if (e && e.name === a.name && e.taskId === a.taskId) { existing = e; break; }
+        }
+        if (existing) {
+          existing.type = a.type;
+          existing.content = a.content;
+          existing.agentId = a.agentId;
+          existing.t = nowMs();
+        } else {
+          s.artifacts.push({
+            id: uid('art'),
+            name: a.name, type: a.type, content: a.content,
+            taskId: a.taskId, agentId: a.agentId, t: nowMs(),
+          });
+        }
+      }
+      // cap (drop oldest)
+      if (s.artifacts.length > cap) s.artifacts.splice(0, s.artifacts.length - cap);
+      try { if (App.UI && App.UI.refreshArtifacts) App.UI.refreshArtifacts(); } catch (e) {}
+    } catch (e) {}
+  }
+
+  // ===========================================================================
+  // MEMORY helpers — persona + relevant memory block injection.
+  // ===========================================================================
+  function importanceHeuristic(task, text) {
+    var imp = 5;
+    try {
+      if (task && task.verify) imp += 2;                 // verified work matters more
+      if (task && task._retries) imp += 1;               // hard-won
+      var t = String(text || '');
+      if (/RESULT:\s*FAIL/i.test(t)) imp += 1;
+      if (t.length > 1200) imp += 1;                      // substantial deliverable
+    } catch (e) {}
+    return Math.max(0, Math.min(10, imp));
+  }
+
+  // personaBlock(agent) — short identity/plan/relationships preamble for prompts.
+  function personaBlock(agent) {
+    try {
+      var p = agent && agent.persona;
+      if (!p) return '';
+      var lines = [];
+      if (p.identity) lines.push('Identity: ' + p.identity);
+      if (p.plan) lines.push('Your approach: ' + p.plan);
+      if (p.relationships) lines.push('Team: ' + p.relationships);
+      if (!lines.length) return '';
+      return 'WHO YOU ARE:\n' + lines.join('\n');
+    } catch (e) { return ''; }
+  }
+
+  // memoryBlock(agent, query) — top-K relevant memories as a short note.
+  function memoryBlock(agent, query) {
+    try {
+      var ag = AGENTS();
+      if (!ag || !ag.scoreMemories || !agent || !Array.isArray(agent.memories) || !agent.memories.length) return '';
+      var top = ag.scoreMemories(query || '', agent.memories) || [];
+      if (!top.length) return '';
+      var lines = [];
+      for (var i = 0; i < top.length; i++) {
+        if (top[i] && top[i].text) lines.push('- ' + truncate(top[i].text, 160));
+      }
+      if (!lines.length) return '';
+      return 'YOUR RELEVANT MEMORY:\n' + lines.join('\n');
+    } catch (e) { return ''; }
   }
 
   // ===========================================================================
@@ -6250,7 +6975,12 @@ window.App = window.App || {};
     var settings = STATE().settings || {};
     var roleDef = ROLES().boss || {};
     var sys = roleDef.system || '';
-    var userMsg = 'GOAL:\n' + userText + '\n\nReturn the JSON plan now.';
+    var pre = [];
+    var personaP = personaBlock(boss);
+    if (personaP) { pre.push(personaP); pre.push(''); }
+    var memP = memoryBlock(boss, userText);
+    if (memP) { pre.push(memP); pre.push(''); }
+    var userMsg = pre.join('\n') + 'GOAL:\n' + userText + '\n\nReturn the JSON plan now.';
 
     var raw = '';
     if (boss) boss.busy = true;   // claim BEFORE stream (onError can fire synchronously on no-key/no-model)
@@ -6314,6 +7044,8 @@ window.App = window.App || {};
     }
 
     var stagger = CFG().DELEGATE_STAGGER_MS || 600;
+    var idxToId = {};   // plan index → child task id (for DAG dep resolution)
+    var created = [];
     for (var i = 0; i < items.length; i++) {
       (function (it, idx) {
         var t = {
@@ -6332,10 +7064,18 @@ window.App = window.App || {};
             ? it.needsWeb
             : !!(ROLES()[it.role] && ROLES()[it.role].webSearchPreferred),
           _depIndex: idx, // position in plan (for dependency ordering)
+          _depPlanIdx: Array.isArray(it.deps) ? it.deps.slice() : null, // declared deps (plan indices)
+          _depIds: null,  // resolved below (plan idx → child task id)
+          verify: !!it.verify,
+          _retries: 0,
+          _qaDone: false,
+          _feedback: null,
           _ctrl: null,
         };
         s.tasks.push(t);
         root.subtaskIds.push(t.id);
+        idxToId[idx] = t.id;
+        created.push(t);
 
         // staggered delegation bubble from the boss.
         setTimeout(function () {
@@ -6345,6 +7085,24 @@ window.App = window.App || {};
           refreshBoard();
         }, stagger * idx);
       })(items[i], i);
+    }
+
+    // Resolve declared deps (plan indices) → child task ids. Self / out-of-range
+    // / forward refs are dropped so we never deadlock.
+    for (var c = 0; c < created.length; c++) {
+      var ct = created[c];
+      if (!ct._depPlanIdx) continue;
+      var ids = [];
+      for (var d = 0; d < ct._depPlanIdx.length; d++) {
+        var pi = ct._depPlanIdx[d];
+        if (typeof pi !== 'number') continue;
+        if (pi === ct._depIndex) continue;             // no self-dep
+        var depId = idxToId[pi];
+        if (depId && depId !== ct.id) ids.push(depId);
+      }
+      // keep [] when deps were declared-but-empty (explicit parallel); _depPlanIdx
+      // is null only when the plan omitted deps entirely (→ legacy fallback).
+      ct._depIds = ids;
     }
 
     refreshBoard();
@@ -6397,7 +7155,19 @@ window.App = window.App || {};
         var needsWeb = (typeof it.needsWeb === 'boolean')
           ? it.needsWeb
           : !!(roles[role] && roles[role].webSearchPreferred);
-        out.push({ role: role, title: title, instruction: instruction, needsWeb: needsWeb });
+        // optional DAG deps: array of earlier-subtask indices this one needs.
+        var deps = null;
+        if (Array.isArray(it.deps)) {
+          deps = [];
+          for (var di = 0; di < it.deps.length; di++) {
+            var dv = it.deps[di];
+            if (typeof dv === 'number' && isFinite(dv)) deps.push(dv | 0);
+          }
+          // keep [] as an explicit "no deps" (→ runs in parallel); only an absent
+          // it.deps stays null (→ legacy all-earlier-siblings serial fallback).
+        }
+        var verify = (typeof it.verify === 'boolean') ? it.verify : false;
+        out.push({ role: role, title: title, instruction: instruction, needsWeb: needsWeb, deps: deps, verify: verify });
         if (out.length >= 5) break;
       }
       if (out.length === 0) return null;
@@ -6465,8 +7235,22 @@ window.App = window.App || {};
   // It is runnable iff every earlier sibling is `done` (error counts as resolved
   // so a failed predecessor doesn't deadlock; its result is simply absent).
   // ===========================================================================
+  function isTerminal(t) { return t && (t.status === 'done' || t.status === 'error'); }
+
   function depsSatisfied(task) {
     if (!task.parentId) return true;          // standalone tasks have no deps
+
+    // DAG: if deps were DECLARED (array present, even empty), gate ONLY on those.
+    // [] → no deps → runnable immediately (parallel wave). [i,..] → wait for them.
+    if (Array.isArray(task._depIds)) {
+      for (var d = 0; d < task._depIds.length; d++) {
+        var dep = taskById(task._depIds[d]);
+        if (dep && !isTerminal(dep)) return false;
+      }
+      return true;
+    }
+
+    // Back-compat: depend on ALL earlier siblings in the same plan.
     if (typeof task._depIndex !== 'number') return true;
     var sibs = childrenOf(task.parentId);
     for (var i = 0; i < sibs.length; i++) {
@@ -6497,6 +7281,9 @@ window.App = window.App || {};
     agent.currentTaskId = task.id;
     task.assignee = agent.id;
     task.status = 'running';
+
+    // (re)assignment clears any prior attention flag on this agent.
+    clearAttention(agent);
 
     var roleLabel = (ROLES()[task.role] && ROLES()[task.role].label) || task.role;
     log('Boss', agent.name || roleLabel, 'msg', '@' + (agent.name || roleLabel) + ': ' + task.title);
@@ -6596,7 +7383,7 @@ window.App = window.App || {};
           failTask(task, '(empty result)');
           return;
         }
-        finishTask(task, text);
+        onWorkerResult(task, text);
       },
       onError: function (err) {
         var msg = (err && err.message) || 'error';
@@ -6620,25 +7407,181 @@ window.App = window.App || {};
     var s = STATE(); if (s && s._activeStreams) s._activeStreams[agent.id] = handle;
   }
 
-  // buildWorkerUserContent — instruction + any done-predecessor results (orch.md §4.2).
+  // depResults(task) — the done results of this task's DECLARED deps, else (fallback)
+  // earlier siblings. Returns Task[] in dependency/order.
+  function depResults(task) {
+    var out = [];
+    if (!task || !task.parentId) return out;
+    if (Array.isArray(task._depIds)) {   // declared deps (incl. [] → no upstream context)
+      for (var d = 0; d < task._depIds.length; d++) {
+        var dep = taskById(task._depIds[d]);
+        if (dep && dep.status === 'done' && dep.result) out.push(dep);
+      }
+      return out;
+    }
+    if (typeof task._depIndex !== 'number') return out;
+    var sibs = childrenOf(task.parentId).filter(function (s) {
+      return typeof s._depIndex === 'number' && s._depIndex < task._depIndex && s.status === 'done' && s.result;
+    });
+    sibs.sort(function (a, b) { return a._depIndex - b._depIndex; });
+    return sibs;
+  }
+
+  // buildWorkerUserContent — persona + relevant memory + dep results + instruction
+  //   (+ QA feedback on retry) + the artifact-emission hint.
   function buildWorkerUserContent(task) {
     var parts = [];
-    if (task.parentId && typeof task._depIndex === 'number') {
-      var sibs = childrenOf(task.parentId).filter(function (s) {
-        return typeof s._depIndex === 'number' && s._depIndex < task._depIndex && s.status === 'done' && s.result;
-      });
-      sibs.sort(function (a, b) { return a._depIndex - b._depIndex; });
-      if (sibs.length) {
-        parts.push('CONTEXT — results from earlier subtasks you can build on:');
-        for (var i = 0; i < sibs.length; i++) {
-          var roleLabel = (ROLES()[sibs[i].role] && ROLES()[sibs[i].role].label) || sibs[i].role;
-          parts.push('[' + roleLabel + ' — ' + sibs[i].title + ']\n' + sibs[i].result);
-        }
-        parts.push('');
+    var agent = AGENTS() && AGENTS().byId ? AGENTS().byId(task.assignee) : null;
+
+    var persona = personaBlock(agent);
+    if (persona) { parts.push(persona); parts.push(''); }
+
+    var mem = memoryBlock(agent, (task.desc || '') + ' ' + (task.title || ''));
+    if (mem) { parts.push(mem); parts.push(''); }
+
+    var deps = depResults(task);
+    if (deps.length) {
+      parts.push('CONTEXT — results from earlier subtasks you can build on:');
+      for (var i = 0; i < deps.length; i++) {
+        var roleLabel = (ROLES()[deps[i].role] && ROLES()[deps[i].role].label) || deps[i].role;
+        parts.push('[' + roleLabel + ' — ' + deps[i].title + ']\n' + deps[i].result);
       }
+      parts.push('');
     }
+
     parts.push('YOUR TASK:\n' + task.desc);
+
+    // QA feedback from a previous failed review → tell the worker to fix it.
+    if (task._feedback) {
+      parts.push('');
+      parts.push('REVISION REQUIRED — a reviewer rejected your previous attempt. Address this specific feedback and re-deliver the corrected result:\n' + task._feedback);
+    }
+
+    // Artifact-emission hint (config-owned; guarded fallback).
+    var hint = CFG().WORKER_ARTIFACT_HINT;
+    if (hint) { parts.push(''); parts.push(String(hint)); }
+
     return parts.join('\n');
+  }
+
+  // ===========================================================================
+  // onWorkerResult — a worker stream produced `text`. Extract artifacts, write a
+  //   memory, then either run a QA review (verify tasks) or finalize terminal.
+  // ===========================================================================
+  function onWorkerResult(task, text) {
+    var ag = AGENTS();
+    var agent = ag && ag.byId ? ag.byId(task.assignee) : null;
+
+    // 1) Artifacts: parse fenced blocks (dedupe by name+taskId → overwrite on retry).
+    try { pushArtifacts(parseArtifacts(text, task, agent)); } catch (e) {}
+
+    // 2) Memory: remember what this agent just did.
+    try {
+      if (agent && ag && ag.addMemory) {
+        var summ = resultLine(text) || task.title || 'completed a task';
+        ag.addMemory(agent, summ, importanceHeuristic(task, text));
+      }
+    } catch (e) {}
+
+    // Stash the produced text so QA / finalize can use it.
+    task.result = text;
+
+    // 3) QA loop: a verify task isn't terminal until it PASSes (or retries exhaust).
+    if (task.verify && !task._qaDone && CFG().QA_REVIEW_SYSTEM) {
+      runQAReview(task, text, agent);
+      return;
+    }
+
+    finishTask(task, text);
+  }
+
+  // runQAReview — stream a QA verdict; PASS → finalize, FAIL → retry (bounded).
+  function runQAReview(task, text, worker) {
+    var ag = AGENTS();
+    var settings = STATE().settings || {};
+
+    // Pick the QA role/agent model (haiku by default). Reuse the same creds rules.
+    var qaRole = ROLES().qa || {};
+    var qaAgent = (ag && ag.byRole) ? (ag.byRole('qa') || [])[0] : null;
+    var qaModel = (qaAgent && qaAgent.model) || qaRole.model || CFG().FAST_MODEL || settings.defaultModel;
+
+    // No creds for QA → skip review gracefully (finalize as-is; never deadlock).
+    if (!hasCredsFor(qaModel)) { finishTask(task, text); return; }
+
+    var sys = CFG().QA_REVIEW_SYSTEM;
+    var artifactText = qaReviewContent(task, text);
+    log('QA', (worker ? worker.name : task.role), 'msg', '🔍 reviewing: ' + truncate(task.title, 40));
+    if (qaAgent) { try { ag.say(qaAgent, '🔍 reviewing…', 3000); } catch (e) {} }
+
+    var acc = '';
+    var handle = App.API.stream({
+      apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
+      model: qaModel,
+      system: sys,
+      messages: [{ role: 'user', content: artifactText }],
+      onText: function (d) { acc += d; },
+      onDone: function (res) {
+        var verdict = (res && res.text) || acc || '';
+        var line = resultLine(verdict) || verdict;
+        var pass = /\bPASS\b/i.test(line) && !/\bFAIL\b/i.test(line);
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__qa_' + task.id];
+        if (pass) {
+          log('QA', 'Boss', 'result', '✓ PASS: ' + truncate(task.title, 40));
+          task._qaDone = true;
+          finishTask(task, text);
+        } else {
+          var feedback = extractFeedback(line) || extractFeedback(verdict) || 'address correctness/completeness issues';
+          if ((task._retries || 0) < (CFG().QA_MAX_RETRIES || 2)) {
+            task._retries = (task._retries || 0) + 1;
+            task._feedback = feedback;
+            log('QA', (worker ? worker.name : task.role), 'msg', '✗ FAIL → revise (' + task._retries + '): ' + truncate(feedback, 60));
+            // release the worker and re-queue for another attempt.
+            if (worker) {
+              try {
+                worker.busy = false; worker.currentTaskId = null;
+                ag.setState(worker, 'idle');
+                ag.say(worker, '✍ revising…', 3000);
+                var s3 = STATE(); if (s3 && s3._activeStreams) delete s3._activeStreams[worker.id];
+              } catch (e) {}
+            }
+            task.status = 'queued';
+            task.assignee = null;
+            refreshBoard();
+            saveSoon();
+          } else {
+            // retries exhausted → accept the last result, note QA done.
+            log('QA', 'Boss', 'result', '⚠ FAIL but retries exhausted — accepting: ' + truncate(task.title, 40));
+            task._qaDone = true;
+            finishTask(task, text);
+          }
+        }
+      },
+      onError: function (err) {
+        // QA review itself failed → don't deadlock; accept the worker result.
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__qa_' + task.id];
+        log('QA', 'Boss', 'system', 'QA review error — accepting result: ' + ((err && err.message) || 'error'));
+        task._qaDone = true;
+        finishTask(task, text);
+      },
+    });
+    var s = STATE(); if (s && s._activeStreams) s._activeStreams['__qa_' + task.id] = handle;
+  }
+
+  // qaReviewContent — what the reviewer reads: the deliverable + its instruction.
+  function qaReviewContent(task, text) {
+    var parts = [];
+    parts.push('TASK INSTRUCTION:\n' + (task.desc || task.title || ''));
+    parts.push('');
+    parts.push('WORKER DELIVERABLE TO REVIEW:\n' + String(text || ''));
+    return parts.join('\n');
+  }
+
+  // extractFeedback — pull the actionable part after "FAIL —" / "FAIL:".
+  function extractFeedback(s) {
+    if (!s) return '';
+    var m = String(s).match(/FAIL\s*[—\-:]\s*(.+)$/im);
+    return m ? m[1].trim() : '';
   }
 
   // ===========================================================================
@@ -6657,6 +7600,7 @@ window.App = window.App || {};
       agent.stats.tasksDone += 1;
       ag.setState(agent, 'idle');
       ag.say(agent, '✓ done', 2500);
+      clearAttention(agent);
       // honor a deferred break request (set while the agent was busy), else maybe wander.
       if (agent._wantBreak) {
         agent._wantBreak = false;
@@ -6686,6 +7630,8 @@ window.App = window.App || {};
       if (msg === 'NO_KEY') ag.say(agent, '🔑 set your API key in Settings', 4000);
       else ag.say(agent, '⚠ error', 3500);
       var s = STATE(); if (s && s._activeStreams) delete s._activeStreams[agent.id];
+      // Flag for the user: no-key / rate-limit (429) / any API error.
+      raiseAttention(agent);
     }
     var label = agent ? agent.name : task.role;
     log(label, 'Boss', 'error', 'API error' + (status ? ' (' + status + ')' : '') + ': ' + (msg || ''));
@@ -6805,6 +7751,189 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // WATERCOOLER — sparse idle banter between two non-boss agents.
+  //   Cooldown-gated, non-blocking. Canned lines by default; ONE batched LLM call
+  //   when settings.liveChatter && creds. Writes the topic to both memories.
+  // ===========================================================================
+  var _lastChatter = 0;       // in state._time seconds
+  var _chatterActive = false;
+
+  function idleNonBoss() {
+    var s = STATE(), out = [];
+    if (!s || !Array.isArray(s.agents)) return out;
+    for (var i = 0; i < s.agents.length; i++) {
+      var a = s.agents[i];
+      if (!a || a.role === 'boss') continue;
+      if (a.state !== 'idle') continue;
+      if (agentBusy(a)) continue;
+      if (a._attention) continue;
+      out.push(a);
+    }
+    return out;
+  }
+
+  function chatterLineFor(role) {
+    var C = CFG().CHATTER_LINES || {};
+    var pool = [];
+    try {
+      if (C.byRole && C.byRole[role] && C.byRole[role].length) pool = pool.concat(C.byRole[role]);
+      if (C.generic && C.generic.length) pool = pool.concat(C.generic);
+    } catch (e) {}
+    if (!pool.length) pool = ['nice work team', 'coffee time? ☕', 'how was your weekend?', 'good sync 🤝'];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function maybeWatercooler() {
+    try {
+      var s = STATE();
+      if (!s) return;
+      if (_chatterActive) return;
+      if (!queueIsEmpty()) return;
+      if (s._meetingActive) return;
+      var cd = (CFG().CHATTER_COOLDOWN_MS || 25000) / 1000;
+      if ((s._time - _lastChatter) < cd) return;
+
+      var pool = idleNonBoss();
+      if (pool.length < 2) return;
+
+      // pick 2 distinct.
+      var a = pool[Math.floor(Math.random() * pool.length)];
+      var b = pool[Math.floor(Math.random() * pool.length)];
+      var guard = 0;
+      while (b === a && guard++ < 8) b = pool[Math.floor(Math.random() * pool.length)];
+      if (a === b) return;
+
+      _lastChatter = s._time;
+      _chatterActive = true;
+      startWatercooler(a, b);
+    } catch (e) { _chatterActive = false; }
+  }
+
+  function startWatercooler(a, b) {
+    var ag = AGENTS();
+    var settings = STATE().settings || {};
+
+    // Walk both to adjacent break/meeting spots.
+    var spots = (WORLD() && WORLD().breakSpots) ? WORLD().breakSpots() : [];
+    if ((!spots || spots.length < 2) && WORLD() && WORLD().meetingSeats) spots = WORLD().meetingSeats();
+    spots = spots || [];
+
+    var arrived = 0;
+    function onArrive() {
+      arrived++;
+      if (arrived < 2) return;
+      // Both in place → run the exchange.
+      if (settings.liveChatter && hasCredsFor((a.model || settings.defaultModel))) {
+        liveChatter(a, b);
+      } else {
+        cannedChatter(a, b);
+      }
+    }
+
+    try {
+      if (spots[0]) ag.goToCell(a, spots[0].gx, spots[0].gy, onArrive); else onArrive();
+      if (spots[1]) ag.goToCell(b, spots[1].gx, spots[1].gy, onArrive); else onArrive();
+    } catch (e) { cannedChatter(a, b); }
+  }
+
+  function cannedChatter(a, b) {
+    var ag = AGENTS();
+    var pair = [a, b];
+    var turns = 2 + Math.floor(Math.random() * 3); // 2-4 turns
+    var i = 0;
+    var topicLine = null;
+    function step() {
+      try {
+        if (i >= turns) { endWatercooler(a, b, topicLine); return; }
+        var sp = pair[i % 2];
+        var line = chatterLineFor(sp.role);
+        if (!topicLine) topicLine = line;
+        ag.say(sp, line, 3200);
+        log(sp.name || sp.role, 'all', 'msg', line);
+        i++;
+        setTimeout(step, 1600 + Math.floor(Math.random() * 900));
+      } catch (e) { endWatercooler(a, b, topicLine); }
+    }
+    step();
+  }
+
+  function liveChatter(a, b) {
+    var ag = AGENTS();
+    var settings = STATE().settings || {};
+    var aLabel = (ROLES()[a.role] && ROLES()[a.role].label) || a.role;
+    var bLabel = (ROLES()[b.role] && ROLES()[b.role].label) || b.role;
+    var sys = "You are scripting a SHORT, light office watercooler exchange between two coworkers at an AI software company. " +
+      "Keep it casual and brief: 2-4 total lines, alternating speakers, <=12 words each. No work assignments. " +
+      "Output ONLY lines in the form 'NAME: text', nothing else.";
+    var content = "Speaker A is " + (a.name || aLabel) + " (" + aLabel + "). Speaker B is " + (b.name || bLabel) + " (" + bLabel + "). Write their quick break-room chat.";
+
+    var acc = '';
+    var handle = App.API.stream({
+      apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
+      model: (a.model || settings.defaultModel || CFG().FAST_MODEL),
+      system: sys,
+      messages: [{ role: 'user', content: content }],
+      onText: function (d) { acc += d; },
+      onDone: function (res) {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__chatter'];
+        var txt = (res && res.text) || acc || '';
+        playScriptedChatter(a, b, txt);
+      },
+      onError: function () {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__chatter'];
+        cannedChatter(a, b); // graceful fallback
+      },
+    });
+    var s = STATE(); if (s && s._activeStreams) s._activeStreams['__chatter'] = handle;
+  }
+
+  function playScriptedChatter(a, b, txt) {
+    var ag = AGENTS();
+    var lines = String(txt || '').split(/\n+/).map(function (l) { return l.trim(); })
+      .filter(function (l) { return l; }).slice(0, 4);
+    if (!lines.length) { cannedChatter(a, b); return; }
+    var pair = [a, b];
+    var i = 0, topicLine = null;
+    function step() {
+      try {
+        if (i >= lines.length) { endWatercooler(a, b, topicLine); return; }
+        var raw = lines[i];
+        var sp = pair[i % 2];
+        var line = raw.replace(/^[^:]{0,24}:\s*/, '');   // drop "Name:" prefix if present
+        if (!topicLine) topicLine = line;
+        ag.say(sp, truncate(line, 60), 3200);
+        log(sp.name || sp.role, 'all', 'msg', truncate(line, 80));
+        i++;
+        setTimeout(step, 1700 + Math.floor(Math.random() * 900));
+      } catch (e) { endWatercooler(a, b, topicLine); }
+    }
+    step();
+  }
+
+  function endWatercooler(a, b, topicLine) {
+    try {
+      var ag = AGENTS();
+      // remember the chat (low importance).
+      if (topicLine && ag && ag.addMemory) {
+        try { ag.addMemory(a, 'watercooler: ' + truncate(topicLine, 80), 1); } catch (e) {}
+        try { ag.addMemory(b, 'watercooler: ' + truncate(topicLine, 80), 1); } catch (e) {}
+      }
+      // return both to desks if still idle & free.
+      [a, b].forEach(function (agt) {
+        if (!agt) return;
+        if (agentBusy(agt)) return;
+        var hx = (typeof agt.homeGx === 'number') ? agt.homeGx : agt.gx;
+        var hy = (typeof agt.homeGy === 'number') ? agt.homeGy : agt.gy;
+        ag.goToCell(agt, hx, hy, (function (x) {
+          return function () { if (!agentBusy(x)) ag.setState(x, 'idle'); };
+        })(agt));
+      });
+    } catch (e) {}
+    _chatterActive = false;
+  }
+
+  // ===========================================================================
   // synthesize(rootTask) — meeting choreography + final boss call.
   // ===========================================================================
   Orchestrator.synthesize = function (rootTask) {
@@ -6878,10 +8007,23 @@ window.App = window.App || {};
         rootTask.status = 'done';
         rootTask.result = text || '(no synthesis produced)';
         s._meetingActive = false;
+        // Push the final answer as an Artifact (overwrite per root on re-run).
+        try {
+          pushArtifacts([{
+            name: 'final-answer.md', type: 'markdown',
+            content: rootTask.result,
+            taskId: rootTask.id, agentId: boss ? boss.id : null,
+          }]);
+        } catch (e) {}
+        // Boss remembers the outcome.
+        try {
+          if (boss && ag.addMemory) ag.addMemory(boss, 'Delivered: ' + truncate(rootTask.title, 80), 6);
+        } catch (e) {}
         if (boss) {
           boss.busy = false;
           ag.setState(boss, 'idle');
           ag.say(boss, 'Done ✓', 4000);
+          clearAttention(boss);
         }
         // disperse participants back to their desks; send the boss home too.
         disperse(participants, boss);
@@ -6898,6 +8040,7 @@ window.App = window.App || {};
         }
         refreshBoard();
         try { if (App.UI && App.UI.showFinalResult) App.UI.showFinalResult(rootTask); } catch (e) {}
+        try { if (App.UI && App.UI.notifyDone) App.UI.notifyDone(rootTask); } catch (e) {}
         saveSoon();
         if (s && s._activeStreams) delete s._activeStreams['__boss_synth'];
       },
@@ -6929,6 +8072,11 @@ window.App = window.App || {};
 
   function buildSynthUserContent(rootTask) {
     var parts = [];
+    var boss = (AGENTS() && AGENTS().byRole) ? (AGENTS().byRole('boss') || [])[0] : null;
+    var persona = personaBlock(boss);
+    if (persona) { parts.push(persona); parts.push(''); }
+    var mem = memoryBlock(boss, rootTask.desc || rootTask.title || '');
+    if (mem) { parts.push(mem); parts.push(''); }
     parts.push("USER'S ORIGINAL GOAL:\n" + (rootTask.desc || ''));
     var guidance = (rootTask._plan && rootTask._plan.final) ||
       'Combine all worker results into a single coherent answer for the user.';
@@ -6980,7 +8128,7 @@ window.App = window.App || {};
       if (!s || !Array.isArray(s.tasks)) return;
       if (s.paused) return;
 
-      var maxConc = CFG().MAX_CONCURRENT || 4;
+      var maxConc = CFG().MAX_CONCURRENT || 3;
 
       // 1) flip blocked → queued when deps satisfied.
       for (var b = 0; b < s.tasks.length; b++) {
@@ -7016,6 +8164,9 @@ window.App = window.App || {};
 
       // 3) synthesis trigger: any root with all children terminal & not yet synthesized.
       checkRootsForSynthesis(s);
+
+      // 4) watercooler: sparse idle banter when nothing is queued/running.
+      maybeWatercooler();
     } catch (e) {
       // tick must never throw into the loop.
       try { console && console.warn && console.warn('[Orchestrator.tick]', e); } catch (e2) {}
@@ -7167,6 +8318,7 @@ window.App = window.App || {};
       on($('btn-task'), 'click', function () { UI.openTaskBoard(); });
       on($('btn-add-agent'), 'click', function () { UI.openAddAgent(); });
       on($('btn-settings'), 'click', function () { UI.openSettings(); });
+      on($('btn-artifacts'), 'click', function () { UI.openArtifacts(); });
       on($('btn-layout'), 'click', function () { UI.toggleLayoutEdit(); });
       on($('btn-zoom-in'), 'click', function () { UI.zoomIn(); });
       on($('btn-zoom-out'), 'click', function () { UI.zoomOut(); });
@@ -7225,6 +8377,14 @@ window.App = window.App || {};
       on(canvas, 'pointercancel', UI.onCanvasPointerUp);
       on(canvas, 'wheel', UI.onWheel);
 
+      // Minimap: pointerdown centers the camera on the clicked world point.
+      var minimap = $('minimap');
+      on(minimap, 'pointerdown', UI.onMinimapPointerDown);
+
+      // Double-click empty floor clears follow-camera.
+      var canvasDbl = $('world-canvas');
+      on(canvasDbl, 'dblclick', function () { STATE() && (STATE()._followId = null); });
+
       // Global "Coffee break" control (sends all idle non-boss agents on break).
       ensureCoffeeBreakButton();
 
@@ -7235,6 +8395,7 @@ window.App = window.App || {};
       // so its .on/aria-checked state matches App.state before Settings is opened.
       setWebSearchSwitch(!!(App.state && App.state.settings && App.state.settings.webSearch));
 
+      UI.refreshArtifacts();
       UI.refresh();
     } catch (e) {
       try { console && console.warn && console.warn('[UI.init]', e); } catch (e2) {}
@@ -7574,6 +8735,7 @@ window.App = window.App || {};
     var text = (input.value || '').trim();
     if (!text) return;
     input.value = '';
+    requestNotifyPermission(); // polite, one-time, on this user gesture
     if (ORCH() && ORCH().runBossTask) {
       ORCH().runBossTask(text);
       UI.openTaskBoard(); // surface the board so the user sees the decomposition
@@ -7598,10 +8760,12 @@ window.App = window.App || {};
     var s = STATE();
     if (!s) return;
     s.selectedAgentId = agentId;
+    s._followId = agentId; // follow-camera tracks the selected agent
     var panel = $('panel-agent');
     show(panel);
     ensureBreakButton();
     refreshSelectedPanel();
+    refreshPersonaPanel(agentId);
     renderTranscript(agentId);
     startPanelPreview();
     UI.refreshAgentList(); // highlight selected row
@@ -7651,7 +8815,7 @@ window.App = window.App || {};
 
   UI.closeAgentPanel = function () {
     var s = STATE();
-    if (s) s.selectedAgentId = null;
+    if (s) { s.selectedAgentId = null; s._followId = null; }
     hide($('panel-agent'));
     stopPanelPreview();
     UI.refreshAgentList();
@@ -7672,6 +8836,50 @@ window.App = window.App || {};
     // accent
     var accent = $('panel-agent');
     if (accent) accent.style.setProperty('--accent', a.color || '#9b5cff');
+    // keep persona/memory in sync while the panel is open
+    refreshPersonaPanel(a.id);
+  }
+
+  // Read-only persona + recent memories for the open agent panel.
+  function refreshPersonaPanel(agentId) {
+    var body = $('panel-agent-persona-body');
+    if (!body) return;
+    clear(body);
+    var a = AGENTS() && AGENTS().byId ? AGENTS().byId(agentId) : null;
+    if (!a) return;
+
+    var p = a.persona || {};
+    var addField = function (key, val) {
+      val = (val == null ? '' : String(val)).trim();
+      if (!val) return;
+      var f = el('div', 'pe-field');
+      f.appendChild(el('div', 'pe-key', key));
+      f.appendChild(el('div', 'pe-val', val));
+      body.appendChild(f);
+    };
+    addField('Identity', p.identity);
+    addField('Plan', p.plan);
+    addField('Relationships', p.relationships);
+    if (!body.firstChild) body.appendChild(el('div', 'pe-empty', 'No persona defined.'));
+
+    // recent memories (latest ~8, newest first)
+    var memWrap = el('div', 'pe-field');
+    memWrap.appendChild(el('div', 'pe-key', 'Recent memory'));
+    var mems = Array.isArray(a.memories) ? a.memories : [];
+    if (!mems.length) {
+      memWrap.appendChild(el('div', 'pe-empty', 'No memories yet.'));
+    } else {
+      var recent = mems.slice(-8).reverse();
+      for (var i = 0; i < recent.length; i++) {
+        var m = recent[i] || {};
+        var line = el('div', 'pe-mem');
+        var imp = Math.round(Number(m.importance) || 0);
+        line.appendChild(el('span', 'pe-imp', '◆' + imp));
+        line.appendChild(document.createTextNode(String(m.text || '')));
+        memWrap.appendChild(line);
+      }
+    }
+    body.appendChild(memWrap);
   }
 
   function shortModel(m) {
@@ -7979,6 +9187,7 @@ window.App = window.App || {};
     if (sw) settings.webSearch = (sw.getAttribute('aria-checked') === 'true');
     if (App.Store && App.Store.save) App.Store.save();
     hide($('modal-settings'));
+    requestNotifyPermission(); // polite, one-time, on this user gesture
     UI.toast('Settings saved');
   }
 
@@ -8399,6 +9608,449 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // ARTIFACTS  (badge + modal + per-item copy/download + store-only ZIP)
+  // ===========================================================================
+  var _arSel = null; // currently-viewed artifact id
+
+  UI.refreshArtifacts = function () {
+    var s = STATE();
+    var arts = (s && Array.isArray(s.artifacts)) ? s.artifacts : [];
+    var badge = $('artifacts-badge');
+    if (badge) {
+      badge.textContent = String(arts.length);
+      if (arts.length > 0) show(badge); else hide(badge);
+    }
+    // if the modal is open, re-render its list
+    if ($('modal-artifacts')) renderArtifactList();
+  };
+
+  UI.openArtifacts = function () {
+    var root = $('modal-root');
+    if (!root) { UI.toast('Artifacts unavailable'); return; }
+    var prev = $('modal-artifacts');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-artifacts';
+    var scrim = el('div', 'modal-scrim');
+    on(scrim, 'click', function () { closeArtifacts(); });
+
+    var card = el('div', 'modal-card');
+    card.appendChild(el('div', 'panel-accent'));
+
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', '📦 ARTIFACTS'));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', function () { closeArtifacts(); });
+    head.appendChild(x);
+
+    var bodyEl = el('div', 'modal-body');
+    var list = el('div', 'ar-list'); list.id = 'ar-list';
+    bodyEl.appendChild(list);
+    var viewerHead = el('div', 'ar-viewer-head hidden'); viewerHead.id = 'ar-viewer-head';
+    bodyEl.appendChild(viewerHead);
+    var viewer = el('pre', 'ar-viewer hidden'); viewer.id = 'ar-viewer';
+    bodyEl.appendChild(viewer);
+
+    var foot = el('footer', 'modal-foot');
+    var zipBtn = el('button', 'btn', '⤓ Download all (.zip)');
+    zipBtn.type = 'button';
+    on(zipBtn, 'click', function () { downloadAllZip(); });
+    var close = el('button', 'btn btn-primary', 'Close');
+    close.type = 'button';
+    on(close, 'click', function () { closeArtifacts(); });
+    foot.appendChild(zipBtn); foot.appendChild(close);
+
+    card.appendChild(head); card.appendChild(bodyEl); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+
+    _arSel = null;
+    renderArtifactList();
+  };
+
+  function closeArtifacts() {
+    var m = $('modal-artifacts');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+    _arSel = null;
+  }
+
+  function renderArtifactList() {
+    var list = $('ar-list');
+    if (!list) return;
+    clear(list);
+    var s = STATE();
+    var arts = (s && Array.isArray(s.artifacts)) ? s.artifacts : [];
+    if (!arts.length) {
+      list.appendChild(el('div', 'ar-empty', 'No artifacts yet. Dispatch a goal — workers emit code/docs/data here.'));
+      hideArtifactViewer();
+      return;
+    }
+    for (var i = arts.length - 1; i >= 0; i--) { // newest first
+      (function (art) {
+        var item = el('div', 'ar-item');
+        if (_arSel === art.id) item.classList.add('active');
+        item.appendChild(el('span', 'ar-type', art.type || 'text'));
+        item.appendChild(el('span', 'ar-name', art.name || '(unnamed)'));
+        var a = AGENTS() && AGENTS().byId ? AGENTS().byId(art.agentId) : null;
+        var sz = byteLen(art.content || '');
+        item.appendChild(el('span', 'ar-meta', (a ? a.name + ' · ' : '') + humanSize(sz)));
+        on(item, 'click', function () { viewArtifact(art.id); });
+        list.appendChild(item);
+      })(arts[i]);
+    }
+  }
+
+  function findArtifact(id) {
+    var s = STATE();
+    var arts = (s && Array.isArray(s.artifacts)) ? s.artifacts : [];
+    for (var i = 0; i < arts.length; i++) if (arts[i] && arts[i].id === id) return arts[i];
+    return null;
+  }
+
+  function hideArtifactViewer() {
+    hide($('ar-viewer')); hide($('ar-viewer-head'));
+  }
+
+  function viewArtifact(id) {
+    _arSel = id;
+    var art = findArtifact(id);
+    var viewer = $('ar-viewer');
+    var vhead = $('ar-viewer-head');
+    if (!art || !viewer || !vhead) return;
+    show(viewer); show(vhead);
+    viewer.textContent = String(art.content || '');
+    clear(vhead);
+    vhead.appendChild(el('span', 'ar-viewer-name', art.name || '(unnamed)'));
+    var copy = el('button', 'btn btn-sq', '⧉'); copy.type = 'button'; copy.title = 'Copy';
+    on(copy, 'click', function () {
+      try { if (navigator.clipboard) navigator.clipboard.writeText(art.content || ''); UI.toast('Copied ' + art.name); } catch (e) {}
+    });
+    var dl = el('button', 'btn btn-sq', '⤓'); dl.type = 'button'; dl.title = 'Download';
+    on(dl, 'click', function () { downloadOne(art); });
+    vhead.appendChild(copy); vhead.appendChild(dl);
+    renderArtifactList(); // re-mark active
+  }
+
+  function downloadOne(art) {
+    try {
+      var blob = new Blob([String(art.content || '')], { type: 'text/plain' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = safeFilename(art.name || 'artifact.txt');
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    } catch (e) { UI.showError('Download failed: ' + (e && e.message)); }
+  }
+
+  function downloadAllZip() {
+    var s = STATE();
+    var arts = (s && Array.isArray(s.artifacts)) ? s.artifacts : [];
+    if (!arts.length) { UI.toast('No artifacts to download'); return; }
+    try {
+      // dedupe filenames so the zip is valid
+      var used = {};
+      var files = [];
+      for (var i = 0; i < arts.length; i++) {
+        var nm = safeFilename(arts[i].name || ('artifact-' + i + '.txt'));
+        if (used[nm]) {
+          var dot = nm.lastIndexOf('.');
+          var base = dot > 0 ? nm.slice(0, dot) : nm;
+          var ext = dot > 0 ? nm.slice(dot) : '';
+          var k = used[nm];
+          while (used[base + '-' + k + ext]) k++;
+          used[nm] = k + 1;
+          nm = base + '-' + k + ext;
+        }
+        used[nm] = (used[nm] || 0) + 1;
+        files.push({ name: nm, data: utf8Bytes(String(arts[i].content || '')) });
+      }
+      var zip = makeStoreZip(files);
+      var blob = new Blob([zip], { type: 'application/zip' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'neon-works-artifacts-' + Date.now() + '.zip';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      UI.toast('Downloaded ' + files.length + ' artifact(s)');
+    } catch (e) { UI.showError('ZIP failed: ' + (e && e.message)); }
+  }
+
+  // ---- inline store-only (no-compression) ZIP writer -----------------------
+  // CRC32 table.
+  var _crcTable = null;
+  function crc32(bytes) {
+    if (!_crcTable) {
+      _crcTable = [];
+      for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        _crcTable[n] = c >>> 0;
+      }
+    }
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ _crcTable[(crc ^ bytes[i]) & 0xFF];
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  function utf8Bytes(str) {
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str);
+    // fallback manual UTF-8 encode
+    var out = [];
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) { out.push(0xC0 | (c >> 6), 0x80 | (c & 0x3F)); }
+      else { out.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F)); }
+    }
+    return new Uint8Array(out);
+  }
+  // build a store-only zip from [{name, data:Uint8Array}]
+  function makeStoreZip(files) {
+    var chunks = [];     // local records
+    var central = [];    // central dir records
+    var offset = 0;
+    function u16(n) { return [n & 0xFF, (n >>> 8) & 0xFF]; }
+    function u32(n) { return [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF]; }
+    for (var i = 0; i < files.length; i++) {
+      var nameBytes = utf8Bytes(files[i].name);
+      var data = files[i].data;
+      var crc = crc32(data);
+      var local = [].concat(
+        u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0),
+        u32(crc), u32(data.length), u32(data.length),
+        u16(nameBytes.length), u16(0)
+      );
+      chunks.push(new Uint8Array(local));
+      chunks.push(nameBytes);
+      chunks.push(data);
+      var cen = [].concat(
+        u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+        u32(crc), u32(data.length), u32(data.length),
+        u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0),
+        u32(0), u32(offset)
+      );
+      central.push({ head: new Uint8Array(cen), name: nameBytes });
+      offset += local.length + nameBytes.length + data.length;
+    }
+    var centralStart = offset;
+    var centralSize = 0;
+    for (var j = 0; j < central.length; j++) {
+      chunks.push(central[j].head);
+      chunks.push(central[j].name);
+      centralSize += central[j].head.length + central[j].name.length;
+    }
+    var end = [].concat(
+      u32(0x06054b50), u16(0), u16(0),
+      u16(files.length), u16(files.length),
+      u32(centralSize), u32(centralStart), u16(0)
+    );
+    chunks.push(new Uint8Array(end));
+    // concat all chunks
+    var total = 0;
+    for (var k = 0; k < chunks.length; k++) total += chunks[k].length;
+    var out = new Uint8Array(total);
+    var pos = 0;
+    for (var m = 0; m < chunks.length; m++) { out.set(chunks[m], pos); pos += chunks[m].length; }
+    return out;
+  }
+
+  function safeFilename(name) {
+    return String(name || 'file.txt').replace(/[\/\\:*?"<>|]+/g, '_').replace(/^\.+/, '').slice(0, 120) || 'file.txt';
+  }
+  function byteLen(str) { return utf8Bytes(String(str || '')).length; }
+  function humanSize(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(1) + ' MB';
+  }
+
+  // ===========================================================================
+  // ATTENTION badge · COMPLETION chime · NOTIFICATION
+  // ===========================================================================
+  // setAttentionBadge(n) — reflect attention-needing agent count in the tab title.
+  UI.setAttentionBadge = function (n) {
+    if (typeof document === 'undefined') return;
+    n = Math.max(0, Number(n) || 0);
+    try { document.title = (n > 0 ? '(' + n + ') ' : '') + 'NEON//WORKS'; } catch (e) {}
+  };
+
+  var _audioCtx = null;
+  function getAudioCtx() {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!_audioCtx) _audioCtx = new AC();
+      if (_audioCtx.state === 'suspended' && _audioCtx.resume) { try { _audioCtx.resume(); } catch (e) {} }
+      return _audioCtx;
+    } catch (e) { return null; }
+  }
+  function playChime() {
+    var ctx = getAudioCtx();
+    if (!ctx) return;
+    try {
+      var now = ctx.currentTime;
+      var tones = [880, 1320]; // two-tone
+      for (var i = 0; i < tones.length; i++) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = tones[i];
+        var t0 = now + i * 0.12;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(t0); osc.stop(t0 + 0.24);
+      }
+    } catch (e) {}
+  }
+
+  function requestNotifyPermission() {
+    try {
+      if (typeof Notification === 'undefined') return;
+      if (Notification.permission === 'default' && Notification.requestPermission) {
+        var r = Notification.requestPermission();
+        if (r && r.catch) r.catch(function () {});
+      }
+    } catch (e) {}
+  }
+
+  // notifyDone(rootTask) — chime (if enabled), OS notification (if granted),
+  // and clear the attention tab badge.
+  UI.notifyDone = function (rootTask) {
+    var s = STATE();
+    var settings = (s && s.settings) || {};
+    if (settings.sound !== false) playChime(); // default-on
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        var title = (rootTask && (rootTask.title || rootTask.desc)) ? truncate(rootTask.title || rootTask.desc, 60) : 'Goal complete';
+        new Notification('NEON//WORKS — done', { body: title });
+      }
+    } catch (e) {}
+    UI.setAttentionBadge(0);
+  };
+
+  // ===========================================================================
+  // MINIMAP — overview render + click-to-center
+  // ===========================================================================
+  UI.drawMinimap = function () {
+    var canvas = $('minimap');
+    if (!canvas || !canvas.getContext) return;
+    var s = STATE();
+    var w = WORLD();
+    var cfg = CFG();
+    if (!s || !s.layout) return;
+    var ctx = canvas.getContext('2d');
+    var cw = canvas.width, ch = canvas.height;
+    var L = s.layout;
+    var cols = L.cols || cfg.GRID_COLS || 46;
+    var rows = L.rows || cfg.GRID_ROWS || 30;
+    var TILE = cfg.TILE || 16;
+    var worldW = cols * TILE, worldH = rows * TILE;
+
+    // fit world into canvas with letterboxing
+    var pad = 4;
+    var scale = Math.min((cw - pad * 2) / worldW, (ch - pad * 2) / worldH);
+    if (!(scale > 0)) return;
+    var offX = (cw - worldW * scale) / 2;
+    var offY = (ch - worldH * scale) / 2;
+    var wx = function (x) { return offX + x * scale; };
+    var wy = function (y) { return offY + y * scale; };
+
+    var pal = (cfg.palette) || {};
+    try {
+      ctx.clearRect(0, 0, cw, ch);
+      // floor backdrop
+      ctx.fillStyle = pal.floor || '#0d1226';
+      ctx.fillRect(offX, offY, worldW * scale, worldH * scale);
+      ctx.strokeStyle = pal.gridLine || '#1c2b55';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(offX + 0.5, offY + 0.5, worldW * scale, worldH * scale);
+
+      // furniture bounds
+      var furn = L.furniture || [];
+      ctx.fillStyle = 'rgba(46,87,184,.55)';
+      for (var fi = 0; fi < furn.length; fi++) {
+        var f = furn[fi]; if (!f) continue;
+        var fx = (f.gx || 0) * TILE, fy = (f.gy || 0) * TILE;
+        var fw = (f.w || 1) * TILE, fh = (f.h || 1) * TILE;
+        ctx.fillRect(wx(fx), wy(fy), Math.max(1, fw * scale), Math.max(1, fh * scale));
+      }
+
+      // agent dots (role colors)
+      var agents = s.agents || [];
+      for (var ai = 0; ai < agents.length; ai++) {
+        var a = agents[ai]; if (!a) continue;
+        var ax = (typeof a.x === 'number') ? a.x : (a.gx || 0) * TILE;
+        var ay = (typeof a.y === 'number') ? a.y : (a.gy || 0) * TILE;
+        var col = a.color || ((ROLES()[a.role] && ROLES()[a.role].color)) || '#9b5cff';
+        ctx.fillStyle = col;
+        var px = wx(ax), py = wy(ay);
+        ctx.beginPath();
+        ctx.arc(px, py, (s._followId === a.id) ? 3 : 2, 0, Math.PI * 2);
+        ctx.fill();
+        if (s.selectedAgentId === a.id) {
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+
+      // viewport rectangle (current camera view)
+      if (w && w.screenToWorld) {
+        var canvasEl = $('world-canvas');
+        var vw = canvasEl ? (canvasEl.clientWidth || canvasEl.width) : 0;
+        var vh = canvasEl ? (canvasEl.clientHeight || canvasEl.height) : 0;
+        var tl = w.screenToWorld(0, 0);
+        var br = w.screenToWorld(vw, vh);
+        if (tl && br) {
+          ctx.strokeStyle = pal.cyan || '#39d7ff';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(wx(tl.x) + 0.5, wy(tl.y) + 0.5,
+            Math.max(2, (br.x - tl.x) * scale), Math.max(2, (br.y - tl.y) * scale));
+        }
+      }
+    } catch (e) {}
+  };
+
+  UI.onMinimapPointerDown = function (e) {
+    var canvas = $('minimap');
+    var s = STATE();
+    var w = WORLD();
+    var cfg = CFG();
+    if (!canvas || !s || !s.layout) return;
+    var L = s.layout;
+    var cols = L.cols || cfg.GRID_COLS || 46;
+    var rows = L.rows || cfg.GRID_ROWS || 30;
+    var TILE = cfg.TILE || 16;
+    var worldW = cols * TILE, worldH = rows * TILE;
+    var cw = canvas.width, ch = canvas.height;
+    var pad = 4;
+    var scale = Math.min((cw - pad * 2) / worldW, (ch - pad * 2) / worldH);
+    if (!(scale > 0)) return;
+    var offX = (cw - worldW * scale) / 2;
+    var offY = (ch - worldH * scale) / 2;
+
+    var rect = canvas.getBoundingClientRect();
+    // account for CSS-vs-buffer scaling
+    var sx = (e.clientX - rect.left) * (cw / (rect.width || cw));
+    var sy = (e.clientY - rect.top) * (ch / (rect.height || ch));
+    var worldX = (sx - offX) / scale;
+    var worldY = (sy - offY) / scale;
+
+    // center camera on that world point
+    if (s.camera) {
+      s._followId = null; // a manual minimap jump cancels follow
+      var canvasEl = $('world-canvas');
+      var vw = canvasEl ? (canvasEl.clientWidth || canvasEl.width) : 0;
+      var vh = canvasEl ? (canvasEl.clientHeight || canvasEl.height) : 0;
+      var pps = (cfg.PIXEL || 3) * s.camera.zoom;
+      s.camera.x = worldX - (vw / 2) / pps;
+      s.camera.y = worldY - (vh / 2) / pps;
+      if (w && w.clampCamera) w.clampCamera();
+    }
+  };
+
+  // ===========================================================================
   // PUBLISH + §7.10 compat alias
   // ===========================================================================
   App.UI = UI;
@@ -8528,10 +10180,16 @@ window.App = window.App || {};
       if (s && !s.paused && App.Orchestrator && App.Orchestrator.tick) App.Orchestrator.tick();
     } catch (e) { warnOnce('orchestrator.tick', e); }
 
+    // --- follow-camera: gently ease the camera toward the followed agent ---
+    try { followCamera(s); } catch (e) { warnOnce('main.followCamera', e); }
+
     // --- draw (guarded) ---
     try {
       Main.draw();
     } catch (e) { warnOnce('main.draw', e); }
+
+    // --- minimap overlay (guarded; never throws into the loop) ---
+    try { if (App.UI && App.UI.drawMinimap) App.UI.drawMinimap(); } catch (e) { warnOnce('ui.drawMinimap', e); }
 
     // --- periodic autosave on meaningful change ---
     _saveAccum += dt;
@@ -8609,6 +10267,37 @@ window.App = window.App || {};
     // 5) FX overlay LAST (scanlines + bloom + vignette).
     try { if (art.drawFX) art.drawFX(ctx, cssW, cssH, s._time); } catch (e) {}
   };
+
+  // ---------------------------------------------------------------------------
+  // follow-camera — ease the camera so the followed agent stays centered.
+  //   Gentle lerp; clamps after. No-op (and never throws) when nothing to follow.
+  // ---------------------------------------------------------------------------
+  function followCamera(s) {
+    if (!s || !s._followId || !s.camera) return;
+    var agents = s.agents;
+    if (!Array.isArray(agents)) return;
+    var a = null;
+    for (var i = 0; i < agents.length; i++) {
+      if (agents[i] && agents[i].id === s._followId) { a = agents[i]; break; }
+    }
+    if (!a) { s._followId = null; return; } // followed agent gone
+    var ax = (typeof a.x === 'number') ? a.x : null;
+    var ay = (typeof a.y === 'number') ? a.y : null;
+    if (ax == null || ay == null) return;
+
+    var cfg = CFG();
+    var pps = (cfg.PIXEL || 3) * s.camera.zoom;
+    if (!(pps > 0)) return;
+    // desired camera top-left so the agent sits at viewport center.
+    var vw = _canvas ? (_canvas.clientWidth || (_canvas.width / _dpr)) : 0;
+    var vh = _canvas ? (_canvas.clientHeight || (_canvas.height / _dpr)) : 0;
+    var targetX = ax - (vw / 2) / pps;
+    var targetY = ay - (vh / 2) / pps;
+    var lerp = 0.08; // small factor → gentle glide
+    s.camera.x += (targetX - s.camera.x) * lerp;
+    s.camera.y += (targetY - s.camera.y) * lerp;
+    if (WORLD() && WORLD().clampCamera) WORLD().clampCamera();
+  }
 
   // Find the agent currently seated at this furniture's seat (for monitor content).
   function seatedAgentFor(f, s) {
