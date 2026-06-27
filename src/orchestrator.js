@@ -67,6 +67,17 @@ window.App = window.App || {};
   var Orchestrator = {};
   Orchestrator.PLAN_SCHEMA_VERSION = 1;
 
+  // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
+  // local companion (subscription proxy needs no key). Mirrors api.js's guard so
+  // companion-only / GPT-only setups aren't blocked before the request is built.
+  function hasCredsFor(model) {
+    var set = (STATE() && STATE().settings) || {};
+    var prov = (CFG().providerOf ? CFG().providerOf(model)
+      : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
+    if (prov === 'openai') return !!set.openaiKey;
+    return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+  }
+
   // ===========================================================================
   // TASK lookups
   // ===========================================================================
@@ -87,10 +98,14 @@ window.App = window.App || {};
     return out;
   }
   function runningCount() {
+    // Count only running WORKER subtasks; the root boss task stays 'running' for the
+    // whole goal lifetime and must NOT consume a MAX_CONCURRENT slot (else only one
+    // worker ever runs in parallel at MAX_CONCURRENT=2).
     var s = STATE(), n = 0;
     if (!s || !Array.isArray(s.tasks)) return 0;
     for (var i = 0; i < s.tasks.length; i++) {
-      if (s.tasks[i] && s.tasks[i].status === 'running') n++;
+      var t = s.tasks[i];
+      if (t && t.status === 'running' && t.parentId) n++;
     }
     return n;
   }
@@ -157,11 +172,11 @@ window.App = window.App || {};
     refreshBoard();
 
     // No key → fail fast, friendly. (§10)
-    if (!settings.apiKey) {
+    if (!hasCredsFor((boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL)) {
       root.status = 'error';
       root.error = 'NO_KEY';
-      if (boss) ag.say(boss, '🔑 set your API key in Settings', 4000);
-      try { if (App.UI && App.UI.toast) App.UI.toast('Set your API key in Settings'); } catch (e) {}
+      if (boss) ag.say(boss, '🔑 add an API key (or enable the companion) in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
       log('Boss', 'system', 'error', 'NO_KEY — cannot plan.');
       refreshBoard();
       return;
@@ -477,9 +492,9 @@ window.App = window.App || {};
     var wantWeb = !!(settings.webSearch && (task.needsWeb || roleDef.webSearchPreferred));
     var tools = (wantWeb && CFG().WEB_SEARCH_TOOL) ? [CFG().WEB_SEARCH_TOOL] : undefined;
 
-    // No key path (should be caught earlier, but defend).
-    if (!settings.apiKey) {
-      ag.say(agent, '🔑 set your API key in Settings', 4000);
+    // No credentials path (defend; provider/companion-aware so GPT & companion work).
+    if (!hasCredsFor(agent.model || settings.defaultModel)) {
+      ag.say(agent, '🔑 add an API key (or enable the companion) in Settings', 4000);
       failTask(task, 'NO_KEY');
       return;
     }
@@ -818,8 +833,9 @@ window.App = window.App || {};
           ag.setState(boss, 'idle');
           ag.say(boss, 'Done ✓', 4000);
         }
-        // disperse participants back to their desks.
+        // disperse participants back to their desks; send the boss home too.
         disperse(participants, boss);
+        if (boss) ag.returnHome(boss);
         log('Boss', 'user', 'result', 'Final answer ready.');
         // Boss-initiated rest: queue empty + root done → occasionally a team break.
         // Light touch; breakEveryone() only moves idle, non-busy agents.
@@ -842,6 +858,7 @@ window.App = window.App || {};
         s._meetingActive = false;
         if (boss) { boss.busy = false; ag.setState(boss, 'idle'); ag.say(boss, '⚠ ' + truncate(msg, 36), 4000); }
         disperse(participants, boss);
+        if (boss) ag.returnHome(boss);
         log('Boss', 'system', 'error', 'synthesis error: ' + msg);
         refreshBoard();
         try { if (App.UI && App.UI.showFinalResult) App.UI.showFinalResult(rootTask); } catch (e) {}

@@ -531,6 +531,15 @@ window.App = window.App || {};
     var bossBot = y0 + Math.max(3, Math.floor((rows - 2) * 0.18));   // ~ row 6 @30
     var midBot  = y0 + Math.max(7, Math.floor((rows - 2) * 0.45));   // ~ row 13 @30
     var labBot  = y0 + Math.max(11, Math.floor((rows - 2) * 0.72));  // ~ row 21 @30
+    // Robustness (legacy 30×20): the lower band (midBot..labBot) holds the 3×2
+    // meeting table, which needs a walkable ring on all sides. Guarantee at least
+    // 4 interior rows there so the table can never seal its own seats. Also keep
+    // a 2-row lounge below labBot. (No-op on the v2 46×30 grid where the bands are
+    // already roomy.) Clamp so the bands never invert on a tiny grid.
+    labBot = Math.max(labBot, midBot + 5);
+    if (labBot > y1 - 2) labBot = Math.max(midBot + 3, y1 - 2);
+    if (midBot >= labBot) midBot = Math.max(bossBot + 2, labBot - 3);
+    if (bossBot >= midBot) bossBot = Math.max(y0 + 2, midBot - 2);
 
     // Vertical divider walls between left/right rooms, placed OFF the corridor so
     // the corridor itself stays open. Left wall at corrX-1, right wall at corrX+1.
@@ -616,6 +625,9 @@ window.App = window.App || {};
         seatGy: seat.sy,
       };
       if (extra) { for (var k in extra) if (extra.hasOwnProperty(k)) f[k] = extra[k]; }
+      // A seeded chair sits ON a desk's seat cell; its own computed seat would land
+      // on the (blocking) desk footprint, so it's not a valid walk target. Null it.
+      if (type === 'chair') { f.seatGx = null; f.seatGy = null; }
       furniture.push(f);
       return f;
     }

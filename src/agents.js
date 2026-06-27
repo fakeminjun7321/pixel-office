@@ -507,6 +507,16 @@ window.App = window.App || {};
   // DIRECT CHAT — chat(agent, userText) → {abort()}
   // Single agent, NO orchestration. Streams into bubble + UI transcript.
   // ===========================================================================
+  // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
+  // local companion. Mirrors api.js so companion-only / GPT-only direct chat works.
+  function hasCredsFor(model) {
+    var set = (STATE() && STATE().settings) || {};
+    var prov = (CFG().providerOf ? CFG().providerOf(model)
+      : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
+    if (prov === 'openai') return !!set.openaiKey;
+    return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+  }
+
   Agents.chat = function (agent, userText) {
     var noop = { abort: function () {} };
     if (!agent) return noop;
@@ -521,10 +531,10 @@ window.App = window.App || {};
       return noop;
     }
 
-    // No API key → friendly bubble, no network. (§10)
-    if (!settings.apiKey) {
-      Agents.say(agent, '🔑 set your API key in Settings', 4000);
-      try { if (App.UI && App.UI.toast) App.UI.toast('Set your API key in Settings'); } catch (e) {}
+    // No credentials → friendly bubble, no network. Provider/companion-aware (§10).
+    if (!hasCredsFor(agent.model || settings.defaultModel)) {
+      Agents.say(agent, '🔑 add an API key (or enable the companion) in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
       try {
         if (App.Store && App.Store.pushLog) App.Store.pushLog({
           from: agent.name, to: 'system', kind: 'error', text: 'NO_KEY (direct chat)',
@@ -552,6 +562,7 @@ window.App = window.App || {};
 
     var handle = App.API.stream({
       apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
       model: agent.model || settings.defaultModel,
       system: agent.systemPrompt || '',
       messages: agent.conversation.slice(),

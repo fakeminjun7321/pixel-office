@@ -3298,6 +3298,15 @@ window.App = window.App || {};
     var bossBot = y0 + Math.max(3, Math.floor((rows - 2) * 0.18));   // ~ row 6 @30
     var midBot  = y0 + Math.max(7, Math.floor((rows - 2) * 0.45));   // ~ row 13 @30
     var labBot  = y0 + Math.max(11, Math.floor((rows - 2) * 0.72));  // ~ row 21 @30
+    // Robustness (legacy 30×20): the lower band (midBot..labBot) holds the 3×2
+    // meeting table, which needs a walkable ring on all sides. Guarantee at least
+    // 4 interior rows there so the table can never seal its own seats. Also keep
+    // a 2-row lounge below labBot. (No-op on the v2 46×30 grid where the bands are
+    // already roomy.) Clamp so the bands never invert on a tiny grid.
+    labBot = Math.max(labBot, midBot + 5);
+    if (labBot > y1 - 2) labBot = Math.max(midBot + 3, y1 - 2);
+    if (midBot >= labBot) midBot = Math.max(bossBot + 2, labBot - 3);
+    if (bossBot >= midBot) bossBot = Math.max(y0 + 2, midBot - 2);
 
     // Vertical divider walls between left/right rooms, placed OFF the corridor so
     // the corridor itself stays open. Left wall at corrX-1, right wall at corrX+1.
@@ -3383,6 +3392,9 @@ window.App = window.App || {};
         seatGy: seat.sy,
       };
       if (extra) { for (var k in extra) if (extra.hasOwnProperty(k)) f[k] = extra[k]; }
+      // A seeded chair sits ON a desk's seat cell; its own computed seat would land
+      // on the (blocking) desk footprint, so it's not a valid walk target. Null it.
+      if (type === 'chair') { f.seatGx = null; f.seatGy = null; }
       furniture.push(f);
       return f;
     }
@@ -5780,6 +5792,16 @@ window.App = window.App || {};
   // DIRECT CHAT — chat(agent, userText) → {abort()}
   // Single agent, NO orchestration. Streams into bubble + UI transcript.
   // ===========================================================================
+  // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
+  // local companion. Mirrors api.js so companion-only / GPT-only direct chat works.
+  function hasCredsFor(model) {
+    var set = (STATE() && STATE().settings) || {};
+    var prov = (CFG().providerOf ? CFG().providerOf(model)
+      : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
+    if (prov === 'openai') return !!set.openaiKey;
+    return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+  }
+
   Agents.chat = function (agent, userText) {
     var noop = { abort: function () {} };
     if (!agent) return noop;
@@ -5794,10 +5816,10 @@ window.App = window.App || {};
       return noop;
     }
 
-    // No API key → friendly bubble, no network. (§10)
-    if (!settings.apiKey) {
-      Agents.say(agent, '🔑 set your API key in Settings', 4000);
-      try { if (App.UI && App.UI.toast) App.UI.toast('Set your API key in Settings'); } catch (e) {}
+    // No credentials → friendly bubble, no network. Provider/companion-aware (§10).
+    if (!hasCredsFor(agent.model || settings.defaultModel)) {
+      Agents.say(agent, '🔑 add an API key (or enable the companion) in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
       try {
         if (App.Store && App.Store.pushLog) App.Store.pushLog({
           from: agent.name, to: 'system', kind: 'error', text: 'NO_KEY (direct chat)',
@@ -5825,6 +5847,7 @@ window.App = window.App || {};
 
     var handle = App.API.stream({
       apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
       model: agent.model || settings.defaultModel,
       system: agent.systemPrompt || '',
       messages: agent.conversation.slice(),
@@ -6094,6 +6117,17 @@ window.App = window.App || {};
   var Orchestrator = {};
   Orchestrator.PLAN_SCHEMA_VERSION = 1;
 
+  // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
+  // local companion (subscription proxy needs no key). Mirrors api.js's guard so
+  // companion-only / GPT-only setups aren't blocked before the request is built.
+  function hasCredsFor(model) {
+    var set = (STATE() && STATE().settings) || {};
+    var prov = (CFG().providerOf ? CFG().providerOf(model)
+      : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
+    if (prov === 'openai') return !!set.openaiKey;
+    return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+  }
+
   // ===========================================================================
   // TASK lookups
   // ===========================================================================
@@ -6114,10 +6148,14 @@ window.App = window.App || {};
     return out;
   }
   function runningCount() {
+    // Count only running WORKER subtasks; the root boss task stays 'running' for the
+    // whole goal lifetime and must NOT consume a MAX_CONCURRENT slot (else only one
+    // worker ever runs in parallel at MAX_CONCURRENT=2).
     var s = STATE(), n = 0;
     if (!s || !Array.isArray(s.tasks)) return 0;
     for (var i = 0; i < s.tasks.length; i++) {
-      if (s.tasks[i] && s.tasks[i].status === 'running') n++;
+      var t = s.tasks[i];
+      if (t && t.status === 'running' && t.parentId) n++;
     }
     return n;
   }
@@ -6184,11 +6222,11 @@ window.App = window.App || {};
     refreshBoard();
 
     // No key → fail fast, friendly. (§10)
-    if (!settings.apiKey) {
+    if (!hasCredsFor((boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL)) {
       root.status = 'error';
       root.error = 'NO_KEY';
-      if (boss) ag.say(boss, '🔑 set your API key in Settings', 4000);
-      try { if (App.UI && App.UI.toast) App.UI.toast('Set your API key in Settings'); } catch (e) {}
+      if (boss) ag.say(boss, '🔑 add an API key (or enable the companion) in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
       log('Boss', 'system', 'error', 'NO_KEY — cannot plan.');
       refreshBoard();
       return;
@@ -6504,9 +6542,9 @@ window.App = window.App || {};
     var wantWeb = !!(settings.webSearch && (task.needsWeb || roleDef.webSearchPreferred));
     var tools = (wantWeb && CFG().WEB_SEARCH_TOOL) ? [CFG().WEB_SEARCH_TOOL] : undefined;
 
-    // No key path (should be caught earlier, but defend).
-    if (!settings.apiKey) {
-      ag.say(agent, '🔑 set your API key in Settings', 4000);
+    // No credentials path (defend; provider/companion-aware so GPT & companion work).
+    if (!hasCredsFor(agent.model || settings.defaultModel)) {
+      ag.say(agent, '🔑 add an API key (or enable the companion) in Settings', 4000);
       failTask(task, 'NO_KEY');
       return;
     }
@@ -6845,8 +6883,9 @@ window.App = window.App || {};
           ag.setState(boss, 'idle');
           ag.say(boss, 'Done ✓', 4000);
         }
-        // disperse participants back to their desks.
+        // disperse participants back to their desks; send the boss home too.
         disperse(participants, boss);
+        if (boss) ag.returnHome(boss);
         log('Boss', 'user', 'result', 'Final answer ready.');
         // Boss-initiated rest: queue empty + root done → occasionally a team break.
         // Light touch; breakEveryone() only moves idle, non-busy agents.
@@ -6869,6 +6908,7 @@ window.App = window.App || {};
         s._meetingActive = false;
         if (boss) { boss.busy = false; ag.setState(boss, 'idle'); ag.say(boss, '⚠ ' + truncate(msg, 36), 4000); }
         disperse(participants, boss);
+        if (boss) ag.returnHome(boss);
         log('Boss', 'system', 'error', 'synthesis error: ' + msg);
         refreshBoard();
         try { if (App.UI && App.UI.showFinalResult) App.UI.showFinalResult(rootTask); } catch (e) {}
