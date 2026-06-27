@@ -770,6 +770,131 @@ select option{ background:var(--panel); color:var(--text); }
 .ar-viewer-name{ flex:1 1 auto; min-width:0; font-size:11px; font-weight:700; color:var(--cyan); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ar-empty{ color:var(--text-faint); font-size:11px; text-align:center; padding:24px 8px; }
 
+/* =========================================================================
+   WAVE A — markdown render body, syntax tokens, artifact preview chrome
+   ========================================================================= */
+
+/* rendered markdown surface (artifact preview, results) */
+.md-body{
+  font-family:var(--mono); font-size:12.5px; line-height:1.6; color:var(--text);
+  word-break:break-word;
+}
+.md-body h1,.md-body h2,.md-body h3,.md-body h4,.md-body h5,.md-body h6{
+  margin:.8em 0 .4em; color:var(--cyan); font-weight:800; letter-spacing:.5px;
+  text-shadow:0 0 8px rgba(57,215,255,.25);
+}
+.md-body h1{ font-size:17px; } .md-body h2{ font-size:15px; } .md-body h3{ font-size:13.5px; }
+.md-body h4,.md-body h5,.md-body h6{ font-size:12.5px; color:var(--text-dim); }
+.md-body p{ margin:.5em 0; }
+.md-body strong{ color:#fff; font-weight:800; }
+.md-body em{ color:var(--text); font-style:italic; }
+.md-body a{ color:var(--blue); text-decoration:none; border-bottom:1px dotted rgba(77,124,255,.5); }
+.md-body a:hover{ color:var(--cyan); border-bottom-color:var(--cyan); }
+.md-body code{
+  font-family:var(--mono); font-size:11.5px;
+  background:rgba(57,215,255,.08); color:var(--cyan);
+  padding:1px 5px; border-radius:4px; border:1px solid rgba(57,215,255,.18);
+}
+.md-body pre{
+  margin:.7em 0; padding:11px 13px; overflow:auto; max-width:100%;
+  background:var(--void); border:1px solid var(--panel-edge); border-radius:6px;
+  box-shadow:inset 0 0 20px rgba(0,0,0,.5);
+}
+.md-body pre code{
+  background:none; border:none; padding:0; color:var(--text);
+  font-size:11.5px; line-height:1.55; white-space:pre;
+}
+.md-body ul,.md-body ol{ margin:.5em 0; padding-left:1.5em; }
+.md-body li{ margin:.2em 0; }
+.md-body blockquote{
+  margin:.6em 0; padding:4px 12px; color:var(--text-dim);
+  border-left:3px solid var(--purple); background:rgba(155,92,255,.06); border-radius:0 4px 4px 0;
+}
+.md-body hr{ border:none; border-top:1px solid var(--divider); margin:1em 0; }
+.md-body table{ border-collapse:collapse; margin:.7em 0; font-size:11.5px; width:100%; }
+.md-body th,.md-body td{ border:1px solid var(--panel-edge); padding:5px 9px; text-align:left; }
+.md-body th{ background:rgba(57,215,255,.08); color:var(--cyan); font-weight:800; }
+
+/* generic syntax-highlight token spans (emitted by App.MD.highlight) */
+.tok-kw{ color:var(--magenta); font-weight:700; }
+.tok-str{ color:var(--lime); }
+.tok-num{ color:var(--amber); }
+.tok-com{ color:var(--text-faint); font-style:italic; }
+
+/* artifact preview: mode switcher + sandboxed html iframe */
+.ar-preview-modes{ display:flex; gap:6px; margin-top:10px; align-items:center; flex-wrap:wrap; }
+.ar-mode-btn{
+  font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+  padding:2px 9px; border-radius:8px; cursor:pointer;
+  color:var(--text-dim); background:transparent;
+  border:1px solid var(--divider);
+}
+.ar-mode-btn:hover{ color:var(--text); border-color:var(--cyan); }
+.ar-mode-btn.active{ color:#04121c; background:var(--cyan); border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); }
+.ar-iframe{
+  width:100%; height:42vh; margin-top:12px;
+  background:#fff; border:1px solid var(--panel-edge); border-radius:6px;
+  box-shadow:inset 0 0 24px rgba(0,0,0,.25);
+}
+.ar-md{ margin-top:12px; max-height:42vh; overflow:auto;
+  padding:12px 14px; background:var(--floor);
+  border:1px solid var(--panel-edge); border-radius:6px;
+  box-shadow:inset 0 0 24px rgba(0,0,0,.45); }
+
+/* =========================================================================
+   WAVE A — preset picker cards
+   ========================================================================= */
+.preset-list{ display:flex; flex-direction:column; gap:9px; }
+.preset-card{
+  display:flex; align-items:flex-start; gap:11px;
+  padding:11px 12px; cursor:pointer; text-align:left; width:100%;
+  background:var(--btn); border:1px solid var(--panel-edge); border-radius:6px;
+  border-left:3px solid var(--purple);
+  transition:background .12s, border-color .12s, transform .06s, box-shadow .12s;
+}
+.preset-card:hover{ background:var(--btn-hover); border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); transform:translateX(2px); }
+.preset-card:focus-visible{ outline:none; border-color:var(--blue); box-shadow:0 0 0 2px rgba(77,124,255,.45); }
+.preset-ico{ font-size:24px; line-height:1; flex:0 0 auto; filter:drop-shadow(0 0 6px rgba(57,215,255,.4)); }
+.preset-text{ min-width:0; flex:1 1 auto; }
+.preset-name{ font-size:13px; font-weight:800; color:var(--text); letter-spacing:.5px; }
+.preset-desc{ font-size:10.5px; color:var(--text-dim); margin-top:3px; line-height:1.45; }
+.preset-roster{ font-size:9.5px; color:var(--text-faint); margin-top:5px; letter-spacing:.3px; }
+
+/* =========================================================================
+   WAVE A — sessions panel rows
+   ========================================================================= */
+.session-list{ display:flex; flex-direction:column; gap:8px; }
+.session-row{
+  display:flex; align-items:center; gap:10px;
+  padding:9px 11px;
+  background:var(--btn); border:1px solid var(--panel-edge); border-radius:6px;
+  border-left:3px solid var(--lime);
+}
+.session-main{ min-width:0; flex:1 1 auto; }
+.session-name{ font-size:12.5px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.session-meta{ font-size:9.5px; color:var(--text-faint); margin-top:3px; letter-spacing:.3px; }
+.session-actions{ flex:0 0 auto; display:flex; gap:6px; }
+.session-actions .btn{ height:26px; padding:0 10px; font-size:11px; }
+.session-toolbar{ display:flex; gap:9px; margin-bottom:14px; flex-wrap:wrap; }
+
+/* =========================================================================
+   WAVE A — cost meter HUD readout + breakdown
+   ========================================================================= */
+.cost-meter{ font-variant-numeric:tabular-nums; }
+.cost-meter .btn-ico{ color:var(--lime); font-weight:900; }
+.cost-amount{ font-weight:800; letter-spacing:.3px; color:var(--lime); }
+.cost-meter:hover{ border-color:var(--lime); box-shadow:var(--glow-lime); }
+
+.cost-table{ width:100%; border-collapse:collapse; font-size:11.5px; }
+.cost-table th,.cost-table td{ padding:6px 9px; border-bottom:1px solid var(--divider); text-align:right; }
+.cost-table th:first-child,.cost-table td:first-child{ text-align:left; }
+.cost-table thead th{ color:var(--text-dim); font-size:9.5px; font-weight:800; letter-spacing:1px; text-transform:uppercase; }
+.cost-table tbody td{ color:var(--text); }
+.cost-table tbody td.cost-val{ color:var(--lime); font-variant-numeric:tabular-nums; }
+.cost-table tfoot td{ font-weight:800; color:var(--cyan); border-top:1px solid var(--panel-edge); padding-top:8px; }
+.cost-empty{ color:var(--text-faint); font-size:11px; text-align:center; padding:18px 8px; }
+.cost-note{ font-size:9.5px; color:var(--text-faint); margin-top:10px; line-height:1.45; }
+
 /* reduced motion: calm all the loops */
 @media (prefers-reduced-motion:reduce){
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,
@@ -842,6 +967,15 @@ select option{ background:var(--panel); color:var(--text); }
       </button>
       <button id="btn-artifacts"   class="btn"        type="button" title="Artifacts produced by agents">
         <span class="btn-ico">📦</span><span class="btn-lbl">Artifacts</span><span id="artifacts-badge" class="hud-badge hidden">0</span>
+      </button>
+      <button id="btn-presets"     class="btn"        type="button" title="Start a preset company">
+        <span class="btn-ico">🏢</span><span class="btn-lbl">New Co.</span>
+      </button>
+      <button id="btn-sessions"    class="btn"        type="button" title="Save / load company sessions">
+        <span class="btn-ico">🗂</span><span class="btn-lbl">Sessions</span>
+      </button>
+      <button id="btn-cost-meter"  class="btn cost-meter" type="button" title="Running session cost — click for breakdown">
+        <span class="btn-ico">$</span><span id="cost-meter-amount" class="cost-amount">0.0000</span>
       </button>
 
       <span class="hud-sep" aria-hidden="true"></span>
@@ -1608,6 +1742,96 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
+  // WAVE A §PRESETS — starter company rosters (App.config.PRESETS).
+  // Preset = { id, name, desc, icon(emoji), agents:[{name, role, model?, color?,
+  //   systemPrompt?}], sampleGoals:[String] }. role must be an existing ROLES key.
+  // Presets mainly define the roster + sample goals; Store.applyPreset consumes them.
+  // ---------------------------------------------------------------------------
+  App.config.PRESETS = [
+    {
+      id: 'opinion-warehouse',
+      name: '의견 수립 창고',
+      desc: '반 친구들의 의견을 수집·분류·요약해 리포트로 정리하는 팀.',
+      icon: '🗳️',
+      agents: [
+        // facilitator — runs the discussion as the orchestrator (boss).
+        { name: '진행자', role: 'boss' },
+        // researcher — gathers context/background for the topic.
+        { name: '조사원', role: 'researcher' },
+        // analyst — classifies + structures the collected opinions (qa role = critical/structured).
+        { name: '분석가', role: 'qa' },
+        // writer — turns the analysis into a clean summary report.
+        { name: '작성자', role: 'writer' }
+      ],
+      sampleGoals: [
+        '반 친구들의 [수학여행 장소]에 대한 의견을 수집·분류해서 요약 리포트로 정리해줘',
+        '학급 회의 안건 [체육대회 종목]에 대한 찬반 의견을 모아 입장별로 정리해줘',
+        '[축제 부스 아이디어]에 대한 친구들의 제안을 주제별로 묶어 요약해줘'
+      ]
+    },
+    {
+      id: 'blog-team',
+      name: 'Blog Team',
+      desc: 'A writer, a researcher, and an editor that ship polished posts.',
+      icon: '✍️',
+      agents: [
+        { name: 'Boss', role: 'boss' },
+        { name: 'Scribe', role: 'writer' },
+        { name: 'Scout', role: 'researcher' },
+        { name: 'Editor', role: 'qa' }
+      ],
+      sampleGoals: [
+        'Write a 600-word blog post explaining what vector databases are, for a general dev audience.',
+        'Draft an SEO-friendly intro + outline for a post on "remote team rituals".',
+        'Turn these bullet notes into a polished, scannable blog article.'
+      ]
+    },
+    {
+      id: 'research-team',
+      name: 'Research Team',
+      desc: 'Two researchers, an analyst, and a writer for deep dives.',
+      icon: '🔬',
+      agents: [
+        { name: 'Boss', role: 'boss' },
+        { name: 'Researcher A', role: 'researcher' },
+        { name: 'Researcher B', role: 'researcher' },
+        { name: 'Analyst', role: 'qa' },
+        { name: 'Writer', role: 'writer' }
+      ],
+      sampleGoals: [
+        'Research the current state of small open-weight LLMs and summarize the top 3 with tradeoffs.',
+        'Compare three note-taking apps for students and recommend one with reasoning.',
+        'Gather recent findings on sleep and academic performance, then write a brief.'
+      ]
+    }
+  ];
+
+  // ---------------------------------------------------------------------------
+  // WAVE A §PRICES — approximate public USD prices per 1M tokens for the cost
+  // meter. APPROXIMATE / EDITABLE — update as provider pricing changes. Every
+  // model in MODELS has an entry. priceFor() falls back to {in:0,out:0}.
+  // ---------------------------------------------------------------------------
+  App.config.PRICES = {
+    // Anthropic (approximate, USD / 1M tokens)
+    'claude-opus-4-8':           { in: 5.00,  out: 25.00 },
+    'claude-sonnet-4-6':         { in: 3.00,  out: 15.00 },
+    'claude-haiku-4-5-20251001': { in: 1.00,  out: 5.00  },
+    // OpenAI (approximate, USD / 1M tokens)
+    'gpt-4o':                    { in: 2.50,  out: 10.00 },
+    'gpt-4o-mini':               { in: 0.15,  out: 0.60  },
+    'gpt-4.1':                   { in: 2.00,  out: 8.00  }
+  };
+
+  // priceFor(modelId) -> {in, out} USD per 1M tokens (fallback {in:0,out:0}).
+  App.config.priceFor = function (modelId) {
+    var p = App.config.PRICES && App.config.PRICES[modelId];
+    if (p && typeof p === 'object') {
+      return { in: (typeof p.in === 'number') ? p.in : 0, out: (typeof p.out === 'number') ? p.out : 0 };
+    }
+    return { in: 0, out: 0 };
+  };
+
+  // ---------------------------------------------------------------------------
   // §2 App.util — small, pure helpers. Date.now()/Math.random() live ONLY inside
   // these functions (this is real browser code; deterministic restriction does
   // not apply here).
@@ -1629,6 +1853,274 @@ window.App = window.App || {};
     providerOf: function (modelId) {
       return /^(gpt|o1|o3|o4|chatgpt)/i.test(String(modelId || '')) ? 'openai' : 'anthropic';
     }
+  };
+
+})();
+</script>
+<script>
+// =============================================================================
+// markdown.js  ->  App.MD
+// PIXEL AI COMPANY ("NEON//WORKS") — pure, synchronous, dependency-free,
+// XSS-safe Markdown renderer + light syntax highlighter for artifact previews.
+//
+// LOAD ORDER: after config.js, before ui.js. NO deps on any other App module.
+//
+// CONTRACT:
+//   App.MD.escape(s)                  -> HTML-escaped string
+//   App.MD.render(text)               -> SAFE HTML string (markdown -> HTML)
+//   App.MD.highlight(code, lang)      -> HTML with <span class="tok-*"> tokens
+//   App.MD.previewable(type, name)    -> 'html' | 'markdown' | 'code' | 'text'
+//   App.MD.htmlPreviewSrcdoc(content) -> string for a SANDBOXED <iframe srcdoc>
+//
+// SECURITY: always escape() first, then transform. Raw user HTML is never
+// injected; links are restricted to http/https/mailto. Uses a private-use
+// sentinel (U+E000) — NEVER raw control bytes — to protect code spans.
+// =============================================================================
+window.App = window.App || {};
+
+(function () {
+  'use strict';
+
+  var SENT = "ZZMDXSENTZZ"; // private-use sentinel marking a protected (already-final) segment
+
+  // ---------------------------------------------------------------------------
+  // escape
+  // ---------------------------------------------------------------------------
+  function escapeHtml(s) {
+    s = (s == null) ? '' : String(s);
+    return s.replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+  }
+
+  function safeUrl(url) {
+    url = String(url == null ? '' : url).trim();
+    if (/^(https?:|mailto:)/i.test(url)) return url;
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // highlight — light generic tokenizer (comments, strings, numbers, keywords).
+  // Tokenizes RAW source, escapes each token, wraps in spans. Never throws.
+  // ---------------------------------------------------------------------------
+  var KEYWORDS = {
+    js: wordSet('var let const function return if else for while do switch case break continue new this typeof instanceof in of class extends super import export default try catch finally throw delete void yield async await null true false undefined NaN'),
+    py: wordSet('def return if elif else for while in is not and or class import from as try except finally raise with lambda None True False pass break continue global nonlocal yield async await assert del'),
+    json: wordSet('true false null'),
+    _default: wordSet('function return if else for while class import export const let var public private static void int float double string bool true false null None nil')
+  };
+  function wordSet(s) {
+    var o = {}, a = s.split(' ');
+    for (var i = 0; i < a.length; i++) o[a[i]] = true;
+    return o;
+  }
+  function normLang(lang) {
+    lang = String(lang || '').toLowerCase();
+    if (lang === 'javascript' || lang === 'ts' || lang === 'typescript' || lang === 'jsx' || lang === 'tsx') return 'js';
+    if (lang === 'python') return 'py';
+    if (KEYWORDS[lang]) return lang;
+    return '_default';
+  }
+
+  function highlight(code, lang) {
+    try {
+      code = String(code == null ? '' : code);
+      var kw = KEYWORDS[normLang(lang)] || KEYWORDS._default;
+      var out = '';
+      // comment | string("...",'...',`...`) | number | identifier
+      var re = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b\d[\w.]*\b)|([A-Za-z_$][\w$]*)/g;
+      var last = 0, m;
+      while ((m = re.exec(code)) !== null) {
+        out += escapeHtml(code.slice(last, m.index));
+        if (m[1]) out += '<span class="tok-com">' + escapeHtml(m[1]) + '</span>';
+        else if (m[2]) out += '<span class="tok-str">' + escapeHtml(m[2]) + '</span>';
+        else if (m[3]) out += '<span class="tok-num">' + escapeHtml(m[3]) + '</span>';
+        else if (m[4]) {
+          out += kw[m[4]] ? ('<span class="tok-kw">' + escapeHtml(m[4]) + '</span>') : escapeHtml(m[4]);
+        }
+        last = re.lastIndex;
+        if (m.index === re.lastIndex) re.lastIndex++; // guard against zero-width
+      }
+      out += escapeHtml(code.slice(last));
+      return out;
+    } catch (e) {
+      return escapeHtml(code);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // inline markdown (applied to ALREADY-ESCAPED text): bold, italic, strike,
+  // links. Code spans are pre-protected via sentinels before escaping.
+  // ---------------------------------------------------------------------------
+  function inline(s) {
+    // links [text](url) — url validated; text already escaped
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (_, text, url) {
+      var u = safeUrl(url);
+      if (!u) return text;
+      return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener noreferrer">' + text + '</a>';
+    });
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    s = s.replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>');
+    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    return s;
+  }
+
+  // ---------------------------------------------------------------------------
+  // render
+  // ---------------------------------------------------------------------------
+  function render(text) {
+    try {
+      text = String(text == null ? '' : text);
+      var blocks = [];
+      function protect(html) { blocks.push(html); return SENT + (blocks.length - 1) + SENT; }
+
+      // 1) fenced code blocks -> protected <pre><code> (highlighted)
+      text = text.replace(/```[ \t]*([^\n`]*)\n([\s\S]*?)```/g, function (_, info, body) {
+        var lang = (info || '').trim().split(/\s+/)[0] || '';
+        var inner = highlight(body.replace(/\n$/, ''), lang);
+        return '\n' + protect('<pre class="md-pre"><code class="md-code' + (lang ? (' lang-' + escapeHtml(lang)) : '') + '">' + inner + '</code></pre>') + '\n';
+      });
+      // 2) inline code -> protected
+      text = text.replace(/`([^`\n]+)`/g, function (_, c) {
+        return protect('<code class="md-inline">' + escapeHtml(c) + '</code>');
+      });
+
+      // 3) escape the remaining text (sentinels are U+E000+digits, survive intact)
+      text = escapeHtml(text);
+
+      // 4) block parse, line by line
+      var lines = text.split('\n');
+      var html = [], i = 0;
+      var listStack = [];
+      function closeList() { while (listStack.length) html.push(listStack.pop() === 'ul' ? '</ul>' : '</ol>'); }
+
+      while (i < lines.length) {
+        var line = lines[i];
+
+        // blank
+        if (/^\s*$/.test(line)) { closeList(); i++; continue; }
+
+        // horizontal rule
+        if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { closeList(); html.push('<hr class="md-hr">'); i++; continue; }
+
+        // heading
+        var h = line.match(/^\s*(#{1,6})\s+(.*)$/);
+        if (h) { closeList(); var lvl = h[1].length; html.push('<h' + lvl + ' class="md-h md-h' + lvl + '">' + inline(h[2]) + '</h' + lvl + '>'); i++; continue; }
+
+        // blockquote (collect consecutive; '>' is escaped to &gt;)
+        if (/^\s*&gt;\s?/.test(line)) {
+          closeList();
+          var buf = [];
+          while (i < lines.length && /^\s*&gt;\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*&gt;\s?/, '')); i++; }
+          html.push('<blockquote class="md-quote">' + inline(buf.join('<br>')) + '</blockquote>');
+          continue;
+        }
+
+        // table: header row |...| then a |---|--- separator
+        if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1]) && /-/.test(lines[i + 1])) {
+          closeList();
+          var head = splitRow(line);
+          i += 2;
+          var rows = [];
+          while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(splitRow(lines[i])); i++; }
+          var t = '<table class="md-table"><thead><tr>';
+          for (var c = 0; c < head.length; c++) t += '<th>' + inline(head[c]) + '</th>';
+          t += '</tr></thead><tbody>';
+          for (var r = 0; r < rows.length; r++) {
+            t += '<tr>';
+            for (var cc = 0; cc < rows[r].length; cc++) t += '<td>' + inline(rows[r][cc]) + '</td>';
+            t += '</tr>';
+          }
+          t += '</tbody></table>';
+          html.push(t);
+          continue;
+        }
+
+        // unordered list
+        var ul = line.match(/^(\s*)[-*+]\s+(.*)$/);
+        if (ul) {
+          if (!listStack.length || listStack[listStack.length - 1] !== 'ul') { closeList(); html.push('<ul class="md-ul">'); listStack.push('ul'); }
+          html.push('<li>' + inline(ul[2]) + '</li>'); i++; continue;
+        }
+        // ordered list
+        var ol = line.match(/^(\s*)\d+[.)]\s+(.*)$/);
+        if (ol) {
+          if (!listStack.length || listStack[listStack.length - 1] !== 'ol') { closeList(); html.push('<ol class="md-ol">'); listStack.push('ol'); }
+          html.push('<li>' + inline(ol[2]) + '</li>'); i++; continue;
+        }
+
+        // a line that is solely a protected block (fenced code) -> emit verbatim
+        if (/^\d+$/.test(line.trim())) { closeList(); html.push(line.trim()); i++; continue; }
+
+        // paragraph (collect consecutive non-special lines)
+        closeList();
+        var para = [line];
+        i++;
+        while (i < lines.length && !/^\s*$/.test(lines[i]) &&
+               !/^\s*#{1,6}\s+/.test(lines[i]) &&
+               !/^\s*([-*_])(\s*\1){2,}\s*$/.test(lines[i]) &&
+               !/^\s*&gt;\s?/.test(lines[i]) &&
+               !/^\s*[-*+]\s+/.test(lines[i]) &&
+               !/^\s*\d+[.)]\s+/.test(lines[i]) &&
+               lines[i].indexOf(SENT) === -1) {
+          para.push(lines[i]); i++;
+        }
+        html.push('<p class="md-p">' + inline(para.join('\n').replace(/\n/g, '<br>')) + '</p>');
+      }
+      closeList();
+
+      var result = html.join('\n');
+      // 5) restore protected blocks
+      result = result.replace(new RegExp(SENT + '(\\d+)' + SENT, 'g'), function (_, n) {
+        var b = blocks[+n];
+        return (b == null) ? '' : b;
+      });
+      return result;
+    } catch (e) {
+      return '<pre class="md-pre">' + escapeHtml(text) + '</pre>';
+    }
+  }
+
+  function splitRow(line) {
+    var s = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+    return s.split('|').map(function (c) { return c.trim(); });
+  }
+
+  // ---------------------------------------------------------------------------
+  // previewable — choose a render mode for an artifact.
+  // ---------------------------------------------------------------------------
+  function previewable(type, name) {
+    var ext = String(name || '').toLowerCase().split('.').pop();
+    if (type === 'html' || ext === 'html' || ext === 'htm' || ext === 'svg') return 'html';
+    if (type === 'markdown' || ext === 'md' || ext === 'markdown') return 'markdown';
+    if (type === 'code') return 'code';
+    var codeExts = { js: 1, ts: 1, jsx: 1, tsx: 1, py: 1, json: 1, css: 1, java: 1, c: 1, cpp: 1, go: 1, rs: 1, rb: 1, sh: 1, yml: 1, yaml: 1, xml: 1, sql: 1 };
+    if (codeExts[ext]) return 'code';
+    return 'text';
+  }
+
+  // ---------------------------------------------------------------------------
+  // htmlPreviewSrcdoc — verbatim string for a SANDBOXED iframe (caller sets
+  // sandbox="" so scripts are disabled — the sandbox is the security boundary).
+  // ---------------------------------------------------------------------------
+  function htmlPreviewSrcdoc(content) {
+    try { return (content == null) ? '' : String(content); }
+    catch (e) { return ''; }
+  }
+
+  // ---------------------------------------------------------------------------
+  // PUBLIC SURFACE
+  // ---------------------------------------------------------------------------
+  App.MD = {
+    escape: function (s) { try { return escapeHtml(s); } catch (e) { return ''; } },
+    render: render,
+    highlight: highlight,
+    previewable: previewable,
+    htmlPreviewSrcdoc: htmlPreviewSrcdoc
   };
 
 })();
@@ -5652,6 +6144,233 @@ window.App = window.App || {};
   }
 
   // ---------------------------------------------------------------------------
+  // WAVE A §SESSIONS — named project snapshots, stored under their OWN key
+  // (STORAGE_KEY + '_sessions'). Completely separate from the active-state
+  // autosave (save()/load() above are UNCHANGED). Shape on disk:
+  //   { index: [{ id, name, savedAt, agentCount, taskCount, artifactCount }],
+  //     blobs: { <id>: <saveBlob> } }
+  // Every method is wrapped in try/catch and never throws into the caller.
+  // ---------------------------------------------------------------------------
+
+  function sessionsKey() {
+    return storageKey() + '_sessions';
+  }
+
+  // Read the sessions container; tolerant of missing/corrupt data.
+  function readSessions() {
+    var empty = { index: [], blobs: {} };
+    try {
+      var raw = safeGetItem(sessionsKey());
+      if (!raw) return empty;
+      var obj = JSON.parse(raw);
+      if (!obj || typeof obj !== 'object') return empty;
+      if (!Array.isArray(obj.index)) obj.index = [];
+      if (!obj.blobs || typeof obj.blobs !== 'object') obj.blobs = {};
+      return obj;
+    } catch (e) {
+      logErr('readSessions', e);
+      return empty;
+    }
+  }
+
+  function writeSessions(store) {
+    try {
+      if (!store || typeof store !== 'object') return false;
+      var json = JSON.stringify(store);
+      return safeSetItem(sessionsKey(), json);
+    } catch (e) {
+      logErr('writeSessions', e);
+      return false;
+    }
+  }
+
+  // Build a lightweight index row from a save blob.
+  function sessionMeta(id, name, blob) {
+    return {
+      id: id,
+      name: name,
+      savedAt: (blob && typeof blob.savedAt === 'number') ? blob.savedAt : nowMs(),
+      agentCount: (blob && Array.isArray(blob.agents)) ? blob.agents.length : 0,
+      taskCount: (blob && Array.isArray(blob.tasks)) ? blob.tasks.length : 0,
+      artifactCount: (blob && Array.isArray(blob.artifacts)) ? blob.artifacts.length : 0,
+    };
+  }
+
+  // listSessions() -> [{id,name,savedAt,agentCount,taskCount,artifactCount}], newest first.
+  function listSessions() {
+    try {
+      var store = readSessions();
+      var rows = [];
+      for (var i = 0; i < store.index.length; i++) {
+        var r = store.index[i];
+        if (!r || typeof r !== 'object' || !r.id) continue;
+        rows.push({
+          id: String(r.id),
+          name: (r.name == null) ? 'Session' : String(r.name),
+          savedAt: (typeof r.savedAt === 'number') ? r.savedAt : 0,
+          agentCount: (typeof r.agentCount === 'number') ? r.agentCount : 0,
+          taskCount: (typeof r.taskCount === 'number') ? r.taskCount : 0,
+          artifactCount: (typeof r.artifactCount === 'number') ? r.artifactCount : 0,
+        });
+      }
+      rows.sort(function (a, b) { return (b.savedAt || 0) - (a.savedAt || 0); });
+      return rows;
+    } catch (e) {
+      logErr('listSessions', e);
+      return [];
+    }
+  }
+
+  // saveSession(name) -> id. Snapshots the CURRENT App.state via buildSaveBlob
+  // (the existing serialize path). Overwrites a session with the same name.
+  function saveSession(name) {
+    try {
+      var nm = (name == null || String(name).trim() === '') ? ('Session ' + new Date().toLocaleString()) : String(name).trim();
+      var blob = buildSaveBlob();   // reuse existing serialize path
+      var store = readSessions();
+
+      // Overwrite if a session with this name already exists.
+      var id = null;
+      for (var i = 0; i < store.index.length; i++) {
+        if (store.index[i] && store.index[i].name === nm) { id = store.index[i].id; break; }
+      }
+      if (!id) id = uid('sess');
+
+      store.blobs[id] = blob;
+      var meta = sessionMeta(id, nm, blob);
+      // replace existing index row or append
+      var replaced = false;
+      for (var j = 0; j < store.index.length; j++) {
+        if (store.index[j] && store.index[j].id === id) { store.index[j] = meta; replaced = true; break; }
+      }
+      if (!replaced) store.index.push(meta);
+
+      writeSessions(store);
+      pushLog({ from: 'system', to: 'all', kind: 'system', text: 'Session saved: "' + nm + '".' });
+      return id;
+    } catch (e) {
+      logErr('saveSession', e);
+      return null;
+    }
+  }
+
+  // loadSession(id) -> bool. Replaces App.state contents IN PLACE (preserves the
+  // object reference) via the existing applyBlob path. Clamps camera; refreshes UI.
+  function loadSession(id) {
+    try {
+      if (!id) return false;
+      var store = readSessions();
+      var blob = store.blobs && store.blobs[id];
+      if (!blob || typeof blob !== 'object') return false;
+
+      // abort any in-flight streams before swapping state
+      abortAllStreams();
+
+      blob = migrate(blob);     // forward-compat with older saved sessions
+      applyBlob(blob);          // in-place; clamps camera (applyBlob does this)
+      safeUIRefresh();
+
+      var nm = '';
+      for (var i = 0; i < store.index.length; i++) {
+        if (store.index[i] && store.index[i].id === id) { nm = store.index[i].name || ''; break; }
+      }
+      pushLog({ from: 'system', to: 'all', kind: 'system', text: 'Session loaded' + (nm ? ': "' + nm + '"' : '') + '.' });
+      return true;
+    } catch (e) {
+      logErr('loadSession', e);
+      return false;
+    }
+  }
+
+  // deleteSession(id) -> bool.
+  function deleteSession(id) {
+    try {
+      if (!id) return false;
+      var store = readSessions();
+      var found = false;
+      var newIndex = [];
+      for (var i = 0; i < store.index.length; i++) {
+        if (store.index[i] && store.index[i].id === id) { found = true; continue; }
+        newIndex.push(store.index[i]);
+      }
+      store.index = newIndex;
+      if (store.blobs && Object.prototype.hasOwnProperty.call(store.blobs, id)) {
+        delete store.blobs[id];
+        found = true;
+      }
+      if (found) writeSessions(store);
+      return found;
+    } catch (e) {
+      logErr('deleteSession', e);
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // WAVE A §applyPreset — swap the agent roster for a config PRESET's roster.
+  // Removes ALL current agents (incl. boss), creates the preset's agents (each
+  // given a desk/home via World.freeDeskCell or a fallback cell), ensures a boss
+  // exists, clears tasks + _meetingActive. Keeps the office layout AND artifacts
+  // (default). Logs a line. Defensive; never throws.
+  // ---------------------------------------------------------------------------
+
+  function findPreset(presetId) {
+    var list = (cfg().PRESETS) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].id === presetId) return list[i];
+    }
+    return null;
+  }
+
+  function applyPreset(presetId) {
+    try {
+      var preset = findPreset(presetId);
+      if (!preset || !Array.isArray(preset.agents)) return false;
+      var s = ensureState();
+
+      // 1) abort streams + remove ALL current agents (incl. boss).
+      abortAllStreams();
+      s.agents.length = 0;
+      s.selectedAgentId = null;
+
+      // 2) clear tasks + meeting flag (do NOT touch layout; keep artifacts).
+      s.tasks.length = 0;
+      s._meetingActive = false;
+
+      // 3) create the preset agents. makeAgent() routes through Agents.create
+      //    (which assigns a desk via freeDeskCell) and falls back inline.
+      var sawBoss = false;
+      for (var i = 0; i < preset.agents.length; i++) {
+        var a = preset.agents[i];
+        if (!a || typeof a !== 'object') continue;
+        var role = a.role || 'generalist';
+        if (role === 'boss') sawBoss = true;
+        makeAgent({
+          name: a.name,
+          role: role,
+          model: a.model,
+          color: a.color,
+          systemPrompt: a.systemPrompt,
+          persona: a.persona,
+        });
+      }
+
+      // 4) ensure a boss exists (preset rosters should include one, but be safe).
+      if (!sawBoss) {
+        makeAgent({ name: 'Boss', role: 'boss' });
+      }
+
+      pushLog({ from: 'system', to: 'all', kind: 'system', text: 'Preset applied: ' + (preset.name || preset.id) + '.' });
+      save();
+      safeUIRefresh();
+      return true;
+    } catch (e) {
+      logErr('applyPreset', e);
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // PUBLIC API (§7.4 + compat alias §7.10)
   // ---------------------------------------------------------------------------
 
@@ -5666,6 +6385,13 @@ window.App = window.App || {};
     clear: clear,
     pushLog: pushLog,
     migrate: migrate,
+    // WAVE A: named project sessions (separate from the autosave above).
+    listSessions: listSessions,
+    saveSession: saveSession,
+    loadSession: loadSession,
+    deleteSession: deleteSession,
+    // WAVE A: swap the agent roster for a config preset.
+    applyPreset: applyPreset,
   };
 
   // §7.10 REQUIRED compat alias: orch.md used App.Store.log
@@ -8319,6 +9045,9 @@ window.App = window.App || {};
       on($('btn-add-agent'), 'click', function () { UI.openAddAgent(); });
       on($('btn-settings'), 'click', function () { UI.openSettings(); });
       on($('btn-artifacts'), 'click', function () { UI.openArtifacts(); });
+      on($('btn-presets'), 'click', function () { UI.openPresets(); });
+      on($('btn-sessions'), 'click', function () { UI.openSessions(); });
+      on($('btn-cost-meter'), 'click', function () { UI.openCostBreakdown(); });
       on($('btn-layout'), 'click', function () { UI.toggleLayoutEdit(); });
       on($('btn-zoom-in'), 'click', function () { UI.zoomIn(); });
       on($('btn-zoom-out'), 'click', function () { UI.zoomOut(); });
@@ -8591,6 +9320,7 @@ window.App = window.App || {};
         body.appendChild(row);
       })(agents[i]);
     }
+    if (typeof refreshCostMeter === 'function') refreshCostMeter();
   };
 
   UI.refreshLog = function () {
@@ -8643,6 +9373,7 @@ window.App = window.App || {};
     setColCount('queued', counts.queued);
     setColCount('running', counts.running);
     setColCount('done', counts.done);
+    if (typeof refreshCostMeter === 'function') refreshCostMeter();
   };
 
   function setColCount(col, n) {
@@ -9673,6 +10404,7 @@ window.App = window.App || {};
     var m = $('modal-artifacts');
     if (m && m.parentNode) m.parentNode.removeChild(m);
     _arSel = null;
+    _arHtmlSource = false;
   }
 
   function renderArtifactList() {
@@ -9710,16 +10442,24 @@ window.App = window.App || {};
 
   function hideArtifactViewer() {
     hide($('ar-viewer')); hide($('ar-viewer-head'));
+    clearArtifactPreview();
   }
 
+  // viewArtifact — preview an artifact via App.MD (markdown render, code highlight,
+  // sandboxed html iframe with a 'view source' toggle, or plain text). Falls back
+  // to the legacy <pre> viewer if App.MD is unavailable. Never throws.
+  var _arHtmlSource = false; // per-open toggle: html artifact -> show source vs render
   function viewArtifact(id) {
     _arSel = id;
+    _arHtmlSource = false;
     var art = findArtifact(id);
     var viewer = $('ar-viewer');
     var vhead = $('ar-viewer-head');
-    if (!art || !viewer || !vhead) return;
-    show(viewer); show(vhead);
-    viewer.textContent = String(art.content || '');
+    if (!art || !vhead) return;
+    if (viewer) hide(viewer); // legacy <pre> slot stays hidden when we render rich preview
+
+    // header: name + Copy + Download (kept from the prior viewer)
+    show(vhead);
     clear(vhead);
     vhead.appendChild(el('span', 'ar-viewer-name', art.name || '(unnamed)'));
     var copy = el('button', 'btn btn-sq', '⧉'); copy.type = 'button'; copy.title = 'Copy';
@@ -9729,8 +10469,109 @@ window.App = window.App || {};
     var dl = el('button', 'btn btn-sq', '⤓'); dl.type = 'button'; dl.title = 'Download';
     on(dl, 'click', function () { downloadOne(art); });
     vhead.appendChild(copy); vhead.appendChild(dl);
+
+    renderArtifactPreview(art);
     renderArtifactList(); // re-mark active
   }
+
+  // Remove any rich-preview nodes we mounted previously (idempotent).
+  function clearArtifactPreview() {
+    ['ar-preview-modes', 'ar-preview-body'].forEach(function (pid) {
+      var n = $(pid);
+      if (n && n.parentNode) n.parentNode.removeChild(n);
+    });
+  }
+
+  function previewMode(art) {
+    var MD = App.MD;
+    if (MD && MD.previewable) {
+      try { return MD.previewable(art.type, art.name); } catch (e) {}
+    }
+    // crude fallback when App.MD is absent
+    var name = String(art.name || '').toLowerCase();
+    if (art.type === 'html' || /\.html?$/.test(name)) return 'html';
+    if (art.type === 'markdown' || /\.md$/.test(name)) return 'markdown';
+    if (art.type === 'code') return 'code';
+    return 'text';
+  }
+
+  function langFromName(name) {
+    var n = String(name || '').toLowerCase();
+    var dot = n.lastIndexOf('.');
+    return dot >= 0 ? n.slice(dot + 1) : '';
+  }
+
+  function renderArtifactPreview(art) {
+    clearArtifactPreview();
+    var anchor = $('ar-viewer-head');
+    if (!anchor || !anchor.parentNode) return;
+    var parent = anchor.parentNode;
+    var content = String(art.content || '');
+    var mode = previewMode(art);
+    var MD = App.MD;
+
+    var body = el('div', 'ar-preview-body'); body.id = 'ar-preview-body';
+
+    if (mode === 'html') {
+      // mode switcher: Preview (sandboxed iframe) vs Source (highlighted code)
+      var modes = el('div', 'ar-preview-modes'); modes.id = 'ar-preview-modes';
+      var bPrev = el('button', 'ar-mode-btn' + (_arHtmlSource ? '' : ' active'), 'Preview');
+      bPrev.type = 'button';
+      var bSrc = el('button', 'ar-mode-btn' + (_arHtmlSource ? ' active' : ''), 'View source');
+      bSrc.type = 'button';
+      on(bPrev, 'click', function () { if (_arHtmlSource) { _arHtmlSource = false; renderArtifactPreview(art); } });
+      on(bSrc, 'click', function () { if (!_arHtmlSource) { _arHtmlSource = true; renderArtifactPreview(art); } });
+      modes.appendChild(bPrev); modes.appendChild(bSrc);
+      parent.appendChild(modes);
+
+      if (_arHtmlSource) {
+        body.appendChild(buildCodeBlock(content, 'html'));
+      } else {
+        var iframe = document.createElement('iframe');
+        iframe.className = 'ar-iframe';
+        iframe.setAttribute('sandbox', ''); // scripts disabled
+        iframe.setAttribute('title', art.name || 'HTML preview');
+        var srcdoc = (MD && MD.htmlPreviewSrcdoc) ? safeStr(MD.htmlPreviewSrcdoc(content)) : content;
+        iframe.setAttribute('srcdoc', srcdoc);
+        body.appendChild(iframe);
+      }
+    } else if (mode === 'markdown') {
+      var md = el('div', 'ar-md md-body');
+      if (MD && MD.render) { try { md.innerHTML = String(MD.render(content)); } catch (e) { md.textContent = content; } }
+      else md.textContent = content;
+      body.appendChild(md);
+    } else if (mode === 'code') {
+      body.appendChild(buildCodeBlock(content, langFromName(art.name)));
+    } else {
+      // plain text
+      var pre = el('pre', 'ar-viewer');
+      pre.style.display = 'block';
+      pre.textContent = content;
+      body.appendChild(pre);
+    }
+
+    parent.appendChild(body);
+  }
+
+  // Build a highlighted <pre><code> block (uses App.MD.highlight when present).
+  function buildCodeBlock(code, lang) {
+    var wrap = el('div', 'ar-md md-body');
+    var pre = document.createElement('pre');
+    var codeEl = document.createElement('code');
+    codeEl.className = 'md-code lang-' + (lang || 'txt');
+    var MD = App.MD;
+    if (MD && MD.highlight) {
+      try { codeEl.innerHTML = String(MD.highlight(code, lang)); }
+      catch (e) { codeEl.textContent = String(code || ''); }
+    } else {
+      codeEl.textContent = String(code || '');
+    }
+    pre.appendChild(codeEl);
+    wrap.appendChild(pre);
+    return wrap;
+  }
+
+  function safeStr(v) { return (v == null) ? '' : String(v); }
 
   function downloadOne(art) {
     try {
@@ -10049,6 +10890,378 @@ window.App = window.App || {};
       if (w && w.clampCamera) w.clampCamera();
     }
   };
+
+  // ===========================================================================
+  // WAVE A — shared lightweight modal mounter
+  // ===========================================================================
+  // mountModal(id, title) -> { modal, body, foot, close } or null. Reuses the
+  // existing .modal/.modal-card chrome and #modal-root mount used by results/
+  // artifacts. Scrim + ✕ close the modal. Idempotent (removes a prior instance).
+  function mountModal(id, title) {
+    var root = $('modal-root');
+    if (!root) return null;
+    var prev = $(id);
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = id;
+    var scrim = el('div', 'modal-scrim');
+    var close = function () { if (modal.parentNode) modal.parentNode.removeChild(modal); };
+    on(scrim, 'click', close);
+
+    var card = el('div', 'modal-card');
+    card.appendChild(el('div', 'panel-accent'));
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', title || ''));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', close);
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    var foot = el('footer', 'modal-foot');
+
+    card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+    return { modal: modal, body: body, foot: foot, close: close };
+  }
+
+  // ===========================================================================
+  // WAVE A — PRESET PICKER ("New Company")
+  // ===========================================================================
+  UI.openPresets = function () {
+    var m = mountModal('modal-presets', '🏢 START A COMPANY');
+    if (!m) { UI.toast('Presets unavailable'); return; }
+
+    var presets = (CFG().PRESETS) || [];
+    var list = el('div', 'preset-list');
+    if (!presets.length) {
+      list.appendChild(el('div', 'cost-empty', 'No presets configured.'));
+    }
+    for (var i = 0; i < presets.length; i++) {
+      (function (p) {
+        var card = el('button', 'preset-card'); card.type = 'button';
+        card.appendChild(el('span', 'preset-ico', p.icon || '🏢'));
+        var text = el('div', 'preset-text');
+        text.appendChild(el('div', 'preset-name', p.name || p.id || 'Preset'));
+        if (p.desc) text.appendChild(el('div', 'preset-desc', p.desc));
+        var roster = Array.isArray(p.agents)
+          ? p.agents.map(function (a) { return a && a.name ? a.name : (a && a.role) || '?'; }).join(' · ')
+          : '';
+        if (roster) text.appendChild(el('div', 'preset-roster', '▸ ' + roster));
+        card.appendChild(text);
+        on(card, 'click', function () { applyPresetWithConfirm(p, m.close); });
+        list.appendChild(card);
+      })(presets[i]);
+    }
+    m.body.appendChild(list);
+
+    var note = el('div', 'cost-note',
+      'Replaces the current crew with this roster (your office layout & artifacts are kept).');
+    m.body.appendChild(note);
+
+    var close = el('button', 'btn btn-primary', 'Cancel');
+    close.type = 'button';
+    on(close, 'click', m.close);
+    m.foot.appendChild(close);
+  };
+
+  function applyPresetWithConfirm(preset, closeModal) {
+    if (!preset) return;
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm('Replace the current crew with the "' + (preset.name || preset.id) +
+          '" roster? Tasks will be cleared (office layout is kept).')) return;
+    var ok = false;
+    try {
+      if (App.Store && App.Store.applyPreset) ok = App.Store.applyPreset(preset.id);
+    } catch (e) { ok = false; }
+    if (!ok) { UI.showError('Could not apply preset'); return; }
+
+    if (typeof closeModal === 'function') closeModal();
+    UI.closeAgentPanel();
+    UI.refresh();
+    UI.refreshArtifacts();
+    UI.toast('Company set up: ' + (preset.name || preset.id), 'ok');
+
+    // offer to drop a sample goal into the boss input
+    var goals = Array.isArray(preset.sampleGoals) ? preset.sampleGoals : [];
+    if (goals.length) {
+      var goal = goals[0];
+      var ins = (typeof window !== 'undefined' && window.confirm)
+        ? window.confirm('Insert a sample goal into the Boss input?\n\n' + truncate(goal, 160))
+        : false;
+      if (ins) {
+        var hud = $('hud-task-input');
+        if (hud) { hud.value = goal; try { hud.focus(); } catch (e) {} }
+        var board = $('board-input');
+        if (board) board.value = goal;
+        UI.toast('Sample goal ready — press DISPATCH');
+      }
+    }
+  }
+
+  // ===========================================================================
+  // WAVE A — SESSIONS PANEL (named project snapshots)
+  // ===========================================================================
+  UI.openSessions = function () {
+    var m = mountModal('modal-sessions', '🗂 SESSIONS');
+    if (!m) { UI.toast('Sessions unavailable'); return; }
+
+    // toolbar: Save current as… · New
+    var toolbar = el('div', 'session-toolbar');
+    var saveBtn = el('button', 'btn btn-primary', '⤓ Save current as…');
+    saveBtn.type = 'button';
+    on(saveBtn, 'click', function () { saveSessionAs(m); });
+    var newBtn = el('button', 'btn', '✦ New / seed');
+    newBtn.type = 'button';
+    on(newBtn, 'click', function () { newSession(m.close); });
+    toolbar.appendChild(saveBtn); toolbar.appendChild(newBtn);
+    m.body.appendChild(toolbar);
+
+    var listWrap = el('div', 'session-list'); listWrap.id = 'session-list';
+    m.body.appendChild(listWrap);
+    renderSessionList();
+
+    var close = el('button', 'btn btn-primary', 'Close');
+    close.type = 'button';
+    on(close, 'click', m.close);
+    m.foot.appendChild(close);
+  };
+
+  function renderSessionList() {
+    var wrap = $('session-list');
+    if (!wrap) return;
+    clear(wrap);
+    var sessions = [];
+    try { if (App.Store && App.Store.listSessions) sessions = App.Store.listSessions() || []; } catch (e) { sessions = []; }
+    if (!sessions.length) {
+      wrap.appendChild(el('div', 'cost-empty', 'No saved sessions yet. Save the current company above.'));
+      return;
+    }
+    for (var i = 0; i < sessions.length; i++) {
+      (function (sess) {
+        var row = el('div', 'session-row');
+        var main = el('div', 'session-main');
+        main.appendChild(el('div', 'session-name', sess.name || '(unnamed)'));
+        var bits = [];
+        if (sess.savedAt) bits.push(formatWhen(sess.savedAt));
+        bits.push((sess.agentCount || 0) + ' agents');
+        bits.push((sess.taskCount || 0) + ' tasks');
+        bits.push((sess.artifactCount || 0) + ' artifacts');
+        main.appendChild(el('div', 'session-meta', bits.join(' · ')));
+        row.appendChild(main);
+
+        var actions = el('div', 'session-actions');
+        var load = el('button', 'btn btn-primary', 'Load'); load.type = 'button';
+        on(load, 'click', function () { loadSession(sess.id); });
+        var del = el('button', 'btn btn-danger', 'Del'); del.type = 'button';
+        on(del, 'click', function () { deleteSession(sess); });
+        actions.appendChild(load); actions.appendChild(del);
+        row.appendChild(actions);
+        wrap.appendChild(row);
+      })(sessions[i]);
+    }
+  }
+
+  function saveSessionAs(m) {
+    if (typeof window === 'undefined' || !window.prompt) { UI.showError('Cannot prompt for a name'); return; }
+    var def = 'Company ' + new Date().toLocaleDateString();
+    var name = window.prompt('Save current company as:', def);
+    if (name == null) return;
+    name = String(name).trim();
+    if (!name) { UI.toast('Name required'); return; }
+    var id = null;
+    try { if (App.Store && App.Store.saveSession) id = App.Store.saveSession(name); } catch (e) { id = null; }
+    if (id) { UI.toast('Saved session "' + name + '"', 'ok'); renderSessionList(); }
+    else UI.showError('Save failed');
+  }
+
+  function loadSession(id) {
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm('Load this session? Unsaved changes to the current company will be lost.')) return;
+    var ok = false;
+    try { if (App.Store && App.Store.loadSession) ok = App.Store.loadSession(id); } catch (e) { ok = false; }
+    if (ok) {
+      var m = $('modal-sessions'); if (m && m.parentNode) m.parentNode.removeChild(m);
+      UI.closeAgentPanel();
+      UI.refresh();
+      UI.refreshArtifacts();
+      UI.toast('Session loaded', 'ok');
+    } else UI.showError('Load failed');
+  }
+
+  function deleteSession(sess) {
+    if (!sess) return;
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm('Delete session "' + (sess.name || sess.id) + '"? This cannot be undone.')) return;
+    try { if (App.Store && App.Store.deleteSession) App.Store.deleteSession(sess.id); } catch (e) {}
+    renderSessionList();
+    UI.toast('Session deleted');
+  }
+
+  function newSession(closeModal) {
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm('Start a fresh company? The current one is cleared and re-seeded (save it first if you want to keep it).')) return;
+    try { if (App.Store && App.Store.clear) App.Store.clear(); } catch (e) {}
+    if (typeof closeModal === 'function') closeModal();
+    UI.closeAgentPanel();
+    UI.refresh();
+    UI.refreshArtifacts();
+    UI.toast('Fresh company seeded', 'ok');
+  }
+
+  function formatWhen(t) {
+    try {
+      var d = new Date(t);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return ''; }
+  }
+
+  // ===========================================================================
+  // WAVE A — COST METER (running session spend)
+  // ===========================================================================
+  function priceFor(modelId) {
+    var cfg = CFG();
+    if (cfg.priceFor) {
+      try { var p = cfg.priceFor(modelId); if (p) return { in: Number(p.in) || 0, out: Number(p.out) || 0 }; } catch (e) {}
+    }
+    var tbl = cfg.PRICES || {};
+    var e2 = tbl[modelId];
+    return e2 ? { in: Number(e2.in) || 0, out: Number(e2.out) || 0 } : { in: 0, out: 0 };
+  }
+
+  // computeCost() -> { total, byAgent:[{name,model,tokensIn,tokensOut,cost,color}], byModel:{} }
+  function computeCost() {
+    var s = STATE();
+    var agents = (s && Array.isArray(s.agents)) ? s.agents : [];
+    var total = 0;
+    var byAgent = [];
+    var byModel = {};
+    for (var i = 0; i < agents.length; i++) {
+      var a = agents[i];
+      if (!a) continue;
+      var stats = a.stats || {};
+      var tin = Number(stats.tokensIn) || 0;
+      var tout = Number(stats.tokensOut) || 0;
+      var pr = priceFor(a.model);
+      var cost = (tin / 1e6) * pr.in + (tout / 1e6) * pr.out;
+      total += cost;
+      byAgent.push({
+        name: a.name || a.id, model: a.model || '?',
+        tokensIn: tin, tokensOut: tout, cost: cost, color: a.color || null,
+      });
+      var mk = a.model || '?';
+      var mm = byModel[mk] || (byModel[mk] = { model: mk, tokensIn: 0, tokensOut: 0, cost: 0 });
+      mm.tokensIn += tin; mm.tokensOut += tout; mm.cost += cost;
+    }
+    return { total: total, byAgent: byAgent, byModel: byModel };
+  }
+
+  function fmtUSD(n) {
+    n = Number(n) || 0;
+    if (n > 0 && n < 0.0001) return '$<0.0001';
+    return '$' + n.toFixed(4);
+  }
+  function fmtTokens(n) {
+    n = Number(n) || 0;
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+    return String(n);
+  }
+
+  function refreshCostMeter() {
+    var amt = $('cost-meter-amount');
+    if (!amt) return;
+    try {
+      var c = computeCost();
+      amt.textContent = c.total.toFixed(4);
+      var btn = $('btn-cost-meter');
+      if (btn) btn.title = 'Running session cost: ' + fmtUSD(c.total) + ' — click for breakdown';
+    } catch (e) {}
+  }
+
+  UI.openCostBreakdown = function () {
+    var m = mountModal('modal-cost', '$ SESSION COST');
+    if (!m) { UI.toast('Cost meter unavailable'); return; }
+    var c = computeCost();
+
+    // total banner
+    var banner = el('div', 'result-goal',
+      'Total this session: ' + fmtUSD(c.total) + '  (estimated from token usage × model price)');
+    m.body.appendChild(banner);
+
+    // per-agent table
+    if (!c.byAgent.length) {
+      m.body.appendChild(el('div', 'cost-empty', 'No agents yet — no spend to report.'));
+    } else {
+      m.body.appendChild(buildCostTable('PER AGENT', ['Agent', 'Model', 'In', 'Out', 'Cost'],
+        c.byAgent.map(function (r) {
+          return { cells: [r.name, shortModel(r.model), fmtTokens(r.tokensIn), fmtTokens(r.tokensOut), fmtUSD(r.cost)], color: r.color };
+        }), c.total));
+
+      // per-model rollup
+      var modelRows = [];
+      for (var k in c.byModel) {
+        if (!Object.prototype.hasOwnProperty.call(c.byModel, k)) continue;
+        var mm = c.byModel[k];
+        modelRows.push({ cells: [shortModel(mm.model), '', fmtTokens(mm.tokensIn), fmtTokens(mm.tokensOut), fmtUSD(mm.cost)], color: null });
+      }
+      m.body.appendChild(buildCostTable('PER MODEL', ['Model', '', 'In', 'Out', 'Cost'], modelRows, c.total));
+    }
+
+    var note = el('div', 'cost-note',
+      'Prices are approximate public list prices (config.PRICES) and editable. Token counts come from each agent’s stats.');
+    m.body.appendChild(note);
+
+    var close = el('button', 'btn btn-primary', 'Close');
+    close.type = 'button';
+    on(close, 'click', m.close);
+    m.foot.appendChild(close);
+  };
+
+  function buildCostTable(caption, headers, rows, total) {
+    var wrap = el('div');
+    wrap.style.marginTop = '14px';
+    wrap.appendChild(el('div', 'field-label', caption));
+    var table = el('table', 'cost-table');
+    var thead = document.createElement('thead');
+    var htr = document.createElement('tr');
+    for (var h = 0; h < headers.length; h++) {
+      var th = document.createElement('th');
+      th.textContent = headers[h];
+      htr.appendChild(th);
+    }
+    thead.appendChild(htr); table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    for (var i = 0; i < rows.length; i++) {
+      var tr = document.createElement('tr');
+      var cells = rows[i].cells || [];
+      for (var c = 0; c < cells.length; c++) {
+        var td = document.createElement('td');
+        if (c === cells.length - 1) td.className = 'cost-val';
+        td.textContent = String(cells[c]);
+        if (c === 0 && rows[i].color) td.style.color = rows[i].color;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+
+    var tfoot = document.createElement('tfoot');
+    var ftr = document.createElement('tr');
+    var fl = document.createElement('td');
+    fl.setAttribute('colspan', String(Math.max(1, headers.length - 1)));
+    fl.textContent = 'TOTAL';
+    var fv = document.createElement('td');
+    fv.textContent = fmtUSD(total);
+    ftr.appendChild(fl); ftr.appendChild(fv);
+    tfoot.appendChild(ftr); table.appendChild(tfoot);
+
+    wrap.appendChild(table);
+    return wrap;
+  }
 
   // ===========================================================================
   // PUBLISH + §7.10 compat alias

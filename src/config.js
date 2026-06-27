@@ -494,6 +494,96 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
+  // WAVE A §PRESETS — starter company rosters (App.config.PRESETS).
+  // Preset = { id, name, desc, icon(emoji), agents:[{name, role, model?, color?,
+  //   systemPrompt?}], sampleGoals:[String] }. role must be an existing ROLES key.
+  // Presets mainly define the roster + sample goals; Store.applyPreset consumes them.
+  // ---------------------------------------------------------------------------
+  App.config.PRESETS = [
+    {
+      id: 'opinion-warehouse',
+      name: '의견 수립 창고',
+      desc: '반 친구들의 의견을 수집·분류·요약해 리포트로 정리하는 팀.',
+      icon: '🗳️',
+      agents: [
+        // facilitator — runs the discussion as the orchestrator (boss).
+        { name: '진행자', role: 'boss' },
+        // researcher — gathers context/background for the topic.
+        { name: '조사원', role: 'researcher' },
+        // analyst — classifies + structures the collected opinions (qa role = critical/structured).
+        { name: '분석가', role: 'qa' },
+        // writer — turns the analysis into a clean summary report.
+        { name: '작성자', role: 'writer' }
+      ],
+      sampleGoals: [
+        '반 친구들의 [수학여행 장소]에 대한 의견을 수집·분류해서 요약 리포트로 정리해줘',
+        '학급 회의 안건 [체육대회 종목]에 대한 찬반 의견을 모아 입장별로 정리해줘',
+        '[축제 부스 아이디어]에 대한 친구들의 제안을 주제별로 묶어 요약해줘'
+      ]
+    },
+    {
+      id: 'blog-team',
+      name: 'Blog Team',
+      desc: 'A writer, a researcher, and an editor that ship polished posts.',
+      icon: '✍️',
+      agents: [
+        { name: 'Boss', role: 'boss' },
+        { name: 'Scribe', role: 'writer' },
+        { name: 'Scout', role: 'researcher' },
+        { name: 'Editor', role: 'qa' }
+      ],
+      sampleGoals: [
+        'Write a 600-word blog post explaining what vector databases are, for a general dev audience.',
+        'Draft an SEO-friendly intro + outline for a post on "remote team rituals".',
+        'Turn these bullet notes into a polished, scannable blog article.'
+      ]
+    },
+    {
+      id: 'research-team',
+      name: 'Research Team',
+      desc: 'Two researchers, an analyst, and a writer for deep dives.',
+      icon: '🔬',
+      agents: [
+        { name: 'Boss', role: 'boss' },
+        { name: 'Researcher A', role: 'researcher' },
+        { name: 'Researcher B', role: 'researcher' },
+        { name: 'Analyst', role: 'qa' },
+        { name: 'Writer', role: 'writer' }
+      ],
+      sampleGoals: [
+        'Research the current state of small open-weight LLMs and summarize the top 3 with tradeoffs.',
+        'Compare three note-taking apps for students and recommend one with reasoning.',
+        'Gather recent findings on sleep and academic performance, then write a brief.'
+      ]
+    }
+  ];
+
+  // ---------------------------------------------------------------------------
+  // WAVE A §PRICES — approximate public USD prices per 1M tokens for the cost
+  // meter. APPROXIMATE / EDITABLE — update as provider pricing changes. Every
+  // model in MODELS has an entry. priceFor() falls back to {in:0,out:0}.
+  // ---------------------------------------------------------------------------
+  App.config.PRICES = {
+    // Anthropic (approximate, USD / 1M tokens)
+    'claude-opus-4-8':           { in: 5.00,  out: 25.00 },
+    'claude-sonnet-4-6':         { in: 3.00,  out: 15.00 },
+    'claude-haiku-4-5-20251001': { in: 1.00,  out: 5.00  },
+    // OpenAI (approximate, USD / 1M tokens)
+    'gpt-4o':                    { in: 2.50,  out: 10.00 },
+    'gpt-4o-mini':               { in: 0.15,  out: 0.60  },
+    'gpt-4.1':                   { in: 2.00,  out: 8.00  }
+  };
+
+  // priceFor(modelId) -> {in, out} USD per 1M tokens (fallback {in:0,out:0}).
+  App.config.priceFor = function (modelId) {
+    var p = App.config.PRICES && App.config.PRICES[modelId];
+    if (p && typeof p === 'object') {
+      return { in: (typeof p.in === 'number') ? p.in : 0, out: (typeof p.out === 'number') ? p.out : 0 };
+    }
+    return { in: 0, out: 0 };
+  };
+
+  // ---------------------------------------------------------------------------
   // §2 App.util — small, pure helpers. Date.now()/Math.random() live ONLY inside
   // these functions (this is real browser code; deterministic restriction does
   // not apply here).

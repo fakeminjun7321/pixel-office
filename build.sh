@@ -17,7 +17,8 @@ OUT=index.html
   echo '</head>'
   echo '<body>'
   cat src/shell.html
-  for f in config pixelart world api store agents orchestrator ui main; do
+  for f in config i18n markdown tools pixelart world api store agents orchestrator graph palette onboarding ui main; do
+    [ -f "src/$f.js" ] || continue   # optional feature modules (added across waves)
     echo "<script>"
     cat "src/$f.js"
     echo "</script>"

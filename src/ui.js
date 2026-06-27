@@ -71,6 +71,9 @@ window.App = window.App || {};
       on($('btn-add-agent'), 'click', function () { UI.openAddAgent(); });
       on($('btn-settings'), 'click', function () { UI.openSettings(); });
       on($('btn-artifacts'), 'click', function () { UI.openArtifacts(); });
+      on($('btn-presets'), 'click', function () { UI.openPresets(); });
+      on($('btn-sessions'), 'click', function () { UI.openSessions(); });
+      on($('btn-cost-meter'), 'click', function () { UI.openCostBreakdown(); });
       on($('btn-layout'), 'click', function () { UI.toggleLayoutEdit(); });
       on($('btn-zoom-in'), 'click', function () { UI.zoomIn(); });
       on($('btn-zoom-out'), 'click', function () { UI.zoomOut(); });
@@ -343,6 +346,7 @@ window.App = window.App || {};
         body.appendChild(row);
       })(agents[i]);
     }
+    if (typeof refreshCostMeter === 'function') refreshCostMeter();
   };
 
   UI.refreshLog = function () {
@@ -395,6 +399,7 @@ window.App = window.App || {};
     setColCount('queued', counts.queued);
     setColCount('running', counts.running);
     setColCount('done', counts.done);
+    if (typeof refreshCostMeter === 'function') refreshCostMeter();
   };
 
   function setColCount(col, n) {
@@ -1425,6 +1430,7 @@ window.App = window.App || {};
     var m = $('modal-artifacts');
     if (m && m.parentNode) m.parentNode.removeChild(m);
     _arSel = null;
+    _arHtmlSource = false;
   }
 
   function renderArtifactList() {
@@ -1462,16 +1468,24 @@ window.App = window.App || {};
 
   function hideArtifactViewer() {
     hide($('ar-viewer')); hide($('ar-viewer-head'));
+    clearArtifactPreview();
   }
 
+  // viewArtifact — preview an artifact via App.MD (markdown render, code highlight,
+  // sandboxed html iframe with a 'view source' toggle, or plain text). Falls back
+  // to the legacy <pre> viewer if App.MD is unavailable. Never throws.
+  var _arHtmlSource = false; // per-open toggle: html artifact -> show source vs render
   function viewArtifact(id) {
     _arSel = id;
+    _arHtmlSource = false;
     var art = findArtifact(id);
     var viewer = $('ar-viewer');
     var vhead = $('ar-viewer-head');
-    if (!art || !viewer || !vhead) return;
-    show(viewer); show(vhead);
-    viewer.textContent = String(art.content || '');
+    if (!art || !vhead) return;
+    if (viewer) hide(viewer); // legacy <pre> slot stays hidden when we render rich preview
+
+    // header: name + Copy + Download (kept from the prior viewer)
+    show(vhead);
     clear(vhead);
     vhead.appendChild(el('span', 'ar-viewer-name', art.name || '(unnamed)'));
     var copy = el('button', 'btn btn-sq', '⧉'); copy.type = 'button'; copy.title = 'Copy';
@@ -1481,8 +1495,109 @@ window.App = window.App || {};
     var dl = el('button', 'btn btn-sq', '⤓'); dl.type = 'button'; dl.title = 'Download';
     on(dl, 'click', function () { downloadOne(art); });
     vhead.appendChild(copy); vhead.appendChild(dl);
+
+    renderArtifactPreview(art);
     renderArtifactList(); // re-mark active
   }
+
+  // Remove any rich-preview nodes we mounted previously (idempotent).
+  function clearArtifactPreview() {
+    ['ar-preview-modes', 'ar-preview-body'].forEach(function (pid) {
+      var n = $(pid);
+      if (n && n.parentNode) n.parentNode.removeChild(n);
+    });
+  }
+
+  function previewMode(art) {
+    var MD = App.MD;
+    if (MD && MD.previewable) {
+      try { return MD.previewable(art.type, art.name); } catch (e) {}
+    }
+    // crude fallback when App.MD is absent
+    var name = String(art.name || '').toLowerCase();
+    if (art.type === 'html' || /\.html?$/.test(name)) return 'html';
+    if (art.type === 'markdown' || /\.md$/.test(name)) return 'markdown';
+    if (art.type === 'code') return 'code';
+    return 'text';
+  }
+
+  function langFromName(name) {
+    var n = String(name || '').toLowerCase();
+    var dot = n.lastIndexOf('.');
+    return dot >= 0 ? n.slice(dot + 1) : '';
+  }
+
+  function renderArtifactPreview(art) {
+    clearArtifactPreview();
+    var anchor = $('ar-viewer-head');
+    if (!anchor || !anchor.parentNode) return;
+    var parent = anchor.parentNode;
+    var content = String(art.content || '');
+    var mode = previewMode(art);
+    var MD = App.MD;
+
+    var body = el('div', 'ar-preview-body'); body.id = 'ar-preview-body';
+
+    if (mode === 'html') {
+      // mode switcher: Preview (sandboxed iframe) vs Source (highlighted code)
+      var modes = el('div', 'ar-preview-modes'); modes.id = 'ar-preview-modes';
+      var bPrev = el('button', 'ar-mode-btn' + (_arHtmlSource ? '' : ' active'), 'Preview');
+      bPrev.type = 'button';
+      var bSrc = el('button', 'ar-mode-btn' + (_arHtmlSource ? ' active' : ''), 'View source');
+      bSrc.type = 'button';
+      on(bPrev, 'click', function () { if (_arHtmlSource) { _arHtmlSource = false; renderArtifactPreview(art); } });
+      on(bSrc, 'click', function () { if (!_arHtmlSource) { _arHtmlSource = true; renderArtifactPreview(art); } });
+      modes.appendChild(bPrev); modes.appendChild(bSrc);
+      parent.appendChild(modes);
+
+      if (_arHtmlSource) {
+        body.appendChild(buildCodeBlock(content, 'html'));
+      } else {
+        var iframe = document.createElement('iframe');
+        iframe.className = 'ar-iframe';
+        iframe.setAttribute('sandbox', ''); // scripts disabled
+        iframe.setAttribute('title', art.name || 'HTML preview');
+        var srcdoc = (MD && MD.htmlPreviewSrcdoc) ? safeStr(MD.htmlPreviewSrcdoc(content)) : content;
+        iframe.setAttribute('srcdoc', srcdoc);
+        body.appendChild(iframe);
+      }
+    } else if (mode === 'markdown') {
+      var md = el('div', 'ar-md md-body');
+      if (MD && MD.render) { try { md.innerHTML = String(MD.render(content)); } catch (e) { md.textContent = content; } }
+      else md.textContent = content;
+      body.appendChild(md);
+    } else if (mode === 'code') {
+      body.appendChild(buildCodeBlock(content, langFromName(art.name)));
+    } else {
+      // plain text
+      var pre = el('pre', 'ar-viewer');
+      pre.style.display = 'block';
+      pre.textContent = content;
+      body.appendChild(pre);
+    }
+
+    parent.appendChild(body);
+  }
+
+  // Build a highlighted <pre><code> block (uses App.MD.highlight when present).
+  function buildCodeBlock(code, lang) {
+    var wrap = el('div', 'ar-md md-body');
+    var pre = document.createElement('pre');
+    var codeEl = document.createElement('code');
+    codeEl.className = 'md-code lang-' + (lang || 'txt');
+    var MD = App.MD;
+    if (MD && MD.highlight) {
+      try { codeEl.innerHTML = String(MD.highlight(code, lang)); }
+      catch (e) { codeEl.textContent = String(code || ''); }
+    } else {
+      codeEl.textContent = String(code || '');
+    }
+    pre.appendChild(codeEl);
+    wrap.appendChild(pre);
+    return wrap;
+  }
+
+  function safeStr(v) { return (v == null) ? '' : String(v); }
 
   function downloadOne(art) {
     try {
@@ -1801,6 +1916,378 @@ window.App = window.App || {};
       if (w && w.clampCamera) w.clampCamera();
     }
   };
+
+  // ===========================================================================
+  // WAVE A — shared lightweight modal mounter
+  // ===========================================================================
+  // mountModal(id, title) -> { modal, body, foot, close } or null. Reuses the
+  // existing .modal/.modal-card chrome and #modal-root mount used by results/
+  // artifacts. Scrim + ✕ close the modal. Idempotent (removes a prior instance).
+  function mountModal(id, title) {
+    var root = $('modal-root');
+    if (!root) return null;
+    var prev = $(id);
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = id;
+    var scrim = el('div', 'modal-scrim');
+    var close = function () { if (modal.parentNode) modal.parentNode.removeChild(modal); };
+    on(scrim, 'click', close);
+
+    var card = el('div', 'modal-card');
+    card.appendChild(el('div', 'panel-accent'));
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', title || ''));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', close);
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    var foot = el('footer', 'modal-foot');
+
+    card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+    return { modal: modal, body: body, foot: foot, close: close };
+  }
+
+  // ===========================================================================
+  // WAVE A — PRESET PICKER ("New Company")
+  // ===========================================================================
+  UI.openPresets = function () {
+    var m = mountModal('modal-presets', '🏢 START A COMPANY');
+    if (!m) { UI.toast('Presets unavailable'); return; }
+
+    var presets = (CFG().PRESETS) || [];
+    var list = el('div', 'preset-list');
+    if (!presets.length) {
+      list.appendChild(el('div', 'cost-empty', 'No presets configured.'));
+    }
+    for (var i = 0; i < presets.length; i++) {
+      (function (p) {
+        var card = el('button', 'preset-card'); card.type = 'button';
+        card.appendChild(el('span', 'preset-ico', p.icon || '🏢'));
+        var text = el('div', 'preset-text');
+        text.appendChild(el('div', 'preset-name', p.name || p.id || 'Preset'));
+        if (p.desc) text.appendChild(el('div', 'preset-desc', p.desc));
+        var roster = Array.isArray(p.agents)
+          ? p.agents.map(function (a) { return a && a.name ? a.name : (a && a.role) || '?'; }).join(' · ')
+          : '';
+        if (roster) text.appendChild(el('div', 'preset-roster', '▸ ' + roster));
+        card.appendChild(text);
+        on(card, 'click', function () { applyPresetWithConfirm(p, m.close); });
+        list.appendChild(card);
+      })(presets[i]);
+    }
+    m.body.appendChild(list);
+
+    var note = el('div', 'cost-note',
+      'Replaces the current crew with this roster (your office layout & artifacts are kept).');
+    m.body.appendChild(note);
+
+    var close = el('button', 'btn btn-primary', 'Cancel');
+    close.type = 'button';
+    on(close, 'click', m.close);
+    m.foot.appendChild(close);
+  };
+
+  function applyPresetWithConfirm(preset, closeModal) {
+    if (!preset) return;
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm('Replace the current crew with the "' + (preset.name || preset.id) +
+          '" roster? Tasks will be cleared (office layout is kept).')) return;
+    var ok = false;
+    try {
+      if (App.Store && App.Store.applyPreset) ok = App.Store.applyPreset(preset.id);
+    } catch (e) { ok = false; }
+    if (!ok) { UI.showError('Could not apply preset'); return; }
+
+    if (typeof closeModal === 'function') closeModal();
+    UI.closeAgentPanel();
+    UI.refresh();
+    UI.refreshArtifacts();
+    UI.toast('Company set up: ' + (preset.name || preset.id), 'ok');
+
+    // offer to drop a sample goal into the boss input
+    var goals = Array.isArray(preset.sampleGoals) ? preset.sampleGoals : [];
+    if (goals.length) {
+      var goal = goals[0];
+      var ins = (typeof window !== 'undefined' && window.confirm)
+        ? window.confirm('Insert a sample goal into the Boss input?\n\n' + truncate(goal, 160))
+        : false;
+      if (ins) {
+        var hud = $('hud-task-input');
+        if (hud) { hud.value = goal; try { hud.focus(); } catch (e) {} }
+        var board = $('board-input');
+        if (board) board.value = goal;
+        UI.toast('Sample goal ready — press DISPATCH');
+      }
+    }
+  }
+
+  // ===========================================================================
+  // WAVE A — SESSIONS PANEL (named project snapshots)
+  // ===========================================================================
+  UI.openSessions = function () {
+    var m = mountModal('modal-sessions', '🗂 SESSIONS');
+    if (!m) { UI.toast('Sessions unavailable'); return; }
+
+    // toolbar: Save current as… · New
+    var toolbar = el('div', 'session-toolbar');
+    var saveBtn = el('button', 'btn btn-primary', '⤓ Save current as…');
+    saveBtn.type = 'button';
+    on(saveBtn, 'click', function () { saveSessionAs(m); });
+    var newBtn = el('button', 'btn', '✦ New / seed');
+    newBtn.type = 'button';
+    on(newBtn, 'click', function () { newSession(m.close); });
+    toolbar.appendChild(saveBtn); toolbar.appendChild(newBtn);
+    m.body.appendChild(toolbar);
+
+    var listWrap = el('div', 'session-list'); listWrap.id = 'session-list';
+    m.body.appendChild(listWrap);
+    renderSessionList();
+
+    var close = el('button', 'btn btn-primary', 'Close');
+    close.type = 'button';
+    on(close, 'click', m.close);
+    m.foot.appendChild(close);
+  };
+
+  function renderSessionList() {
+    var wrap = $('session-list');
+    if (!wrap) return;
+    clear(wrap);
+    var sessions = [];
+    try { if (App.Store && App.Store.listSessions) sessions = App.Store.listSessions() || []; } catch (e) { sessions = []; }
+    if (!sessions.length) {
+      wrap.appendChild(el('div', 'cost-empty', 'No saved sessions yet. Save the current company above.'));
+      return;
+    }
+    for (var i = 0; i < sessions.length; i++) {
+      (function (sess) {
+        var row = el('div', 'session-row');
+        var main = el('div', 'session-main');
+        main.appendChild(el('div', 'session-name', sess.name || '(unnamed)'));
+        var bits = [];
+        if (sess.savedAt) bits.push(formatWhen(sess.savedAt));
+        bits.push((sess.agentCount || 0) + ' agents');
+        bits.push((sess.taskCount || 0) + ' tasks');
+        bits.push((sess.artifactCount || 0) + ' artifacts');
+        main.appendChild(el('div', 'session-meta', bits.join(' · ')));
+        row.appendChild(main);
+
+        var actions = el('div', 'session-actions');
+        var load = el('button', 'btn btn-primary', 'Load'); load.type = 'button';
+        on(load, 'click', function () { loadSession(sess.id); });
+        var del = el('button', 'btn btn-danger', 'Del'); del.type = 'button';
+        on(del, 'click', function () { deleteSession(sess); });
+        actions.appendChild(load); actions.appendChild(del);
+        row.appendChild(actions);
+        wrap.appendChild(row);
+      })(sessions[i]);
+    }
+  }
+
+  function saveSessionAs(m) {
+    if (typeof window === 'undefined' || !window.prompt) { UI.showError('Cannot prompt for a name'); return; }
+    var def = 'Company ' + new Date().toLocaleDateString();
+    var name = window.prompt('Save current company as:', def);
+    if (name == null) return;
+    name = String(name).trim();
+    if (!name) { UI.toast('Name required'); return; }
+    var id = null;
+    try { if (App.Store && App.Store.saveSession) id = App.Store.saveSession(name); } catch (e) { id = null; }
+    if (id) { UI.toast('Saved session "' + name + '"', 'ok'); renderSessionList(); }
+    else UI.showError('Save failed');
+  }
+
+  function loadSession(id) {
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm('Load this session? Unsaved changes to the current company will be lost.')) return;
+    var ok = false;
+    try { if (App.Store && App.Store.loadSession) ok = App.Store.loadSession(id); } catch (e) { ok = false; }
+    if (ok) {
+      var m = $('modal-sessions'); if (m && m.parentNode) m.parentNode.removeChild(m);
+      UI.closeAgentPanel();
+      UI.refresh();
+      UI.refreshArtifacts();
+      UI.toast('Session loaded', 'ok');
+    } else UI.showError('Load failed');
+  }
+
+  function deleteSession(sess) {
+    if (!sess) return;
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm('Delete session "' + (sess.name || sess.id) + '"? This cannot be undone.')) return;
+    try { if (App.Store && App.Store.deleteSession) App.Store.deleteSession(sess.id); } catch (e) {}
+    renderSessionList();
+    UI.toast('Session deleted');
+  }
+
+  function newSession(closeModal) {
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm('Start a fresh company? The current one is cleared and re-seeded (save it first if you want to keep it).')) return;
+    try { if (App.Store && App.Store.clear) App.Store.clear(); } catch (e) {}
+    if (typeof closeModal === 'function') closeModal();
+    UI.closeAgentPanel();
+    UI.refresh();
+    UI.refreshArtifacts();
+    UI.toast('Fresh company seeded', 'ok');
+  }
+
+  function formatWhen(t) {
+    try {
+      var d = new Date(t);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return ''; }
+  }
+
+  // ===========================================================================
+  // WAVE A — COST METER (running session spend)
+  // ===========================================================================
+  function priceFor(modelId) {
+    var cfg = CFG();
+    if (cfg.priceFor) {
+      try { var p = cfg.priceFor(modelId); if (p) return { in: Number(p.in) || 0, out: Number(p.out) || 0 }; } catch (e) {}
+    }
+    var tbl = cfg.PRICES || {};
+    var e2 = tbl[modelId];
+    return e2 ? { in: Number(e2.in) || 0, out: Number(e2.out) || 0 } : { in: 0, out: 0 };
+  }
+
+  // computeCost() -> { total, byAgent:[{name,model,tokensIn,tokensOut,cost,color}], byModel:{} }
+  function computeCost() {
+    var s = STATE();
+    var agents = (s && Array.isArray(s.agents)) ? s.agents : [];
+    var total = 0;
+    var byAgent = [];
+    var byModel = {};
+    for (var i = 0; i < agents.length; i++) {
+      var a = agents[i];
+      if (!a) continue;
+      var stats = a.stats || {};
+      var tin = Number(stats.tokensIn) || 0;
+      var tout = Number(stats.tokensOut) || 0;
+      var pr = priceFor(a.model);
+      var cost = (tin / 1e6) * pr.in + (tout / 1e6) * pr.out;
+      total += cost;
+      byAgent.push({
+        name: a.name || a.id, model: a.model || '?',
+        tokensIn: tin, tokensOut: tout, cost: cost, color: a.color || null,
+      });
+      var mk = a.model || '?';
+      var mm = byModel[mk] || (byModel[mk] = { model: mk, tokensIn: 0, tokensOut: 0, cost: 0 });
+      mm.tokensIn += tin; mm.tokensOut += tout; mm.cost += cost;
+    }
+    return { total: total, byAgent: byAgent, byModel: byModel };
+  }
+
+  function fmtUSD(n) {
+    n = Number(n) || 0;
+    if (n > 0 && n < 0.0001) return '$<0.0001';
+    return '$' + n.toFixed(4);
+  }
+  function fmtTokens(n) {
+    n = Number(n) || 0;
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+    return String(n);
+  }
+
+  function refreshCostMeter() {
+    var amt = $('cost-meter-amount');
+    if (!amt) return;
+    try {
+      var c = computeCost();
+      amt.textContent = c.total.toFixed(4);
+      var btn = $('btn-cost-meter');
+      if (btn) btn.title = 'Running session cost: ' + fmtUSD(c.total) + ' — click for breakdown';
+    } catch (e) {}
+  }
+
+  UI.openCostBreakdown = function () {
+    var m = mountModal('modal-cost', '$ SESSION COST');
+    if (!m) { UI.toast('Cost meter unavailable'); return; }
+    var c = computeCost();
+
+    // total banner
+    var banner = el('div', 'result-goal',
+      'Total this session: ' + fmtUSD(c.total) + '  (estimated from token usage × model price)');
+    m.body.appendChild(banner);
+
+    // per-agent table
+    if (!c.byAgent.length) {
+      m.body.appendChild(el('div', 'cost-empty', 'No agents yet — no spend to report.'));
+    } else {
+      m.body.appendChild(buildCostTable('PER AGENT', ['Agent', 'Model', 'In', 'Out', 'Cost'],
+        c.byAgent.map(function (r) {
+          return { cells: [r.name, shortModel(r.model), fmtTokens(r.tokensIn), fmtTokens(r.tokensOut), fmtUSD(r.cost)], color: r.color };
+        }), c.total));
+
+      // per-model rollup
+      var modelRows = [];
+      for (var k in c.byModel) {
+        if (!Object.prototype.hasOwnProperty.call(c.byModel, k)) continue;
+        var mm = c.byModel[k];
+        modelRows.push({ cells: [shortModel(mm.model), '', fmtTokens(mm.tokensIn), fmtTokens(mm.tokensOut), fmtUSD(mm.cost)], color: null });
+      }
+      m.body.appendChild(buildCostTable('PER MODEL', ['Model', '', 'In', 'Out', 'Cost'], modelRows, c.total));
+    }
+
+    var note = el('div', 'cost-note',
+      'Prices are approximate public list prices (config.PRICES) and editable. Token counts come from each agent’s stats.');
+    m.body.appendChild(note);
+
+    var close = el('button', 'btn btn-primary', 'Close');
+    close.type = 'button';
+    on(close, 'click', m.close);
+    m.foot.appendChild(close);
+  };
+
+  function buildCostTable(caption, headers, rows, total) {
+    var wrap = el('div');
+    wrap.style.marginTop = '14px';
+    wrap.appendChild(el('div', 'field-label', caption));
+    var table = el('table', 'cost-table');
+    var thead = document.createElement('thead');
+    var htr = document.createElement('tr');
+    for (var h = 0; h < headers.length; h++) {
+      var th = document.createElement('th');
+      th.textContent = headers[h];
+      htr.appendChild(th);
+    }
+    thead.appendChild(htr); table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    for (var i = 0; i < rows.length; i++) {
+      var tr = document.createElement('tr');
+      var cells = rows[i].cells || [];
+      for (var c = 0; c < cells.length; c++) {
+        var td = document.createElement('td');
+        if (c === cells.length - 1) td.className = 'cost-val';
+        td.textContent = String(cells[c]);
+        if (c === 0 && rows[i].color) td.style.color = rows[i].color;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+
+    var tfoot = document.createElement('tfoot');
+    var ftr = document.createElement('tr');
+    var fl = document.createElement('td');
+    fl.setAttribute('colspan', String(Math.max(1, headers.length - 1)));
+    fl.textContent = 'TOTAL';
+    var fv = document.createElement('td');
+    fv.textContent = fmtUSD(total);
+    ftr.appendChild(fl); ftr.appendChild(fv);
+    tfoot.appendChild(ftr); table.appendChild(tfoot);
+
+    wrap.appendChild(table);
+    return wrap;
+  }
 
   // ===========================================================================
   // PUBLISH + §7.10 compat alias

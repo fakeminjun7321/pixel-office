@@ -1021,6 +1021,233 @@ window.App = window.App || {};
   }
 
   // ---------------------------------------------------------------------------
+  // WAVE A §SESSIONS — named project snapshots, stored under their OWN key
+  // (STORAGE_KEY + '_sessions'). Completely separate from the active-state
+  // autosave (save()/load() above are UNCHANGED). Shape on disk:
+  //   { index: [{ id, name, savedAt, agentCount, taskCount, artifactCount }],
+  //     blobs: { <id>: <saveBlob> } }
+  // Every method is wrapped in try/catch and never throws into the caller.
+  // ---------------------------------------------------------------------------
+
+  function sessionsKey() {
+    return storageKey() + '_sessions';
+  }
+
+  // Read the sessions container; tolerant of missing/corrupt data.
+  function readSessions() {
+    var empty = { index: [], blobs: {} };
+    try {
+      var raw = safeGetItem(sessionsKey());
+      if (!raw) return empty;
+      var obj = JSON.parse(raw);
+      if (!obj || typeof obj !== 'object') return empty;
+      if (!Array.isArray(obj.index)) obj.index = [];
+      if (!obj.blobs || typeof obj.blobs !== 'object') obj.blobs = {};
+      return obj;
+    } catch (e) {
+      logErr('readSessions', e);
+      return empty;
+    }
+  }
+
+  function writeSessions(store) {
+    try {
+      if (!store || typeof store !== 'object') return false;
+      var json = JSON.stringify(store);
+      return safeSetItem(sessionsKey(), json);
+    } catch (e) {
+      logErr('writeSessions', e);
+      return false;
+    }
+  }
+
+  // Build a lightweight index row from a save blob.
+  function sessionMeta(id, name, blob) {
+    return {
+      id: id,
+      name: name,
+      savedAt: (blob && typeof blob.savedAt === 'number') ? blob.savedAt : nowMs(),
+      agentCount: (blob && Array.isArray(blob.agents)) ? blob.agents.length : 0,
+      taskCount: (blob && Array.isArray(blob.tasks)) ? blob.tasks.length : 0,
+      artifactCount: (blob && Array.isArray(blob.artifacts)) ? blob.artifacts.length : 0,
+    };
+  }
+
+  // listSessions() -> [{id,name,savedAt,agentCount,taskCount,artifactCount}], newest first.
+  function listSessions() {
+    try {
+      var store = readSessions();
+      var rows = [];
+      for (var i = 0; i < store.index.length; i++) {
+        var r = store.index[i];
+        if (!r || typeof r !== 'object' || !r.id) continue;
+        rows.push({
+          id: String(r.id),
+          name: (r.name == null) ? 'Session' : String(r.name),
+          savedAt: (typeof r.savedAt === 'number') ? r.savedAt : 0,
+          agentCount: (typeof r.agentCount === 'number') ? r.agentCount : 0,
+          taskCount: (typeof r.taskCount === 'number') ? r.taskCount : 0,
+          artifactCount: (typeof r.artifactCount === 'number') ? r.artifactCount : 0,
+        });
+      }
+      rows.sort(function (a, b) { return (b.savedAt || 0) - (a.savedAt || 0); });
+      return rows;
+    } catch (e) {
+      logErr('listSessions', e);
+      return [];
+    }
+  }
+
+  // saveSession(name) -> id. Snapshots the CURRENT App.state via buildSaveBlob
+  // (the existing serialize path). Overwrites a session with the same name.
+  function saveSession(name) {
+    try {
+      var nm = (name == null || String(name).trim() === '') ? ('Session ' + new Date().toLocaleString()) : String(name).trim();
+      var blob = buildSaveBlob();   // reuse existing serialize path
+      var store = readSessions();
+
+      // Overwrite if a session with this name already exists.
+      var id = null;
+      for (var i = 0; i < store.index.length; i++) {
+        if (store.index[i] && store.index[i].name === nm) { id = store.index[i].id; break; }
+      }
+      if (!id) id = uid('sess');
+
+      store.blobs[id] = blob;
+      var meta = sessionMeta(id, nm, blob);
+      // replace existing index row or append
+      var replaced = false;
+      for (var j = 0; j < store.index.length; j++) {
+        if (store.index[j] && store.index[j].id === id) { store.index[j] = meta; replaced = true; break; }
+      }
+      if (!replaced) store.index.push(meta);
+
+      writeSessions(store);
+      pushLog({ from: 'system', to: 'all', kind: 'system', text: 'Session saved: "' + nm + '".' });
+      return id;
+    } catch (e) {
+      logErr('saveSession', e);
+      return null;
+    }
+  }
+
+  // loadSession(id) -> bool. Replaces App.state contents IN PLACE (preserves the
+  // object reference) via the existing applyBlob path. Clamps camera; refreshes UI.
+  function loadSession(id) {
+    try {
+      if (!id) return false;
+      var store = readSessions();
+      var blob = store.blobs && store.blobs[id];
+      if (!blob || typeof blob !== 'object') return false;
+
+      // abort any in-flight streams before swapping state
+      abortAllStreams();
+
+      blob = migrate(blob);     // forward-compat with older saved sessions
+      applyBlob(blob);          // in-place; clamps camera (applyBlob does this)
+      safeUIRefresh();
+
+      var nm = '';
+      for (var i = 0; i < store.index.length; i++) {
+        if (store.index[i] && store.index[i].id === id) { nm = store.index[i].name || ''; break; }
+      }
+      pushLog({ from: 'system', to: 'all', kind: 'system', text: 'Session loaded' + (nm ? ': "' + nm + '"' : '') + '.' });
+      return true;
+    } catch (e) {
+      logErr('loadSession', e);
+      return false;
+    }
+  }
+
+  // deleteSession(id) -> bool.
+  function deleteSession(id) {
+    try {
+      if (!id) return false;
+      var store = readSessions();
+      var found = false;
+      var newIndex = [];
+      for (var i = 0; i < store.index.length; i++) {
+        if (store.index[i] && store.index[i].id === id) { found = true; continue; }
+        newIndex.push(store.index[i]);
+      }
+      store.index = newIndex;
+      if (store.blobs && Object.prototype.hasOwnProperty.call(store.blobs, id)) {
+        delete store.blobs[id];
+        found = true;
+      }
+      if (found) writeSessions(store);
+      return found;
+    } catch (e) {
+      logErr('deleteSession', e);
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // WAVE A §applyPreset — swap the agent roster for a config PRESET's roster.
+  // Removes ALL current agents (incl. boss), creates the preset's agents (each
+  // given a desk/home via World.freeDeskCell or a fallback cell), ensures a boss
+  // exists, clears tasks + _meetingActive. Keeps the office layout AND artifacts
+  // (default). Logs a line. Defensive; never throws.
+  // ---------------------------------------------------------------------------
+
+  function findPreset(presetId) {
+    var list = (cfg().PRESETS) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].id === presetId) return list[i];
+    }
+    return null;
+  }
+
+  function applyPreset(presetId) {
+    try {
+      var preset = findPreset(presetId);
+      if (!preset || !Array.isArray(preset.agents)) return false;
+      var s = ensureState();
+
+      // 1) abort streams + remove ALL current agents (incl. boss).
+      abortAllStreams();
+      s.agents.length = 0;
+      s.selectedAgentId = null;
+
+      // 2) clear tasks + meeting flag (do NOT touch layout; keep artifacts).
+      s.tasks.length = 0;
+      s._meetingActive = false;
+
+      // 3) create the preset agents. makeAgent() routes through Agents.create
+      //    (which assigns a desk via freeDeskCell) and falls back inline.
+      var sawBoss = false;
+      for (var i = 0; i < preset.agents.length; i++) {
+        var a = preset.agents[i];
+        if (!a || typeof a !== 'object') continue;
+        var role = a.role || 'generalist';
+        if (role === 'boss') sawBoss = true;
+        makeAgent({
+          name: a.name,
+          role: role,
+          model: a.model,
+          color: a.color,
+          systemPrompt: a.systemPrompt,
+          persona: a.persona,
+        });
+      }
+
+      // 4) ensure a boss exists (preset rosters should include one, but be safe).
+      if (!sawBoss) {
+        makeAgent({ name: 'Boss', role: 'boss' });
+      }
+
+      pushLog({ from: 'system', to: 'all', kind: 'system', text: 'Preset applied: ' + (preset.name || preset.id) + '.' });
+      save();
+      safeUIRefresh();
+      return true;
+    } catch (e) {
+      logErr('applyPreset', e);
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // PUBLIC API (§7.4 + compat alias §7.10)
   // ---------------------------------------------------------------------------
 
@@ -1035,6 +1262,13 @@ window.App = window.App || {};
     clear: clear,
     pushLog: pushLog,
     migrate: migrate,
+    // WAVE A: named project sessions (separate from the autosave above).
+    listSessions: listSessions,
+    saveSession: saveSession,
+    loadSession: loadSession,
+    deleteSession: deleteSession,
+    // WAVE A: swap the agent roster for a config preset.
+    applyPreset: applyPreset,
   };
 
   // §7.10 REQUIRED compat alias: orch.md used App.Store.log

@@ -763,6 +763,131 @@ select option{ background:var(--panel); color:var(--text); }
 .ar-viewer-name{ flex:1 1 auto; min-width:0; font-size:11px; font-weight:700; color:var(--cyan); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ar-empty{ color:var(--text-faint); font-size:11px; text-align:center; padding:24px 8px; }
 
+/* =========================================================================
+   WAVE A — markdown render body, syntax tokens, artifact preview chrome
+   ========================================================================= */
+
+/* rendered markdown surface (artifact preview, results) */
+.md-body{
+  font-family:var(--mono); font-size:12.5px; line-height:1.6; color:var(--text);
+  word-break:break-word;
+}
+.md-body h1,.md-body h2,.md-body h3,.md-body h4,.md-body h5,.md-body h6{
+  margin:.8em 0 .4em; color:var(--cyan); font-weight:800; letter-spacing:.5px;
+  text-shadow:0 0 8px rgba(57,215,255,.25);
+}
+.md-body h1{ font-size:17px; } .md-body h2{ font-size:15px; } .md-body h3{ font-size:13.5px; }
+.md-body h4,.md-body h5,.md-body h6{ font-size:12.5px; color:var(--text-dim); }
+.md-body p{ margin:.5em 0; }
+.md-body strong{ color:#fff; font-weight:800; }
+.md-body em{ color:var(--text); font-style:italic; }
+.md-body a{ color:var(--blue); text-decoration:none; border-bottom:1px dotted rgba(77,124,255,.5); }
+.md-body a:hover{ color:var(--cyan); border-bottom-color:var(--cyan); }
+.md-body code{
+  font-family:var(--mono); font-size:11.5px;
+  background:rgba(57,215,255,.08); color:var(--cyan);
+  padding:1px 5px; border-radius:4px; border:1px solid rgba(57,215,255,.18);
+}
+.md-body pre{
+  margin:.7em 0; padding:11px 13px; overflow:auto; max-width:100%;
+  background:var(--void); border:1px solid var(--panel-edge); border-radius:6px;
+  box-shadow:inset 0 0 20px rgba(0,0,0,.5);
+}
+.md-body pre code{
+  background:none; border:none; padding:0; color:var(--text);
+  font-size:11.5px; line-height:1.55; white-space:pre;
+}
+.md-body ul,.md-body ol{ margin:.5em 0; padding-left:1.5em; }
+.md-body li{ margin:.2em 0; }
+.md-body blockquote{
+  margin:.6em 0; padding:4px 12px; color:var(--text-dim);
+  border-left:3px solid var(--purple); background:rgba(155,92,255,.06); border-radius:0 4px 4px 0;
+}
+.md-body hr{ border:none; border-top:1px solid var(--divider); margin:1em 0; }
+.md-body table{ border-collapse:collapse; margin:.7em 0; font-size:11.5px; width:100%; }
+.md-body th,.md-body td{ border:1px solid var(--panel-edge); padding:5px 9px; text-align:left; }
+.md-body th{ background:rgba(57,215,255,.08); color:var(--cyan); font-weight:800; }
+
+/* generic syntax-highlight token spans (emitted by App.MD.highlight) */
+.tok-kw{ color:var(--magenta); font-weight:700; }
+.tok-str{ color:var(--lime); }
+.tok-num{ color:var(--amber); }
+.tok-com{ color:var(--text-faint); font-style:italic; }
+
+/* artifact preview: mode switcher + sandboxed html iframe */
+.ar-preview-modes{ display:flex; gap:6px; margin-top:10px; align-items:center; flex-wrap:wrap; }
+.ar-mode-btn{
+  font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+  padding:2px 9px; border-radius:8px; cursor:pointer;
+  color:var(--text-dim); background:transparent;
+  border:1px solid var(--divider);
+}
+.ar-mode-btn:hover{ color:var(--text); border-color:var(--cyan); }
+.ar-mode-btn.active{ color:#04121c; background:var(--cyan); border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); }
+.ar-iframe{
+  width:100%; height:42vh; margin-top:12px;
+  background:#fff; border:1px solid var(--panel-edge); border-radius:6px;
+  box-shadow:inset 0 0 24px rgba(0,0,0,.25);
+}
+.ar-md{ margin-top:12px; max-height:42vh; overflow:auto;
+  padding:12px 14px; background:var(--floor);
+  border:1px solid var(--panel-edge); border-radius:6px;
+  box-shadow:inset 0 0 24px rgba(0,0,0,.45); }
+
+/* =========================================================================
+   WAVE A — preset picker cards
+   ========================================================================= */
+.preset-list{ display:flex; flex-direction:column; gap:9px; }
+.preset-card{
+  display:flex; align-items:flex-start; gap:11px;
+  padding:11px 12px; cursor:pointer; text-align:left; width:100%;
+  background:var(--btn); border:1px solid var(--panel-edge); border-radius:6px;
+  border-left:3px solid var(--purple);
+  transition:background .12s, border-color .12s, transform .06s, box-shadow .12s;
+}
+.preset-card:hover{ background:var(--btn-hover); border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); transform:translateX(2px); }
+.preset-card:focus-visible{ outline:none; border-color:var(--blue); box-shadow:0 0 0 2px rgba(77,124,255,.45); }
+.preset-ico{ font-size:24px; line-height:1; flex:0 0 auto; filter:drop-shadow(0 0 6px rgba(57,215,255,.4)); }
+.preset-text{ min-width:0; flex:1 1 auto; }
+.preset-name{ font-size:13px; font-weight:800; color:var(--text); letter-spacing:.5px; }
+.preset-desc{ font-size:10.5px; color:var(--text-dim); margin-top:3px; line-height:1.45; }
+.preset-roster{ font-size:9.5px; color:var(--text-faint); margin-top:5px; letter-spacing:.3px; }
+
+/* =========================================================================
+   WAVE A — sessions panel rows
+   ========================================================================= */
+.session-list{ display:flex; flex-direction:column; gap:8px; }
+.session-row{
+  display:flex; align-items:center; gap:10px;
+  padding:9px 11px;
+  background:var(--btn); border:1px solid var(--panel-edge); border-radius:6px;
+  border-left:3px solid var(--lime);
+}
+.session-main{ min-width:0; flex:1 1 auto; }
+.session-name{ font-size:12.5px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.session-meta{ font-size:9.5px; color:var(--text-faint); margin-top:3px; letter-spacing:.3px; }
+.session-actions{ flex:0 0 auto; display:flex; gap:6px; }
+.session-actions .btn{ height:26px; padding:0 10px; font-size:11px; }
+.session-toolbar{ display:flex; gap:9px; margin-bottom:14px; flex-wrap:wrap; }
+
+/* =========================================================================
+   WAVE A — cost meter HUD readout + breakdown
+   ========================================================================= */
+.cost-meter{ font-variant-numeric:tabular-nums; }
+.cost-meter .btn-ico{ color:var(--lime); font-weight:900; }
+.cost-amount{ font-weight:800; letter-spacing:.3px; color:var(--lime); }
+.cost-meter:hover{ border-color:var(--lime); box-shadow:var(--glow-lime); }
+
+.cost-table{ width:100%; border-collapse:collapse; font-size:11.5px; }
+.cost-table th,.cost-table td{ padding:6px 9px; border-bottom:1px solid var(--divider); text-align:right; }
+.cost-table th:first-child,.cost-table td:first-child{ text-align:left; }
+.cost-table thead th{ color:var(--text-dim); font-size:9.5px; font-weight:800; letter-spacing:1px; text-transform:uppercase; }
+.cost-table tbody td{ color:var(--text); }
+.cost-table tbody td.cost-val{ color:var(--lime); font-variant-numeric:tabular-nums; }
+.cost-table tfoot td{ font-weight:800; color:var(--cyan); border-top:1px solid var(--panel-edge); padding-top:8px; }
+.cost-empty{ color:var(--text-faint); font-size:11px; text-align:center; padding:18px 8px; }
+.cost-note{ font-size:9.5px; color:var(--text-faint); margin-top:10px; line-height:1.45; }
+
 /* reduced motion: calm all the loops */
 @media (prefers-reduced-motion:reduce){
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,
