@@ -1,0 +1,314 @@
+<!--
+  ===========================================================================
+  shell.html — PIXEL AI COMPANY ("NEON//WORKS")
+  ---------------------------------------------------------------------------
+  This file is the <body> INNER markup ONLY. The concatenation step inlines it
+  inside one self-contained index.html. Therefore:
+    - NO <html>/<head>/<body> tags, NO <script> tags here.
+    - Every id/class below is part of the DOM CONTRACT (SPEC §8). App.UI binds
+      to these exact ids. Do not rename. Buttons carry ids only — no inline JS.
+    - Visibility is toggled ONLY via the `.hidden` class (display:none).
+    - Selects/segmented pickers ship EMPTY; App.UI fills them from config at init.
+  ===========================================================================
+-->
+
+<!-- =======================================================================
+     #app — root flex container: the canvas world + all DOM overlays on top.
+     ======================================================================= -->
+<div id="app">
+
+  <!-- ------------------------------------------------------------------
+       The office world. Everything pixel-art is rendered here in Canvas 2D.
+       Pointer events (pan / select / layout-edit) are wired by App.UI.
+       ------------------------------------------------------------------ -->
+  <canvas id="world-canvas" tabindex="0" aria-label="The office floor"></canvas>
+
+  <!-- ==================================================================
+       TOP BAR (#hud) — logo lockup (left) · boss task input (center) ·
+       control buttons (right). Full width, ~48px tall. (visual §6.1)
+       ================================================================== -->
+  <header id="hud">
+
+    <!-- Logo lockup: procedural NEON//WORKS hex-node glyph + wordmark. -->
+    <div id="hud-brand">
+      <canvas id="hud-logo-canvas" width="32" height="32" aria-hidden="true"></canvas>
+      <span id="hud-wordmark" aria-label="NEON//WORKS">
+        <span class="wm-neon">NEON</span><span class="wm-slash">//</span><span class="wm-works">WORKS</span>
+      </span>
+      <span id="hud-tagline">AI AGENT COLLECTIVE</span>
+    </div>
+
+    <!-- Center: quick "give the Boss a goal" field. Mirrors the board input;
+         App.UI relays it to Orchestrator.runBossTask. -->
+    <div id="hud-center">
+      <input id="hud-task-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Give the Boss a goal…  (Enter to dispatch)" />
+      <button id="hud-task-dispatch" class="btn btn-primary" type="button" title="Dispatch to Boss">DISPATCH</button>
+    </div>
+
+    <!-- Right: icon/text control buttons. ids are PINNED by SPEC §8. -->
+    <nav id="hud-controls" aria-label="Controls">
+      <button id="btn-task"        class="btn"        type="button" title="Task board / New Boss task">
+        <span class="btn-ico">▤</span><span class="btn-lbl">Tasks</span>
+      </button>
+      <button id="btn-add-agent"   class="btn"        type="button" title="Add a new agent">
+        <span class="btn-ico">＋</span><span class="btn-lbl">Agent</span>
+      </button>
+      <button id="btn-layout"      class="btn btn-toggle" type="button" title="Toggle layout edit" aria-pressed="false">
+        <span class="btn-ico">▦</span><span class="btn-lbl">Layout</span>
+      </button>
+      <button id="btn-settings"    class="btn"        type="button" title="Settings">
+        <span class="btn-ico">⚙</span><span class="btn-lbl">Settings</span>
+      </button>
+
+      <span class="hud-sep" aria-hidden="true"></span>
+
+      <button id="btn-zoom-out"    class="btn btn-sq"  type="button" title="Zoom out">−</button>
+      <button id="btn-zoom-in"     class="btn btn-sq"  type="button" title="Zoom in">＋</button>
+      <button id="btn-reset-view"  class="btn btn-sq"  type="button" title="Reset view">⊚</button>
+      <button id="status-paused"   class="btn btn-sq btn-toggle" type="button" title="Pause / resume" aria-pressed="false">⏸</button>
+    </nav>
+  </header>
+
+  <!-- ==================================================================
+       LEFT RAIL (#agent-list) — roster of agents. App.UI fills rows;
+       clicking a row -> openAgentPanel(agentId).
+       ================================================================== -->
+  <aside id="agent-list" aria-label="Agent roster">
+    <div class="rail-head">
+      <span class="rail-title">CREW</span>
+      <span id="agent-count" class="rail-count">0</span>
+    </div>
+    <div id="agent-list-body" class="rail-body">
+      <!-- rows injected by App.UI.refreshAgentList() -->
+    </div>
+  </aside>
+
+  <!-- ==================================================================
+       ACTIVITY LOG (#log) — App.state.log feed; auto-scrolls. (visual §7)
+       ================================================================== -->
+  <section id="log" aria-label="Activity log">
+    <div class="rail-head">
+      <span class="rail-title">ACTIVITY</span>
+      <span class="log-pulse" aria-hidden="true"></span>
+    </div>
+    <div id="log-body" class="rail-body">
+      <!-- lines injected by App.UI.refreshLog() -->
+    </div>
+  </section>
+
+  <!-- ==================================================================
+       AGENT SIDE PANEL (#panel-agent) — agent detail + direct chat.
+       Hidden until an agent is selected. (SPEC §8 / visual §7)
+       ================================================================== -->
+  <aside id="panel-agent" class="panel hidden" aria-label="Agent detail">
+    <div class="panel-accent" aria-hidden="true"></div>
+
+    <header class="panel-head">
+      <canvas id="panel-agent-canvas" width="72" height="96" aria-hidden="true"></canvas>
+      <div class="panel-head-text">
+        <h2 id="panel-agent-name">Agent</h2>
+        <div id="panel-agent-meta" class="panel-meta">role · state · model</div>
+      </div>
+      <button id="panel-agent-close" class="panel-x" type="button" title="Close" aria-label="Close panel">✕</button>
+    </header>
+
+    <div id="panel-agent-transcript" class="transcript" aria-live="polite">
+      <!-- chat turns injected by App.UI.appendTranscript() -->
+    </div>
+
+    <div class="panel-compose">
+      <textarea id="panel-agent-input" rows="2" spellcheck="false"
+                placeholder="Message this agent directly…  (Enter to send)"></textarea>
+      <button id="panel-agent-send" class="btn btn-primary" type="button">SEND</button>
+    </div>
+  </aside>
+
+  <!-- ==================================================================
+       TASK BOARD / KANBAN (#board) — Queued · Running · Done + Boss input.
+       Toggle .hidden. (SPEC §8 / visual §7)
+       ================================================================== -->
+  <section id="board" class="panel hidden" aria-label="Task board">
+    <div class="panel-accent" aria-hidden="true"></div>
+
+    <header class="panel-head board-head">
+      <h2 class="board-title">TASK BOARD</h2>
+      <button id="board-close" class="panel-x" type="button" title="Close" aria-label="Close board">✕</button>
+    </header>
+
+    <div class="board-dispatch">
+      <textarea id="board-input" rows="2" spellcheck="false"
+                placeholder="Give a big goal to the Boss — it will decompose &amp; delegate…"></textarea>
+      <button id="board-send" class="btn btn-primary btn-dispatch" type="button">DISPATCH</button>
+    </div>
+
+    <div class="board-cols">
+      <div class="board-col">
+        <div class="board-col-head col-queued">QUEUED <span class="col-count" data-col="queued">0</span></div>
+        <div id="board-col-queued" class="board-col-body"><!-- queued + blocked cards --></div>
+      </div>
+      <div class="board-col">
+        <div class="board-col-head col-running">RUNNING <span class="col-count" data-col="running">0</span></div>
+        <div id="board-col-running" class="board-col-body"><!-- running cards --></div>
+      </div>
+      <div class="board-col">
+        <div class="board-col-head col-done">DONE <span class="col-count" data-col="done">0</span></div>
+        <div id="board-col-done" class="board-col-body"><!-- done + error cards --></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================================================================
+       LAYOUT-EDIT PALETTE (#layout-palette) — furniture chips for placing.
+       Hidden unless state.layoutEdit. Each chip carries data-furniture="<key>".
+       Keys: §4.3 FURNITURE. App.UI may re-render/enhance, but ships ready.
+       ================================================================== -->
+  <div id="layout-palette" class="hidden" aria-label="Furniture palette">
+    <div class="palette-head">PLACE FURNITURE</div>
+    <div class="palette-grid">
+      <button class="palette-item" type="button" data-furniture="desk">         <span class="pi-ico">🖥</span><span class="pi-lbl">Desk</span></button>
+      <button class="palette-item" type="button" data-furniture="chair">        <span class="pi-ico">🪑</span><span class="pi-lbl">Chair</span></button>
+      <button class="palette-item" type="button" data-furniture="server">       <span class="pi-ico">🗄</span><span class="pi-lbl">Server</span></button>
+      <button class="palette-item" type="button" data-furniture="meetingTable">  <span class="pi-ico">▭</span><span class="pi-lbl">Table</span></button>
+      <button class="palette-item" type="button" data-furniture="plant">        <span class="pi-ico">🌿</span><span class="pi-lbl">Plant</span></button>
+      <button class="palette-item" type="button" data-furniture="coffee">       <span class="pi-ico">☕</span><span class="pi-lbl">Coffee</span></button>
+      <button class="palette-item" type="button" data-furniture="neonSign">     <span class="pi-ico">✦</span><span class="pi-lbl">Sign</span></button>
+      <button class="palette-item" type="button" data-furniture="whiteboard">   <span class="pi-ico">▥</span><span class="pi-lbl">Board</span></button>
+    </div>
+    <div class="palette-foot">
+      <span class="palette-hint">Click floor to place · click prop to remove · drag to move</span>
+      <button id="layout-done" class="btn btn-primary" type="button">DONE</button>
+    </div>
+  </div>
+
+  <!-- ==================================================================
+       MODAL ROOT (#modal-root) — modals mount here, over a scrim.
+       Each modal toggles its own .hidden. Backdrop is the scrim element.
+       ================================================================== -->
+  <div id="modal-root">
+
+    <!-- ----- ADD AGENT MODAL (#modal-add-agent) ---------------------- -->
+    <div id="modal-add-agent" class="modal hidden" role="dialog" aria-modal="true" aria-label="Add agent">
+      <div class="modal-scrim" data-close="modal-add-agent"></div>
+      <div class="modal-card">
+        <div class="panel-accent" aria-hidden="true"></div>
+        <header class="modal-head">
+          <h2 class="modal-title">+ NEW AGENT</h2>
+          <button id="aa-cancel" class="panel-x" type="button" aria-label="Cancel">✕</button>
+        </header>
+
+        <div class="modal-body aa-grid">
+          <!-- left column: form fields -->
+          <div class="aa-fields">
+            <label class="field">
+              <span class="field-label">NAME</span>
+              <input id="aa-name" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Nova" />
+            </label>
+
+            <label class="field">
+              <span class="field-label">ROLE</span>
+              <!-- populated from config.ROLES by App.UI -->
+              <select id="aa-role"></select>
+            </label>
+
+            <div class="field">
+              <span class="field-label">MODEL</span>
+              <!-- segmented neon tabs; filled from config.MODELS by App.UI -->
+              <div id="aa-model" class="segmented" role="radiogroup" aria-label="Model"></div>
+            </div>
+
+            <div class="field">
+              <span class="field-label">NEON COLOR</span>
+              <!-- swatch row of signature neons + custom; filled by App.UI -->
+              <div id="aa-color" class="swatch-row" role="radiogroup" aria-label="Accent color"></div>
+            </div>
+
+            <label class="field">
+              <span class="field-label">SYSTEM PROMPT <span class="field-opt">(optional override)</span></span>
+              <textarea id="aa-system" rows="4" spellcheck="false"
+                        placeholder="Leave blank to use the role's default prompt…"></textarea>
+            </label>
+          </div>
+
+          <!-- right column: live sprite preview -->
+          <div class="aa-preview">
+            <span class="preview-label">PREVIEW</span>
+            <div class="preview-stage">
+              <canvas id="aa-preview-canvas" width="120" height="160" aria-hidden="true"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <footer class="modal-foot">
+          <button id="aa-submit" class="btn btn-primary" type="button">CREATE AGENT</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- ----- SETTINGS MODAL (#modal-settings) ------------------------ -->
+    <div id="modal-settings" class="modal hidden" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="modal-scrim" data-close="modal-settings"></div>
+      <div class="modal-card">
+        <div class="panel-accent" aria-hidden="true"></div>
+        <header class="modal-head">
+          <h2 class="modal-title">⚙ SETTINGS</h2>
+          <button id="set-close" class="panel-x" type="button" aria-label="Close">✕</button>
+        </header>
+
+        <div class="modal-body">
+          <label class="field">
+            <span class="field-label">ANTHROPIC API KEY</span>
+            <span class="field-row">
+              <input id="set-apikey" type="password" autocomplete="off" spellcheck="false"
+                     placeholder="sk-ant-…  (stored locally only)" />
+              <button id="set-apikey-toggle" class="btn btn-sq" type="button" title="Show / hide key" aria-label="Toggle visibility">👁</button>
+            </span>
+            <span class="field-hint">Stored only in your browser (localStorage). Never sent anywhere but Anthropic.</span>
+          </label>
+
+          <div class="field-2col">
+            <label class="field">
+              <span class="field-label">WORKER MODEL</span>
+              <select id="set-default-model"></select>
+            </label>
+            <label class="field">
+              <span class="field-label">BOSS MODEL</span>
+              <select id="set-boss-model"></select>
+            </label>
+          </div>
+
+          <div class="field field-inline">
+            <span class="field-label">WEB SEARCH</span>
+            <!-- neon switch; App.UI toggles aria-checked + .on -->
+            <button id="set-websearch" class="switch" type="button" role="switch" aria-checked="true" title="Toggle web search">
+              <span class="switch-knob" aria-hidden="true"></span>
+            </button>
+            <span class="field-hint inline-hint">Lets researchers use the server-side web_search tool.</span>
+          </div>
+
+          <div class="field">
+            <span class="field-label">DATA</span>
+            <div class="btn-row">
+              <button id="set-export" class="btn" type="button">⤓ Export JSON</button>
+              <button id="set-import" class="btn" type="button">⤒ Import JSON</button>
+              <input id="set-import-file" type="file" accept="application/json,.json" class="hidden" />
+              <button id="set-clear" class="btn btn-danger" type="button">⌦ Clear all data</button>
+            </div>
+          </div>
+        </div>
+
+        <footer class="modal-foot">
+          <button id="set-save" class="btn btn-primary" type="button">SAVE</button>
+        </footer>
+      </div>
+    </div>
+
+  </div><!-- /#modal-root -->
+
+  <!-- ==================================================================
+       TOAST (#toast) — transient notices (e.g. "Set your API key…").
+       App.UI.toast() injects/clears children. (SPEC §8)
+       ================================================================== -->
+  <div id="toast" aria-live="assertive" aria-atomic="true"></div>
+
+</div><!-- /#app -->
