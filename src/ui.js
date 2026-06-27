@@ -83,6 +83,9 @@ window.App = window.App || {};
 
       // HUD buttons
       on($('btn-task'), 'click', function () { UI.openTaskBoard(); });
+      on($('btn-build'), 'click', function () { dispatchBuild(); });
+      on($('btn-files'), 'click', function () { UI.openFiles(); });
+      on($('btn-run'), 'click', function () { UI.runPreview(); });
       on($('btn-add-agent'), 'click', function () { UI.openAddAgent(); });
       on($('btn-settings'), 'click', function () { UI.openSettings(); });
       on($('btn-artifacts'), 'click', function () { UI.openArtifacts(); });
@@ -129,6 +132,7 @@ window.App = window.App || {};
       on($('set-close'), 'click', function () { hide($('modal-settings')); });
       on($('set-save'), 'click', function () { saveSettings(); });
       on($('set-apikey-toggle'), 'click', function () { toggleApiKeyVisible(); });
+      on($('set-gh-token-toggle'), 'click', function () { toggleGhTokenVisible(); });
       on($('set-websearch'), 'click', function () { toggleWebSearchSwitch(); });
       on($('set-export'), 'click', function () { exportData(); });
       on($('set-import'), 'click', function () { var f = $('set-import-file'); if (f) f.click(); });
@@ -173,6 +177,7 @@ window.App = window.App || {};
       setWebSearchSwitch(!!(App.state && App.state.settings && App.state.settings.webSearch));
 
       UI.refreshArtifacts();
+      UI.refreshFiles();
       UI.refresh();
     } catch (e) {
       try { console && console.warn && console.warn('[UI.init]', e); } catch (e2) {}
@@ -557,6 +562,32 @@ window.App = window.App || {};
     if (ORCH() && ORCH().runBossTask) {
       ORCH().runBossTask(text);
       UI.openTaskBoard(); // surface the board so the user sees the decomposition
+    }
+  }
+
+  // dispatchBuild() — kick off the PROJECT BUILDER pipeline (v5). Reads the same
+  // goal text the user typed for DISPATCH (HUD center, then board input), runs
+  // App.Orchestrator.runBuild, surfaces the board + files panel so the user
+  // watches files appear. DISPATCH stays Q&A; this is the file-oriented mode.
+  function dispatchBuild() {
+    var hud = $('hud-task-input');
+    var board = $('board-input');
+    var text = '';
+    if (hud && hud.value && hud.value.trim()) text = hud.value.trim();
+    else if (board && board.value && board.value.trim()) text = board.value.trim();
+    if (!text) {
+      if (hud && hud.focus) { try { hud.focus(); } catch (e) {} }
+      UI.toast(T('build.needGoal', 'Type a project goal first (e.g. "build a todo web app")'));
+      return;
+    }
+    if (hud) hud.value = '';
+    if (board) board.value = '';
+    requestNotifyPermission();
+    if (ORCH() && ORCH().runBuild) {
+      try { ORCH().runBuild(text); } catch (e) { UI.showError('Build failed to start: ' + (e && e.message)); return; }
+      UI.openTaskBoard();
+    } else {
+      UI.showError(T('build.unavailable', 'Build mode is unavailable.'));
     }
   }
 
@@ -1194,8 +1225,20 @@ window.App = window.App || {};
     var dm = $('set-default-model'); if (dm) dm.value = settings.defaultModel || CFG().DEFAULT_MODEL;
     var bm = $('set-boss-model'); if (bm) bm.value = settings.bossModel || CFG().BOSS_MODEL;
     setWebSearchSwitch(!!settings.webSearch);
+    // GitHub push fields (v5).
+    var gh = (settings.github && typeof settings.github === 'object') ? settings.github : {};
+    var ght = $('set-gh-token'); if (ght) { ght.value = gh.token || ''; ght.type = 'password'; }
+    var gho = $('set-gh-owner'); if (gho) gho.value = gh.owner || '';
+    var ghr = $('set-gh-repo'); if (ghr) ghr.value = gh.repo || '';
+    var ghb = $('set-gh-branch'); if (ghb) ghb.value = gh.branch || 'main';
     show($('modal-settings'));
   };
+
+  function toggleGhTokenVisible() {
+    var t = $('set-gh-token');
+    if (!t) return;
+    t.type = (t.type === 'password') ? 'text' : 'password';
+  }
 
   // shell.html ships only the Anthropic-key field; inject an OpenAI-key field
   // dynamically (id 'set-openai-key' + show/hide toggle) right after it, reusing
@@ -1369,6 +1412,12 @@ window.App = window.App || {};
     var bm = $('set-boss-model'); if (bm) settings.bossModel = bm.value;
     var sw = $('set-websearch');
     if (sw) settings.webSearch = (sw.getAttribute('aria-checked') === 'true');
+    // GitHub push config (token stays local).
+    var gh = (settings.github && typeof settings.github === 'object') ? settings.github : (settings.github = { token: '', owner: '', repo: '', branch: 'main' });
+    var ght = $('set-gh-token'); if (ght) gh.token = ght.value.trim();
+    var gho = $('set-gh-owner'); if (gho) gh.owner = gho.value.trim();
+    var ghr = $('set-gh-repo'); if (ghr) gh.repo = ghr.value.trim();
+    var ghb = $('set-gh-branch'); if (ghb) gh.branch = ghb.value.trim() || 'main';
     if (App.Store && App.Store.save) App.Store.save();
     hide($('modal-settings'));
     requestNotifyPermission(); // polite, one-time, on this user gesture
@@ -2788,6 +2837,533 @@ window.App = window.App || {};
 
     wrap.appendChild(table);
     return wrap;
+  }
+
+  // ===========================================================================
+  // v5 — PROJECT FILE WORKSPACE  (explorer · view/edit · run · zip · github)
+  // The deliverable lives in App.state.files via App.Workspace. This panel lets
+  // the user browse the file tree, view a file (App.MD render), edit + save,
+  // ask an agent to revise it, add/delete files, RUN the project in a sandboxed
+  // iframe, download a .zip, and push to GitHub. All Workspace calls are guarded.
+  // ===========================================================================
+  function WS() { return App.Workspace; }
+
+  function fileCount() {
+    try {
+      var ws = WS();
+      if (ws && ws.list) return ws.list().length;
+      var s = STATE();
+      var f = s && s.files;
+      return (f && typeof f === 'object') ? Object.keys(f).length : 0;
+    } catch (e) { return 0; }
+  }
+
+  // refreshFiles() — keep the Files HUD badge current; if the Files panel is open,
+  // re-render its tree + (if a file is selected) its viewer.
+  var _fileSel = null;      // path of the currently-viewed file
+  var _fileSource = false;  // html: show source vs live preview toggle
+  var _fileCollapsed = {};  // folderPath -> true when collapsed
+  UI.refreshFiles = function () {
+    var n = fileCount();
+    var badge = $('files-badge');
+    if (badge) {
+      badge.textContent = String(n);
+      if (n > 0) show(badge); else hide(badge);
+    }
+    if ($('modal-files')) {
+      renderFileTree();
+      if (_fileSel) {
+        // re-view only if the selected file still exists
+        var c = (WS() && WS().read) ? WS().read(_fileSel) : null;
+        if (c == null) { _fileSel = null; hideFileViewer(); }
+        else viewFile(_fileSel, true);
+      }
+    }
+  };
+
+  UI.openFiles = function () {
+    var m = mountModal('modal-files', '📁 ' + T('files.title', 'PROJECT FILES'));
+    if (!m) { UI.toast('Files unavailable'); return; }
+    m.modal.classList.add('modal-files-wide');
+
+    var bar = el('div', 'files-toolbar');
+    var addBtn = el('button', 'btn', '＋ ' + T('files.add', 'New file'));
+    addBtn.type = 'button';
+    on(addBtn, 'click', function () { addFilePrompt(); });
+    var runBtn = el('button', 'btn', '▶ ' + T('files.run', 'Run'));
+    runBtn.type = 'button';
+    on(runBtn, 'click', function () { UI.runPreview(); });
+    var zipBtn = el('button', 'btn', '⤓ ' + T('files.zip', 'Download .zip'));
+    zipBtn.type = 'button';
+    on(zipBtn, 'click', function () { downloadProjectZip(); });
+    var ghBtn = el('button', 'btn', '⇪ ' + T('files.push', 'Push to GitHub'));
+    ghBtn.type = 'button';
+    on(ghBtn, 'click', function () { pushToGithub(); });
+    bar.appendChild(addBtn); bar.appendChild(runBtn); bar.appendChild(zipBtn); bar.appendChild(ghBtn);
+    m.body.appendChild(bar);
+
+    var split = el('div', 'files-split');
+    var treeWrap = el('div', 'files-tree'); treeWrap.id = 'files-tree';
+    var viewWrap = el('div', 'files-view'); viewWrap.id = 'files-view';
+    split.appendChild(treeWrap); split.appendChild(viewWrap);
+    m.body.appendChild(split);
+
+    var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', m.close);
+    m.foot.appendChild(close);
+
+    renderFileTree();
+    if (_fileSel && WS() && WS().read && WS().read(_fileSel) != null) viewFile(_fileSel, true);
+    else hideFileViewer();
+    applyI18n(m.modal);
+  };
+
+  function renderFileTree() {
+    var host = $('files-tree');
+    if (!host) return;
+    clear(host);
+    var tree = null;
+    try { if (WS() && WS().tree) tree = WS().tree(); } catch (e) { tree = null; }
+    var hasFiles = fileCount() > 0;
+    if (!hasFiles || !tree) {
+      host.appendChild(el('div', 'files-empty',
+        T('files.empty', 'No project files yet. Press 🔨 Build with a goal, or add a file.')));
+      return;
+    }
+    var rootChildren = (tree && Array.isArray(tree.children)) ? tree.children : [];
+    var ul = el('div', 'ft-root');
+    for (var i = 0; i < rootChildren.length; i++) renderTreeNode(ul, rootChildren[i], 0);
+    host.appendChild(ul);
+  }
+
+  function renderTreeNode(parent, node, depth) {
+    if (!node) return;
+    if (node.dir) {
+      var folderRow = el('div', 'ft-row ft-dir');
+      folderRow.style.paddingLeft = (8 + depth * 14) + 'px';
+      var collapsed = !!_fileCollapsed[node.path];
+      var caret = el('span', 'ft-caret', collapsed ? '▸' : '▾');
+      folderRow.appendChild(caret);
+      folderRow.appendChild(el('span', 'ft-ico', '📁'));
+      folderRow.appendChild(el('span', 'ft-name', node.name || node.path));
+      on(folderRow, 'click', function () {
+        _fileCollapsed[node.path] = !_fileCollapsed[node.path];
+        renderFileTree();
+      });
+      parent.appendChild(folderRow);
+      if (!collapsed) {
+        var kids = Array.isArray(node.children) ? node.children : [];
+        for (var i = 0; i < kids.length; i++) renderTreeNode(parent, kids[i], depth + 1);
+      }
+    } else {
+      var row = el('div', 'ft-row ft-file');
+      if (_fileSel === node.path) row.classList.add('active');
+      row.style.paddingLeft = (8 + depth * 14 + 14) + 'px';
+      row.appendChild(el('span', 'ft-ico', fileGlyph(node.lang, node.name)));
+      row.appendChild(el('span', 'ft-name', node.name || node.path));
+      on(row, 'click', function () { viewFile(node.path); });
+      parent.appendChild(row);
+    }
+  }
+
+  function fileGlyph(lang, name) {
+    var l = lang || langFromName(name);
+    switch (l) {
+      case 'html': return '🌐';
+      case 'css': return '🎨';
+      case 'js': return '⚡';
+      case 'json': return '{}';
+      case 'md': return '📄';
+      case 'py': return '🐍';
+      default: return '📃';
+    }
+  }
+
+  function hideFileViewer() {
+    var v = $('files-view');
+    if (!v) return;
+    clear(v);
+    v.appendChild(el('div', 'files-empty', T('files.pick', 'Select a file to view or edit.')));
+  }
+
+  // viewFile(path, keepEdits) — render the file with App.MD (code highlight, md
+  // render, html preview/source toggle) + an EDIT textarea with Save / Revise /
+  // Delete. keepEdits=true is used on background refresh to avoid clobbering an
+  // in-progress edit if the textarea is focused.
+  function viewFile(path, fromRefresh) {
+    var ws = WS();
+    var content = (ws && ws.read) ? ws.read(path) : null;
+    if (content == null) { _fileSel = null; hideFileViewer(); renderFileTree(); return; }
+    // Don't clobber an active edit during a background refresh.
+    if (fromRefresh) {
+      var ta0 = $('file-edit-area');
+      if (ta0 && document.activeElement === ta0) return;
+    }
+    _fileSel = path;
+    var v = $('files-view');
+    if (!v) return;
+    clear(v);
+
+    var meta = (ws && ws.list) ? findFileMeta(path) : null;
+    var lang = (meta && meta.lang) || (ws && ws.detectLang ? ws.detectLang(path) : langFromName(path));
+
+    // header
+    var head = el('div', 'fv-head');
+    head.appendChild(el('span', 'fv-path', path));
+    if (meta && meta.updatedBy) head.appendChild(el('span', 'fv-by', '✎ ' + meta.updatedBy));
+    v.appendChild(head);
+
+    // preview body (rendered)
+    var preview = el('div', 'fv-preview'); preview.id = 'file-preview';
+    v.appendChild(preview);
+    renderFilePreview(preview, path, content, lang);
+
+    // edit row
+    var editWrap = el('div', 'fv-edit');
+    var ta = document.createElement('textarea');
+    ta.id = 'file-edit-area';
+    ta.className = 'fv-edit-area';
+    ta.spellcheck = false;
+    ta.value = content;
+    editWrap.appendChild(ta);
+
+    var actions = el('div', 'fv-actions');
+    var saveBtn = el('button', 'btn btn-primary', T('files.save', 'Save'));
+    saveBtn.type = 'button';
+    on(saveBtn, 'click', function () { saveFileEdit(path); });
+    var reviseBtn = el('button', 'btn', T('files.revise', 'Revise with agent'));
+    reviseBtn.type = 'button';
+    on(reviseBtn, 'click', function () { reviseFileWithAgent(path); });
+    var copyBtn = el('button', 'btn btn-sq', '⧉'); copyBtn.type = 'button'; copyBtn.title = T('btn.copy', 'Copy');
+    on(copyBtn, 'click', function () {
+      try { if (navigator.clipboard) navigator.clipboard.writeText(ta.value || ''); UI.toast(T('files.copied', 'Copied')); } catch (e) {}
+    });
+    var delBtn = el('button', 'btn btn-danger', T('files.delete', 'Delete'));
+    delBtn.type = 'button';
+    on(delBtn, 'click', function () { deleteFile(path); });
+    actions.appendChild(saveBtn); actions.appendChild(reviseBtn); actions.appendChild(copyBtn); actions.appendChild(delBtn);
+    editWrap.appendChild(actions);
+    v.appendChild(editWrap);
+
+    renderFileTree(); // re-mark active row
+    applyI18n(v);
+  }
+
+  function findFileMeta(path) {
+    try {
+      var list = (WS() && WS().list) ? WS().list() : [];
+      for (var i = 0; i < list.length; i++) if (list[i] && list[i].path === path) return list[i];
+    } catch (e) {}
+    return null;
+  }
+
+  function renderFilePreview(host, path, content, lang) {
+    clear(host);
+    var MD = App.MD;
+    if (lang === 'html') {
+      var modes = el('div', 'ar-preview-modes');
+      var bPrev = el('button', 'ar-mode-btn' + (_fileSource ? '' : ' active'), T('files.preview', 'Preview'));
+      bPrev.type = 'button';
+      var bSrc = el('button', 'ar-mode-btn' + (_fileSource ? ' active' : ''), T('files.source', 'Source'));
+      bSrc.type = 'button';
+      on(bPrev, 'click', function () { if (_fileSource) { _fileSource = false; renderFilePreview(host, path, latest(path, content), lang); } });
+      on(bSrc, 'click', function () { if (!_fileSource) { _fileSource = true; renderFilePreview(host, path, latest(path, content), lang); } });
+      modes.appendChild(bPrev); modes.appendChild(bSrc);
+      host.appendChild(modes);
+      if (_fileSource) {
+        host.appendChild(buildCodeBlock(content, 'html'));
+      } else {
+        // Live preview inlines local assets so the single file actually renders.
+        var iframe = document.createElement('iframe');
+        iframe.className = 'ar-iframe fv-iframe';
+        iframe.setAttribute('sandbox', 'allow-scripts');
+        iframe.setAttribute('title', path);
+        // The entry html (index.html) previews the WHOLE project (assets inlined);
+        // any other html previews its own content so you see the file you clicked.
+        var isEntry = /(^|\/)index\.html$/i.test(path);
+        var assembled = null;
+        if (isEntry) { try { if (WS() && WS().assembleRunnable) assembled = WS().assembleRunnable(); } catch (e) { assembled = null; } }
+        var doc = assembled || content;
+        iframe.setAttribute('srcdoc', safeStr(doc));
+        host.appendChild(iframe);
+      }
+    } else if (lang === 'md') {
+      var md = el('div', 'ar-md md-body');
+      if (MD && MD.render) { try { md.innerHTML = String(MD.render(content)); } catch (e) { md.textContent = content; } }
+      else md.textContent = content;
+      host.appendChild(md);
+    } else {
+      host.appendChild(buildCodeBlock(content, lang || langFromName(path)));
+    }
+  }
+
+  // read the freshest content for a path (used when toggling html preview/source).
+  function latest(path, fallback) {
+    try { var c = (WS() && WS().read) ? WS().read(path) : null; if (c != null) return c; } catch (e) {}
+    return fallback;
+  }
+
+  function saveFileEdit(path) {
+    var ta = $('file-edit-area');
+    if (!ta) return;
+    var content = ta.value;
+    try {
+      if (WS() && WS().write) WS().write(path, content, 'user');
+      else { var s = STATE(); if (s) { s.files = s.files || {}; s.files[path] = { content: String(content), lang: langFromName(path), updatedBy: 'user', t: Date.now() }; } }
+    } catch (e) { UI.showError('Save failed: ' + (e && e.message)); return; }
+    if (App.Store && App.Store.save) App.Store.save();
+    UI.toast(T('files.saved', 'Saved ') + path);
+    // re-render the rendered preview from the saved content
+    var preview = $('file-preview');
+    if (preview) {
+      var lang = (WS() && WS().detectLang) ? WS().detectLang(path) : langFromName(path);
+      renderFilePreview(preview, path, content, lang);
+    }
+    UI.refreshFiles();
+  }
+
+  function reviseFileWithAgent(path) {
+    var ta = $('file-edit-area');
+    var current = ta ? ta.value : (latest(path, ''));
+    if (typeof window === 'undefined' || !window.prompt) { UI.showError('Cannot prompt for instructions'); return; }
+    var instr = window.prompt(T('files.reviseAsk', 'How should the agent revise ' + path + '?'), '');
+    if (instr == null) return;
+    instr = String(instr).trim();
+    if (!instr) return;
+
+    // Pick an agent: prefer an idle non-boss agent, else any non-boss, else first.
+    var a = pickReviseAgent();
+    if (!a || !(AGENTS() && AGENTS().chat)) { UI.showError(T('files.noAgent', 'No agent available to revise')); return; }
+
+    var lang = (WS() && WS().detectLang) ? WS().detectLang(path) : langFromName(path);
+    var msg =
+      'Revise the project file "' + path + '". Apply this instruction: ' + instr + '\n\n' +
+      'Current content of ' + path + ':\n' +
+      '```' + (lang || '') + '\n' + current + '\n```\n\n' +
+      'Output ONLY the complete updated file as a fenced block:\n' +
+      '```file:' + path + '\n<the full revised file>\n```\n' +
+      'No prose outside the block.';
+
+    UI.toast(T('files.revising', 'Asking ') + a.name + '…');
+    try {
+      // Agents.chat returns a stream handle (not a Promise); the result only lands
+      // in its onDone, so drive the write-back from the completion callback.
+      AGENTS().chat(a, msg, { onComplete: function (reply) { applyReviseReply(path, reply, a); } });
+    } catch (e) { UI.showError('Revise failed: ' + (e && e.message)); }
+  }
+
+  function pickReviseAgent() {
+    var s = STATE();
+    var agents = (s && Array.isArray(s.agents)) ? s.agents : [];
+    var fallback = null;
+    for (var i = 0; i < agents.length; i++) {
+      var a = agents[i];
+      if (!a || a.role === 'boss') continue;
+      if (!fallback) fallback = a;
+      if (a.state === 'idle') return a;
+    }
+    if (fallback) return fallback;
+    return agents[0] || null;
+  }
+
+  function lastAssistantText(a) {
+    var conv = (a && Array.isArray(a.conversation)) ? a.conversation : [];
+    for (var i = conv.length - 1; i >= 0; i--) {
+      if (conv[i] && conv[i].role === 'assistant') return String(conv[i].content || '');
+    }
+    return '';
+  }
+
+  function applyReviseReply(path, reply, a) {
+    reply = String(reply || '');
+    var written = 0;
+    try {
+      if (WS() && WS().parseFileBlocks) {
+        var blocks = WS().parseFileBlocks(reply) || [];
+        for (var i = 0; i < blocks.length; i++) {
+          var b = blocks[i];
+          if (!b || !b.path) continue;
+          if (WS().write) WS().write(b.path, b.content, (a && a.id) || 'agent');
+          written++;
+        }
+      }
+    } catch (e) {}
+    if (!written) {
+      // No fenced file block — treat the whole reply as the file body if non-empty.
+      var body = reply.trim();
+      if (body && WS() && WS().write) { WS().write(path, body, (a && a.id) || 'agent'); written = 1; }
+    }
+    if (written) {
+      if (App.Store && App.Store.save) App.Store.save();
+      UI.toast(T('files.revised', 'Revised ') + path);
+      viewFile(path, false);
+      UI.refreshFiles();
+    } else {
+      UI.toast(T('files.noChange', 'Agent returned no file change'));
+    }
+  }
+
+  function addFilePrompt() {
+    if (typeof window === 'undefined' || !window.prompt) { UI.showError('Cannot prompt for a path'); return; }
+    var path = window.prompt(T('files.addAsk', 'New file path (e.g. src/app.js):'), '');
+    if (path == null) return;
+    path = String(path).trim();
+    if (!path) return;
+    try {
+      if (WS() && WS().read && WS().read(path) != null) {
+        if (window.confirm && !window.confirm(T('files.overwrite', 'A file at that path exists. Overwrite?'))) {
+          viewFile(path); return;
+        }
+      }
+      if (WS() && WS().write) WS().write(path, '', 'user');
+    } catch (e) { UI.showError('Could not create file: ' + (e && e.message)); return; }
+    if (App.Store && App.Store.save) App.Store.save();
+    UI.toast(T('files.added', 'Created ') + path);
+    UI.refreshFiles();
+    viewFile(path);
+  }
+
+  function deleteFile(path) {
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm(T('files.deleteAsk', 'Delete ') + path + '?')) return;
+    try {
+      if (WS() && WS().remove) WS().remove(path);
+      else { var s = STATE(); if (s && s.files) delete s.files[path]; }
+    } catch (e) {}
+    if (_fileSel === path) { _fileSel = null; hideFileViewer(); }
+    if (App.Store && App.Store.save) App.Store.save();
+    UI.toast(T('files.deleted', 'Deleted ') + path);
+    UI.refreshFiles();
+  }
+
+  // ----- RUN PREVIEW -----------------------------------------------------------
+  // runPreview() — assemble the project into one self-contained HTML doc and run
+  // it in a sandboxed iframe (scripts allowed, no same-origin). Friendly message
+  // if there's no html entry. Includes a Reload control.
+  UI.runPreview = function () {
+    var assembled = null;
+    try { if (WS() && WS().assembleRunnable) assembled = WS().assembleRunnable(); } catch (e) { assembled = null; }
+    var m = mountModal('modal-run', '▶ ' + T('run.title', 'RUN PREVIEW'));
+    if (!m) { UI.toast('Run unavailable'); return; }
+    m.modal.classList.add('modal-files-wide');
+
+    if (!assembled) {
+      m.body.appendChild(el('div', 'files-empty',
+        T('run.noHtml', 'No HTML entry to run. Build a web project (it needs an index.html) or add one in Files.')));
+    } else {
+      var frame = document.createElement('iframe');
+      frame.className = 'run-iframe';
+      frame.id = 'run-iframe';
+      frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals allow-popups');
+      frame.setAttribute('title', T('run.title', 'RUN PREVIEW'));
+      frame.setAttribute('srcdoc', safeStr(assembled));
+      m.body.appendChild(frame);
+    }
+
+    if (assembled) {
+      var reload = el('button', 'btn', '⟳ ' + T('run.reload', 'Reload'));
+      reload.type = 'button';
+      on(reload, 'click', function () {
+        var f = $('run-iframe');
+        if (!f) return;
+        var fresh = null;
+        try { if (WS() && WS().assembleRunnable) fresh = WS().assembleRunnable(); } catch (e) {}
+        f.setAttribute('srcdoc', safeStr(fresh || assembled));
+      });
+      m.foot.appendChild(reload);
+    }
+    var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', m.close);
+    m.foot.appendChild(close);
+    applyI18n(m.modal);
+  };
+
+  // ----- ZIP -------------------------------------------------------------------
+  function downloadProjectZip() {
+    var blob = null;
+    try { if (WS() && WS().buildZip) blob = WS().buildZip(); } catch (e) { blob = null; }
+    if (!blob) {
+      // fallback: build from the artifacts-style writer over the files map
+      try {
+        var list = (WS() && WS().list) ? WS().list() : [];
+        if (!list.length) { UI.toast(T('files.noneZip', 'No files to download')); return; }
+        var files = [];
+        for (var i = 0; i < list.length; i++) files.push({ name: safeZipPath(list[i].path), data: utf8Bytes(String(list[i].content || '')) });
+        blob = new Blob([makeStoreZip(files)], { type: 'application/zip' });
+      } catch (e2) { UI.showError('ZIP failed: ' + (e2 && e2.message)); return; }
+    }
+    try {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'project.zip';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      UI.toast(T('files.zipped', 'Downloaded project.zip'));
+    } catch (e) { UI.showError('Download failed: ' + (e && e.message)); }
+  }
+  // keep folder separators for zip paths (don't collapse '/').
+  function safeZipPath(p) {
+    return String(p || 'file.txt').replace(/[\\:*?"<>|]+/g, '_').replace(/^\/+/, '').slice(0, 240) || 'file.txt';
+  }
+
+  // ----- GITHUB PUSH -----------------------------------------------------------
+  function pushToGithub() {
+    var s = STATE();
+    var gh = (s && s.settings && s.settings.github) || {};
+    if (!gh.token || !gh.owner || !gh.repo) {
+      UI.showError(T('gh.needConfig', 'Set GitHub token, owner and repo in Settings first.'));
+      UI.openSettings();
+      return;
+    }
+    if (fileCount() === 0) { UI.toast(T('files.nonePush', 'No files to push')); return; }
+    if (!(WS() && WS().githubPush)) { UI.showError(T('gh.unavailable', 'GitHub push is unavailable.')); return; }
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm(T('gh.confirm', 'Push ' + fileCount() + ' file(s) to ' + gh.owner + '/' + gh.repo + ' (' + (gh.branch || 'main') + ')?'))) return;
+
+    UI.toast(T('gh.pushing', 'Pushing to GitHub…'));
+    var p;
+    try { p = WS().githubPush(gh); } catch (e) { UI.showError('Push failed: ' + (e && e.message)); return; }
+    if (!p || !p.then) { UI.showError('Push failed to start'); return; }
+    p.then(function (res) {
+      res = res || {};
+      if (res.ok === false && res.error) { UI.showError('Push failed: ' + res.error); return; }
+      var results = Array.isArray(res.results) ? res.results : [];
+      var okN = 0, failN = 0, fails = [];
+      for (var i = 0; i < results.length; i++) {
+        var st = String(results[i].status || '');
+        if (/^(ok|created|updated|2\d\d)$/.test(st) || results[i].ok) okN++;
+        else { failN++; fails.push(results[i].path + ': ' + st); }
+      }
+      if (failN === 0) UI.toast(T('gh.done', 'Pushed ') + okN + ' file(s) to GitHub', 'ok');
+      else {
+        UI.toast(okN + ' ok · ' + failN + ' failed', 'error');
+        showGithubResults(results);
+      }
+    }).catch(function (e) {
+      UI.showError('Push failed: ' + (e && e.message));
+    });
+  }
+
+  function showGithubResults(results) {
+    var m = mountModal('modal-gh-results', '⇪ ' + T('gh.results', 'GITHUB PUSH RESULTS'));
+    if (!m) return;
+    var list = el('div', 'session-list');
+    for (var i = 0; i < results.length; i++) {
+      var r = results[i] || {};
+      var row = el('div', 'session-row');
+      var main = el('div', 'session-main');
+      main.appendChild(el('div', 'session-name', r.path || '(file)'));
+      main.appendChild(el('div', 'session-meta', String(r.status || (r.ok ? 'ok' : 'error'))));
+      row.appendChild(main);
+      list.appendChild(row);
+    }
+    m.body.appendChild(list);
+    var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', m.close);
+    m.foot.appendChild(close);
   }
 
   // ===========================================================================

@@ -55,6 +55,15 @@
       <button id="btn-task"        class="btn"        type="button" title="Task board / New Boss task">
         <span class="btn-ico">▤</span><span class="btn-lbl" data-i18n="hud.tasks">Tasks</span>
       </button>
+      <button id="btn-build"       class="btn btn-primary" type="button" title="Build a real multi-file project from the goal">
+        <span class="btn-ico">🔨</span><span class="btn-lbl" data-i18n="hud.build">Build</span>
+      </button>
+      <button id="btn-files"       class="btn"        type="button" title="Project file workspace">
+        <span class="btn-ico">📁</span><span class="btn-lbl" data-i18n="hud.files">Files</span><span id="files-badge" class="hud-badge hidden">0</span>
+      </button>
+      <button id="btn-run"         class="btn"        type="button" title="Run the generated web app in a sandbox">
+        <span class="btn-ico">▶</span><span class="btn-lbl" data-i18n="hud.run">Run</span>
+      </button>
       <button id="btn-add-agent"   class="btn"        type="button" title="Add a new agent">
         <span class="btn-ico">＋</span><span class="btn-lbl" data-i18n="hud.agent">Agent</span>
       </button>
@@ -310,6 +319,21 @@
               <span class="switch-knob" aria-hidden="true"></span>
             </button>
             <span class="field-hint inline-hint">Lets researchers use the server-side web_search tool.</span>
+          </div>
+
+          <div class="field">
+            <span class="field-label" data-i18n="set.github">GITHUB (PUSH PROJECT)</span>
+            <span class="field-row">
+              <input id="set-gh-token" type="password" autocomplete="off" spellcheck="false"
+                     placeholder="ghp_…  personal access token (repo scope)" />
+              <button id="set-gh-token-toggle" class="btn btn-sq" type="button" title="Show / hide token" aria-label="Toggle visibility">👁</button>
+            </span>
+            <div class="field-2col">
+              <input id="set-gh-owner" type="text" autocomplete="off" spellcheck="false" placeholder="owner (user/org)" />
+              <input id="set-gh-repo"  type="text" autocomplete="off" spellcheck="false" placeholder="repo" />
+            </div>
+            <input id="set-gh-branch" type="text" autocomplete="off" spellcheck="false" placeholder="branch (default: main)" />
+            <span class="field-hint">Token stored only in your browser (localStorage). Used to PUT the project files to the GitHub contents API.</span>
           </div>
 
           <div class="field">

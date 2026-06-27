@@ -867,7 +867,8 @@ window.App = window.App || {};
     var roleDef = ROLES()[task.role] || {};
 
     // Build the worker user content (with dependency results injected).
-    var userContent = buildWorkerUserContent(task);
+    // BUILD MODE tasks use a file-oriented prompt (manifest + dep file contents).
+    var userContent = task._build ? buildBuildWorkerContent(task) : buildWorkerUserContent(task);
 
     // Web search decision.
     var wantWeb = !!(settings.webSearch && (task.needsWeb || roleDef.webSearchPreferred));
@@ -1094,6 +1095,11 @@ window.App = window.App || {};
   function onWorkerResult(task, text) {
     var ag = AGENTS();
     var agent = ag && ag.byId ? ag.byId(task.assignee) : null;
+
+    // BUILD MODE: a build worker WRITES files into the shared Workspace instead of
+    //   emitting chat artifacts / running QA. Parse ```file:<path>``` blocks and
+    //   persist each into App.Workspace; finish the task with a short summary.
+    if (task._build) { onBuildWorkerResult(task, text, agent); return; }
 
     // 1) Artifacts: parse fenced blocks (dedupe by name+taskId → overwrite on retry).
     try { pushArtifacts(parseArtifacts(text, task, agent)); } catch (e) {}
@@ -2044,6 +2050,544 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // ===========================================================================
+  // BUILD MODE — PROJECT BUILDER (v5)
+  //
+  //   runBuild(goal)
+  //     → ensure boss; root {role:'boss', _build:true, status:'running'};
+  //       boss 'thinking'; API.stream(BUILD_DECOMPOSE_SYSTEM) → parseManifest()||
+  //       fallback; create one child task per file carrying _build/_files/_manifest
+  //       and file deps → _depIds (so dependents run after their deps; independent
+  //       files run in PARALLEL via the existing scheduler/tick).
+  //   a build worker (runWorker, task._build) reads its dependency FILE CONTENTS
+  //     from App.Workspace, streams, then App.Workspace.write()s the ```file:``` blocks.
+  //   when all children terminal → ONE integrator coherence pass → open the Files UI.
+  //
+  //   REUSES tick/assign/DAG/streams/hasCredsFor/openaiKey/cost; never deadlocks.
+  // ===========================================================================
+
+  function WS() { return App.Workspace; }
+
+  // normalize a manifest file path the same lenient way Workspace.write would
+  //   (so dep matching by path is consistent even before a file is written).
+  function normPath(p) {
+    try {
+      if (WS() && typeof WS().normalizePath === 'function') return WS().normalizePath(p);
+    } catch (e) {}
+    var s = String(p == null ? '' : p).trim().replace(/\\/g, '/');
+    s = s.replace(/^\.?\//, '').replace(/^\/+/, '');
+    s = s.replace(/\/+/g, '/');
+    // collapse '..' segments defensively
+    var parts = s.split('/'), out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var seg = parts[i];
+      if (seg === '' || seg === '.') continue;
+      if (seg === '..') { if (out.length) out.pop(); continue; }
+      out.push(seg);
+    }
+    return out.join('/');
+  }
+
+  // runBuild(goalText) — entry point for PROJECT BUILD mode.
+  Orchestrator.runBuild = function (goalText) {
+    goalText = String(goalText == null ? '' : goalText).trim();
+    if (!goalText) return;
+
+    var s = STATE();
+    var settings = (s && s.settings) || {};
+    var ag = AGENTS();
+    var boss = ensureBoss();
+
+    var root = {
+      id: uid('t'),
+      title: truncate(goalText, 48),
+      desc: goalText,
+      assignee: boss ? boss.id : null,
+      status: 'running',
+      parentId: null,
+      subtaskIds: [],
+      result: null,
+      error: null,
+      createdAt: nowMs(),
+      role: 'boss',
+      needsWeb: false,
+      _ctrl: null,
+      _plan: null,
+      _synthStarted: false,
+      _build: true,            // BUILD-MODE root marker
+      _manifest: null,         // captured file manifest {files, summary}
+      _integrated: false,      // integrator pass guard
+    };
+    s.tasks.push(root);
+    log('user', 'Boss', 'msg', '🔨 build: ' + truncate(goalText, 110));
+    refreshBoard();
+
+    // No usable credentials → fail fast, friendly (mirrors runBossTask).
+    if (!hasCredsFor((boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL)) {
+      root.status = 'error';
+      root.error = 'NO_KEY';
+      if (boss) ag.say(boss, '🔑 add an API key (or enable the companion) in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
+      log('Boss', 'system', 'error', 'NO_KEY — cannot build.');
+      refreshBoard();
+      return;
+    }
+
+    // mark a build in progress (runtime-only; store must NOT persist this).
+    try { s._buildActive = true; } catch (e) {}
+
+    if (boss) {
+      var startPlanning = function () {
+        ag.setState(boss, 'thinking');
+        ag.say(boss, '🧠 Planning the project…', 4000);
+        streamDecomposeBuild(root, boss, goalText);
+      };
+      ag.goToFurniture(boss, 'desk', startPlanning);
+    } else {
+      streamDecomposeBuild(root, null, goalText);
+    }
+  };
+
+  // streamDecomposeBuild — Boss call with BUILD_DECOMPOSE_SYSTEM → file manifest.
+  function streamDecomposeBuild(root, boss, userText) {
+    var settings = STATE().settings || {};
+    var sys = CFG().BUILD_DECOMPOSE_SYSTEM ||
+      ('You plan a complete, coherent, RUNNABLE multi-file software project. ' +
+       'Reply STRICT JSON: { "files":[ { "path":"index.html", "purpose":"...", "role":"engineer", "deps":["style.css"] } ], "summary":"..." }. ' +
+       'For web projects include an index.html entry plus the css/js it needs and a README.md. Keep file count 3-8. ' +
+       'Use real relative paths and set deps so each file is written AFTER the files it relies on.');
+
+    var pre = [];
+    var personaP = personaBlock(boss);
+    if (personaP) { pre.push(personaP); pre.push(''); }
+    var memP = memoryBlock(boss, userText);
+    if (memP) { pre.push(memP); pre.push(''); }
+    var userMsg = pre.join('\n') + 'PROJECT GOAL:\n' + userText + '\n\nReturn the JSON file manifest now.';
+
+    var raw = '';
+    if (boss) boss.busy = true;
+    var handle = App.API.stream({
+      apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
+      model: (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL,
+      system: sys,
+      messages: [{ role: 'user', content: userMsg }],
+      onState: function (st) { if (boss && st === 'text') ag_set(boss, 'thinking'); },
+      onText: function (d) { raw += d; },
+      onDone: function (res) {
+        if (boss) boss.busy = false;
+        var manifest = parseManifest((res && res.text) || raw);
+        if (!manifest) {
+          log('Boss', 'system', 'system', 'Build manifest unreadable — generating a single-file project.');
+          manifest = {
+            files: [{ path: 'index.html', purpose: userText, role: 'generalist', deps: [] }],
+            summary: userText,
+          };
+        }
+        root._manifest = manifest;
+        if (boss && res && res.usage) {
+          boss.stats.tokensIn += (res.usage.input_tokens || 0);
+          boss.stats.tokensOut += (res.usage.output_tokens || 0);
+        }
+        createBuildTasks(root, manifest, boss);
+      },
+      onError: function (err) {
+        if (boss) { boss.busy = false; ag_set(boss, 'idle'); }
+        var msg = (err && err.message) || 'error';
+        root.status = 'error';
+        root.error = msg;
+        try { STATE()._buildActive = false; } catch (e) {}
+        if (boss) AGENTS().say(boss, '⚠ ' + truncate(msg, 36), 4000);
+        log('Boss', 'system', 'error', 'build plan error: ' + msg);
+        refreshBoard();
+        var s = STATE(); if (s && s._activeStreams) delete s._activeStreams['__boss_build_plan'];
+      },
+    });
+    var s = STATE(); if (s && s._activeStreams) s._activeStreams['__boss_build_plan'] = handle;
+    root._ctrl = handle;
+  }
+
+  // parseManifest(raw) → { files:[{path,purpose,role,deps:[paths]}], summary } | null
+  //   Reuses the same tolerant brace-slicing + balanced-prefix recovery as parsePlan.
+  function parseManifest(raw) {
+    try {
+      if (!raw || !String(raw).trim()) return null;
+      var s = String(raw);
+      s = s.replace(/^```(?:json|jsonc)?\s*/i, '').replace(/```\s*$/i, '');
+      var first = s.indexOf('{'), last = s.lastIndexOf('}');
+      if (first === -1 || last === -1 || last < first) return null;
+      var body = s.slice(first, last + 1)
+        .replace(/,(\s*[}\]])/g, '$1')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+      var obj = null;
+      try { obj = JSON.parse(body); }
+      catch (e) { var bal = braceBalancedPrefix(body); if (bal) { try { obj = JSON.parse(bal); } catch (e2) { obj = null; } } }
+      if (!obj || typeof obj !== 'object') return null;
+      if (!Array.isArray(obj.files) || obj.files.length === 0) return null;
+
+      var roles = ROLES();
+      var cap = CFG().MAX_PROJECT_FILES || 200;
+      var seen = {};
+      var out = [];
+      for (var i = 0; i < obj.files.length; i++) {
+        var it = obj.files[i];
+        if (!it || typeof it !== 'object') continue;
+        var path = normPath(it.path || it.file || it.name || '');
+        if (!path) continue;
+        if (seen[path]) continue;          // de-dupe by path
+        seen[path] = true;
+        var role = (it.role && roles[it.role]) ? it.role : 'generalist';
+        var purpose = String(it.purpose || it.desc || '').slice(0, 600);
+        var deps = [];
+        if (Array.isArray(it.deps)) {
+          for (var d = 0; d < it.deps.length; d++) {
+            var dp = normPath(it.deps[d]);
+            if (dp && dp !== path) deps.push(dp);
+          }
+        }
+        out.push({ path: path, purpose: purpose, role: role, deps: deps });
+        if (out.length >= cap) break;
+        if (out.length >= 24) break;        // sane upper bound per build
+      }
+      if (out.length === 0) return null;
+      var summary = (typeof obj.summary === 'string' && obj.summary.trim())
+        ? obj.summary.trim()
+        : 'A coherent, runnable multi-file project.';
+      return { files: out, summary: summary };
+    } catch (e) { return null; }
+  }
+
+  // createBuildTasks — one task per manifest file; file deps → _depIds so dependents
+  //   run AFTER their deps (independent files run in parallel waves via tick).
+  function createBuildTasks(root, manifest, boss) {
+    var s = STATE();
+    var ag = AGENTS();
+    var files = (manifest && manifest.files) || [];
+
+    if (boss) {
+      ag.setState(boss, 'idle');
+      ag.say(boss, 'Building ' + files.length + ' file' + (files.length === 1 ? '' : 's'), 3000);
+    }
+
+    var stagger = CFG().DELEGATE_STAGGER_MS || 600;
+    var pathToId = {};   // file path → child task id
+    var created = [];
+
+    for (var i = 0; i < files.length; i++) {
+      (function (f, idx) {
+        var t = {
+          id: uid('t'),
+          title: truncate(f.path, 48),
+          desc: String(f.purpose || ('Write ' + f.path)),
+          assignee: null,
+          status: 'queued',
+          parentId: root.id,
+          subtaskIds: [],
+          result: null,
+          error: null,
+          createdAt: nowMs() + idx,
+          role: (ROLES()[f.role] ? f.role : 'generalist'),
+          needsWeb: false,
+          _depIndex: idx,
+          _depPlanIdx: null,
+          _depIds: null,        // resolved below from file deps → [] when none
+          verify: false,
+          _retries: 0,
+          _qaDone: false,
+          _feedback: null,
+          _ctrl: null,
+          // BUILD-MODE fields
+          _build: true,
+          _files: [f.path],
+          _depPaths: (f.deps || []).slice(),
+          _manifestSummary: (manifest && manifest.summary) || '',
+        };
+        s.tasks.push(t);
+        root.subtaskIds.push(t.id);
+        pathToId[f.path] = t.id;
+        created.push(t);
+
+        setTimeout(function () {
+          var roleLabel = (ROLES()[t.role] && ROLES()[t.role].label) || t.role;
+          if (boss) ag.say(boss, '@' + roleLabel + ': ' + f.path, 3000);
+          log('Boss', roleLabel, 'msg', '@' + roleLabel + ': write ' + f.path);
+          refreshBoard();
+        }, stagger * idx);
+      })(files[i], i);
+    }
+
+    // Resolve file-path deps → child task ids. Unknown/self deps dropped → no deadlock.
+    for (var c = 0; c < created.length; c++) {
+      var ct = created[c];
+      var ids = [];
+      var dp = ct._depPaths || [];
+      for (var d = 0; d < dp.length; d++) {
+        var depId = pathToId[dp[d]];
+        if (depId && depId !== ct.id) ids.push(depId);
+      }
+      ct._depIds = ids;   // always an array → explicit (parallel when empty)
+    }
+
+    refreshBoard();
+    saveSoon();
+    // tick() assigns & runs the build tasks; their deps gate the waves.
+  }
+
+  // buildBuildWorkerContent — manifest summary + FULL CURRENT CONTENT of this task's
+  //   dependency files (read live from the Workspace) + BUILD_WORKER_PREAMBLE +
+  //   the explicit "write these files" instruction. Used by runWorker for _build tasks.
+  function buildBuildWorkerContent(task) {
+    var parts = [];
+    var agent = AGENTS() && AGENTS().byId ? AGENTS().byId(task.assignee) : null;
+
+    var persona = personaBlock(agent);
+    if (persona) { parts.push(persona); parts.push(''); }
+
+    if (task._manifestSummary) {
+      parts.push('PROJECT OVERVIEW:\n' + task._manifestSummary);
+      parts.push('');
+    }
+
+    // Dependency file contents (so the project is COHERENT).
+    var depPaths = task._depPaths || [];
+    var ws = WS();
+    var shown = 0;
+    if (depPaths.length && ws && typeof ws.read === 'function') {
+      var depParts = [];
+      for (var i = 0; i < depPaths.length; i++) {
+        var content = null;
+        try { content = ws.read(depPaths[i]); } catch (e) { content = null; }
+        if (content == null) continue;
+        depParts.push('--- FILE: ' + depPaths[i] + ' ---\n' + truncate(content, 12000));
+        shown++;
+      }
+      if (depParts.length) {
+        parts.push('EXISTING PROJECT FILES YOU MUST STAY CONSISTENT WITH (do not rewrite these — match their names, ids, classes, paths):');
+        parts.push(depParts.join('\n\n'));
+        parts.push('');
+      }
+    }
+
+    // Full current project file list (paths only) for extra context.
+    try {
+      if (ws && typeof ws.list === 'function') {
+        var all = ws.list() || [];
+        if (all.length) {
+          var names = [];
+          for (var j = 0; j < all.length && j < 60; j++) names.push(all[j].path);
+          parts.push('PROJECT FILES SO FAR: ' + names.join(', '));
+          parts.push('');
+        }
+      }
+    } catch (e) {}
+
+    var preamble = CFG().BUILD_WORKER_PREAMBLE ||
+      ('Write the assigned file(s) FULLY and runnably, consistent with the overview and the existing files above. ' +
+       'Output EACH file as a fenced block labelled with its path, exactly like:\n' +
+       '```file:<path>\n<the complete file content>\n```\n' +
+       'Output ONLY the file block(s) — no prose, no explanation outside the blocks.');
+    parts.push(preamble);
+    parts.push('');
+    parts.push('WRITE THESE FILE(S) NOW: ' + (task._files || []).join(', '));
+
+    return parts.join('\n');
+  }
+
+  // onBuildWorkerResult — parse ```file:``` blocks from a build worker's output and
+  //   write each into the shared Workspace; finish the task with a short summary.
+  function onBuildWorkerResult(task, text, agent) {
+    var ws = WS();
+    var written = [];
+    try {
+      var blocks = (ws && typeof ws.parseFileBlocks === 'function') ? ws.parseFileBlocks(text) : [];
+      if (Array.isArray(blocks)) {
+        for (var i = 0; i < blocks.length; i++) {
+          var b = blocks[i];
+          if (!b || !b.path) continue;
+          try {
+            if (ws && typeof ws.write === 'function') {
+              ws.write(b.path, b.content == null ? '' : b.content, agent ? agent.id : 'agent');
+              written.push(normPath(b.path));
+            }
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+
+    // Fallback: if the worker produced NO recognizable file block, but this task owns
+    //   exactly one target file, persist the raw text so the build still progresses.
+    if (!written.length) {
+      var targets = task._files || [];
+      if (targets.length === 1 && ws && typeof ws.write === 'function' && text && text.trim()) {
+        try { ws.write(targets[0], stripFences(text), agent ? agent.id : 'agent'); written.push(normPath(targets[0])); } catch (e) {}
+      }
+    }
+
+    // Surface the writes (bubble + log).
+    try {
+      var ag = AGENTS();
+      if (written.length) {
+        if (agent) ag.say(agent, '✎ wrote ' + (written.length === 1 ? written[0] : (written.length + ' files')), 3000);
+        for (var w = 0; w < written.length; w++) {
+          log(agent ? (agent.name || agent.role) : task.role, 'Boss', 'result', '✎ wrote ' + written[w]);
+        }
+      } else {
+        if (agent) ag.say(agent, '⚠ no file produced', 3000);
+        log(agent ? (agent.name || agent.role) : task.role, 'Boss', 'system', 'build worker produced no file');
+      }
+    } catch (e) {}
+
+    // Memory: remember what this agent built.
+    try {
+      if (agent && AGENTS() && AGENTS().addMemory) {
+        AGENTS().addMemory(agent, 'built ' + (written.join(', ') || task.title), 5);
+      }
+    } catch (e) {}
+
+    var summary = written.length ? ('wrote ' + written.join(', ')) : '(no file produced)';
+    try { if (App.UI && App.UI.refreshFiles) App.UI.refreshFiles(); } catch (e) {}
+    finishTask(task, summary);
+  }
+
+  // stripFences — best-effort: remove a single wrapping ```lang ... ``` fence so a
+  //   fallback raw write doesn't embed markdown fences in the source file.
+  function stripFences(text) {
+    var s = String(text == null ? '' : text);
+    var m = s.match(/^\s*[`~]{3,}[^\n]*\n([\s\S]*?)\n[`~]{3,}\s*$/);
+    return m ? m[1] : s;
+  }
+
+  // ---------------------------------------------------------------------------
+  // INTEGRATOR — one coherence pass over the whole tree, then open the Files UI.
+  // ---------------------------------------------------------------------------
+  function finishBuild(root) {
+    if (!root || root._synthStarted) return;
+    // Guard re-entry while the integrator stream is in flight.
+    if (root._integrating) return;
+
+    // Run the integrator ONCE; afterwards, finalize.
+    if (CFG().BUILD_INTEGRATOR_SYSTEM && !root._integrated && hasCredsFor(bossModelFor())) {
+      root._integrating = true;
+      runIntegratorPass(root, function () {
+        root._integrating = false;
+        root._integrated = true;
+        finalizeBuild(root);
+      });
+      return;
+    }
+    root._integrated = true;
+    finalizeBuild(root);
+  }
+
+  // runIntegratorPass — Boss/qa reviews the whole file tree and emits ONLY the files
+  //   that need changes as ```file:``` blocks (or 'OK'). Bounded to one round.
+  function runIntegratorPass(root, cb) {
+    var settings = (STATE() && STATE().settings) || {};
+    var ws = WS();
+    var model = bossModelFor();
+    var sys = CFG().BUILD_INTEGRATOR_SYSTEM;
+    var done = false;
+    function finish() { if (done) return; done = true; try { cb(); } catch (e) {} }
+
+    if (!sys || !ws || typeof ws.list !== 'function') { finish(); return; }
+
+    var files = [];
+    try { files = ws.list() || []; } catch (e) { files = []; }
+    if (!files.length) { finish(); return; }
+
+    var boss = ensureBoss();
+    if (boss) { try { AGENTS().setState(boss, 'thinking'); AGENTS().say(boss, '🔍 integrating…', 3000); } catch (e) {} }
+    try { log('Boss', 'all', 'system', '🔍 integrator coherence pass…'); } catch (e) {}
+
+    var treeParts = ['PROJECT GOAL:\n' + (root.desc || ''), ''];
+    treeParts.push('CURRENT PROJECT FILES (path then content):');
+    for (var i = 0; i < files.length; i++) {
+      treeParts.push('\n--- FILE: ' + files[i].path + ' ---\n' + truncate(files[i].content, 10000));
+    }
+    treeParts.push('\nFix any cross-file mismatches (broken refs, undefined symbols, path/name mismatches). ' +
+      'Output ONLY the files that need changes as ```file:<path>``` blocks, or reply exactly OK if none.');
+    var content = treeParts.join('\n');
+
+    var acc = '';
+    var handle = App.API.stream({
+      apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
+      model: model,
+      system: sys,
+      messages: [{ role: 'user', content: content }],
+      onText: function (d) { acc += d; },
+      onDone: function (res) {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_integrate'];
+        if (boss && res && res.usage) {
+          boss.stats.tokensIn += (res.usage.input_tokens || 0);
+          boss.stats.tokensOut += (res.usage.output_tokens || 0);
+        }
+        var out = (res && res.text) || acc || '';
+        var fixed = 0;
+        try {
+          var blocks = (ws && typeof ws.parseFileBlocks === 'function') ? ws.parseFileBlocks(out) : [];
+          if (Array.isArray(blocks)) {
+            for (var b = 0; b < blocks.length; b++) {
+              var blk = blocks[b];
+              if (!blk || !blk.path) continue;
+              try { ws.write(blk.path, blk.content == null ? '' : blk.content, 'boss'); fixed++; } catch (e) {}
+            }
+          }
+        } catch (e) {}
+        if (fixed) { try { log('Boss', 'all', 'system', '🔧 integrator fixed ' + fixed + ' file' + (fixed === 1 ? '' : 's')); } catch (e) {} }
+        else { try { log('Boss', 'all', 'system', '✓ integrator: project coherent'); } catch (e) {} }
+        try { if (App.UI && App.UI.refreshFiles) App.UI.refreshFiles(); } catch (e) {}
+        if (boss) { try { AGENTS().setState(boss, 'idle'); } catch (e) {} }
+        finish();
+      },
+      onError: function () {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_integrate'];
+        if (boss) { try { AGENTS().setState(boss, 'idle'); } catch (e) {} }
+        finish();   // never block delivery on an integrator failure
+      },
+    });
+    var s = STATE(); if (s && s._activeStreams) s._activeStreams['__boss_integrate'] = handle;
+  }
+
+  // finalizeBuild — mark the build root done, log the file count, open the Files UI.
+  function finalizeBuild(root) {
+    if (!root || root._synthStarted) return;
+    root._synthStarted = true;
+
+    var ws = WS();
+    var files = [];
+    try { if (ws && typeof ws.list === 'function') files = ws.list() || []; } catch (e) {}
+    var n = files.length;
+
+    root.status = 'done';
+    root.result = 'Project ready: ' + n + ' file' + (n === 1 ? '' : 's') +
+      (n ? ('\n\n' + files.map(function (f) { return '- ' + f.path; }).join('\n')) : '');
+    root.error = null;
+
+    try { STATE()._buildActive = false; } catch (e) {}
+
+    var boss = ensureBoss();
+    if (boss) {
+      try {
+        var ag = AGENTS();
+        boss.busy = false;
+        ag.setState(boss, 'idle');
+        ag.say(boss, '✓ ' + n + ' file' + (n === 1 ? '' : 's') + ' ready', 4000);
+        clearAttention(boss);
+        if (ag.addMemory) ag.addMemory(boss, 'Built project: ' + truncate(root.title, 70) + ' (' + n + ' files)', 6);
+      } catch (e) {}
+    }
+
+    log('Boss', 'user', 'result', 'Project ready: ' + n + ' file' + (n === 1 ? '' : 's'));
+    refreshBoard();
+    try { if (App.UI && App.UI.refreshFiles) App.UI.refreshFiles(); } catch (e) {}
+    try { if (App.UI && App.UI.openFiles) App.UI.openFiles(); } catch (e) {}
+    try { if (App.UI && App.UI.notifyDone) App.UI.notifyDone(root); } catch (e) {}
+    saveSoon();
+  }
+  Orchestrator.finalizeBuild = finalizeBuild;
+
+  // ===========================================================================
   // tick() — frame-driven queue pump. Cheap & re-entrant-safe.
   // ===========================================================================
   var _ticking = false;
@@ -2122,12 +2666,15 @@ window.App = window.App || {};
       if (!allTerminal) continue;
 
       if (anyDone) {
-        prepareSynthesis(root);
+        // BUILD roots run the integrator coherence pass instead of synthesis.
+        if (root._build) { finishBuild(root); }
+        else { prepareSynthesis(root); }
       } else if (allError) {
         // All children failed → root error, no synthesis. (§7.6)
         root.status = 'error';
         root.error = 'all subtasks failed';
         root._synthStarted = true;
+        if (root._build) { try { STATE()._buildActive = false; } catch (e) {} }
         var boss = ensureBoss();
         if (boss) AGENTS().say(boss, '⚠ couldn’t complete', 4000);
         log('Boss', 'user', 'error', 'All subtasks failed.');

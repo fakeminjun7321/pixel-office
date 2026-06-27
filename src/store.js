@@ -129,6 +129,23 @@ window.App = window.App || {};
       liveChatter: false,     // v3: watercooler uses an LLM call when true; canned lines when false
       lang: (c.DEFAULT_LANG || 'en'),  // Wave B: UI language (i18n) — 'en' | 'ko'
       onboarded: false,       // Wave C: first-run guided tour completed flag
+      // v5: GitHub push target for the project workspace. Token is stored LOCALLY
+      // only (never transmitted except to api.github.com on an explicit push).
+      github: { token: '', owner: '', repo: '', branch: 'main' },
+    };
+  }
+
+  // v5: sanitize a persisted settings.github blob -> {token,owner,repo,branch}.
+  // Coerces every field to a string; branch falls back to 'main'. Never throws.
+  function normalizeGithub(g) {
+    g = (g && typeof g === 'object') ? g : {};
+    var branch = (g.branch == null) ? '' : String(g.branch);
+    if (!branch) branch = 'main';
+    return {
+      token: (g.token == null) ? '' : String(g.token),
+      owner: (g.owner == null) ? '' : String(g.owner),
+      repo: (g.repo == null) ? '' : String(g.repo),
+      branch: branch,
     };
   }
 
@@ -251,6 +268,71 @@ window.App = window.App || {};
     return out;
   }
 
+  // v5: cap helper for the project workspace (state.files) file count.
+  function maxProjectFiles() {
+    var n = cfg().MAX_PROJECT_FILES;
+    return (typeof n === 'number' && n > 0) ? n : 200;
+  }
+
+  // v5: detect a file's language from its extension (mirror of
+  // Workspace.detectLang; kept here so the store can normalize standalone).
+  function detectLangFor(path) {
+    var p = String(path == null ? '' : path).toLowerCase();
+    var dot = p.lastIndexOf('.');
+    var ext = (dot >= 0) ? p.slice(dot + 1) : '';
+    switch (ext) {
+      case 'html': case 'htm': return 'html';
+      case 'css': return 'css';
+      case 'js': case 'mjs': case 'cjs': return 'js';
+      case 'json': return 'json';
+      case 'md': case 'markdown': return 'md';
+      case 'py': return 'py';
+      case 'ts': return 'ts';
+      case 'txt': return 'txt';
+      default: return 'txt';
+    }
+  }
+
+  // v5: sanitize the persisted project workspace map (path -> file entry).
+  //   - drop non-object entries / blank paths
+  //   - coerce content to String, cap per-file size (200k chars)
+  //   - cap total file count (drop oldest by t past MAX_PROJECT_FILES)
+  //   - fill lang/updatedBy/t with safe defaults
+  // Returns a fresh plain object. Never throws.
+  function normalizeFiles(map) {
+    var out = {};
+    if (!map || typeof map !== 'object') return out;
+    var PER_FILE_MAX = 200 * 1024;   // 200k chars per file
+    var rows = [];
+    for (var k in map) {
+      if (!Object.prototype.hasOwnProperty.call(map, k)) continue;
+      var path = String(k == null ? '' : k).trim();
+      if (!path) continue;
+      var f = map[k];
+      if (!f || typeof f !== 'object') continue;
+      var content = (f.content == null) ? '' : String(f.content);
+      if (content.length > PER_FILE_MAX) content = content.slice(0, PER_FILE_MAX);
+      rows.push({
+        path: path,
+        content: content,
+        lang: (f.lang == null || f.lang === '') ? detectLangFor(path) : String(f.lang),
+        updatedBy: (f.updatedBy == null) ? 'agent' : String(f.updatedBy),
+        t: (typeof f.t === 'number') ? f.t : nowMs(),
+      });
+    }
+    // cap total count: keep the most recently updated files.
+    var cap = maxProjectFiles();
+    if (rows.length > cap) {
+      rows.sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
+      rows = rows.slice(0, cap);
+    }
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      out[r.path] = { content: r.content, lang: r.lang, updatedBy: r.updatedBy, t: r.t };
+    }
+    return out;
+  }
+
   // 빈/안전한 기본 레이아웃(World가 아직 없을 때의 최후 폴백).
   function emptyLayout() {
     var c = cfg();
@@ -286,6 +368,7 @@ window.App = window.App || {};
       tasks: [],
       log: [],
       artifacts: [],          // v3: Artifact[] (persisted, capped at ARTIFACT_MAX)
+      files: {},              // v5: project workspace (path -> {content,lang,updatedBy,t}); persisted, capped at MAX_PROJECT_FILES
       camera: defaultCamera(),
       layout: emptyLayout(),
       settings: defaultSettings(),
@@ -298,6 +381,7 @@ window.App = window.App || {};
       _meetingActive: false,
       _activeStreams: {},
       _followId: null,        // v3: agent id the camera follows (runtime-only)
+      _buildActive: false,    // v5: true while a project BUILD pipeline is running (runtime-only, NOT persisted)
     };
   }
 
@@ -314,6 +398,7 @@ window.App = window.App || {};
     if (!Array.isArray(s.tasks)) s.tasks = [];
     if (!Array.isArray(s.log)) s.log = [];
     if (!Array.isArray(s.artifacts)) s.artifacts = [];
+    if (!s.files || typeof s.files !== 'object') s.files = {};   // v5: project workspace map
     if (!s.camera || typeof s.camera !== 'object') s.camera = def.camera;
     if (!s.layout || typeof s.layout !== 'object') s.layout = def.layout;
     if (!s.settings || typeof s.settings !== 'object') s.settings = def.settings;
@@ -324,6 +409,7 @@ window.App = window.App || {};
     if (typeof s._meetingActive === 'undefined') s._meetingActive = false;
     if (!s._activeStreams || typeof s._activeStreams !== 'object') s._activeStreams = {};
     if (typeof s._followId === 'undefined') s._followId = null;
+    if (typeof s._buildActive === 'undefined') s._buildActive = false;   // v5
     return s;
   }
 
@@ -495,11 +581,15 @@ window.App = window.App || {};
     // v3: artifacts — normalize + cap (deep cloned via normalize copy)
     var artifacts = normalizeArtifacts(s.artifacts);
 
+    // v5: project workspace — normalize + cap (fresh plain map, no live refs)
+    var files = normalizeFiles(s.files);
+
     // layout: deep clone so we never persist live references
     var layout = deepClone(s.layout) || emptyLayout();
 
-    // settings: deep clone with defaults merged
+    // settings: deep clone with defaults merged (then re-normalize github subobject)
     var settings = Object.assign(defaultSettings(), deepClone(s.settings) || {});
+    settings.github = normalizeGithub(settings.github);   // v5
 
     var blob = {
       v: schemaVersion(),
@@ -508,6 +598,7 @@ window.App = window.App || {};
       tasks: tasks,
       log: log,
       artifacts: artifacts,
+      files: files,           // v5: project workspace
       layout: layout,
       settings: settings,
       selectedAgentId: s.selectedAgentId || null,
@@ -593,8 +684,20 @@ window.App = window.App || {};
     s.artifacts.length = 0;
     for (var aj = 0; aj < rebuiltArtifacts.length; aj++) s.artifacts.push(rebuiltArtifacts[aj]);
 
-    // --- settings (merge over defaults) ---
+    // --- files: project workspace (normalize + cap) ---
+    var rebuiltFiles = normalizeFiles(blob.files);
+    if (!s.files || typeof s.files !== 'object') s.files = {};
+    // clear in place to preserve the object reference other modules may hold
+    for (var fk in s.files) {
+      if (Object.prototype.hasOwnProperty.call(s.files, fk)) delete s.files[fk];
+    }
+    for (var nfk in rebuiltFiles) {
+      if (Object.prototype.hasOwnProperty.call(rebuiltFiles, nfk)) s.files[nfk] = rebuiltFiles[nfk];
+    }
+
+    // --- settings (merge over defaults; re-normalize github subobject) ---
     s.settings = Object.assign(defaultSettings(), (blob.settings && typeof blob.settings === 'object') ? blob.settings : {});
+    s.settings.github = normalizeGithub(s.settings.github);   // v5
 
     // --- selection ---
     s.selectedAgentId = blob.selectedAgentId || null;
@@ -618,6 +721,7 @@ window.App = window.App || {};
     s._meetingActive = false;
     s._activeStreams = {};
     s._followId = null;       // v3: never restore camera-follow from disk
+    s._buildActive = false;   // v5: never restore a mid-build flag from disk
 
     return s;
   }
@@ -675,6 +779,20 @@ window.App = window.App || {};
         }
         // agent.mood/relationships/sprite left absent -> rebuildAgent defaults.
         v = 3;
+      }
+      // v3 -> v4 (v5 feature set): project workspace (blob.files) + settings.github.
+      // Both are filled with safe defaults by applyBlob's normalizers (normalizeFiles
+      // / normalizeGithub), so this step only ensures the shapes exist; everything
+      // else is a forward no-op. Defensive: run whenever v<4 regardless of whether
+      // SCHEMA_VERSION was bumped.
+      if (v < 4) {
+        if (!blob.files || typeof blob.files !== 'object') blob.files = {};
+        if (blob.settings && typeof blob.settings === 'object') {
+          if (typeof blob.settings.github === 'undefined') {
+            blob.settings.github = { token: '', owner: '', repo: '', branch: 'main' };
+          }
+        }
+        v = 4;
       }
       // Always stamp to current after running known steps.
       blob.v = target;
@@ -791,6 +909,10 @@ window.App = window.App || {};
       s.log.length = 0;
       if (!Array.isArray(s.artifacts)) s.artifacts = [];
       s.artifacts.length = 0;
+      if (!s.files || typeof s.files !== 'object') s.files = {};   // v5: empty project workspace
+      for (var fk in s.files) {
+        if (Object.prototype.hasOwnProperty.call(s.files, fk)) delete s.files[fk];
+      }
       s.settings = defaultSettings();
       s.camera = defaultCamera();
       s.selectedAgentId = null;
@@ -800,6 +922,7 @@ window.App = window.App || {};
       s._meetingActive = false;
       s._activeStreams = {};
       s._followId = null;
+      s._buildActive = false;   // v5
 
       // 3) place the 4 default agents at desks (§9: boss, engineer, designer, researcher)
       var collected = collectDeskSeats(s.layout);
@@ -978,7 +1101,7 @@ window.App = window.App || {};
     } catch (e) {
       logErr('exportJSON', e);
       // 빈 회사라도 유효한 JSON 반환
-      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
+      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], files: {}, layout: emptyLayout(), settings: defaultSettings() }, null, 2);
     }
   }
 

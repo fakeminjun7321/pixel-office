@@ -745,7 +745,7 @@ window.App = window.App || {};
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
   }
 
-  Agents.chat = function (agent, userText) {
+  Agents.chat = function (agent, userText, opts) {
     var noop = { abort: function () {} };
     if (!agent) return noop;
     var s = STATE();
@@ -819,6 +819,8 @@ window.App = window.App || {};
       onDone: function (res) {
         var text = (res && res.text) || assistantText || '';
         agent.conversation.push({ role: 'assistant', content: text });
+        // v5: let a caller (e.g. "revise file with agent") receive the final text.
+        try { if (opts && typeof opts.onComplete === 'function') opts.onComplete(text); } catch (e) {}
         // stats
         if (res && res.usage) {
           agent.stats.tokensIn += (res.usage.input_tokens || 0);

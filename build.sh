@@ -17,7 +17,7 @@ OUT=index.html
   echo '</head>'
   echo '<body>'
   cat src/shell.html
-  for f in config i18n markdown tools pixelart world api store agents orchestrator graph palette onboarding ui main; do
+  for f in config i18n markdown tools workspace pixelart world api store agents orchestrator graph palette onboarding ui main; do
     [ -f "src/$f.js" ] || continue   # optional feature modules (added across waves)
     echo "<script>"
     cat "src/$f.js"
@@ -27,3 +27,8 @@ OUT=index.html
   echo '</html>'
 } > "$OUT"
 echo "built $OUT ($(wc -l < "$OUT") lines, $(wc -c < "$OUT") bytes)"
+# Hazard check: literal </script /<script /<!-- in a module breaks single-file inlining
+# (the HTML parser closes/double-escapes the inlined <script>). Modules must split these.
+haz=$(grep -lE '</script|<!--' src/*.js 2>/dev/null || true)
+if [ -n "$haz" ]; then echo "WARN: HTML-tokenizer literal (</script or <!--) in: $haz — split it (e.g. '</scr'+'ipt')"; fi
+true

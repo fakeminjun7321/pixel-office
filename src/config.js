@@ -338,6 +338,102 @@ window.App = window.App || {};
 'results are already solid, say so in one line and list at most the single most useful refinement.\n' +
 'Keep it to at most 5 notes. Do not add headings or markdown beyond simple "- " bullets.';
 
+  // ---------------------------------------------------------------------------
+  // v5 §PROJECT BUILD MODE — three prompts for the file-oriented pipeline that
+  // turns a goal into a coherent, runnable MULTI-FILE project living in the
+  // shared workspace (App.Workspace / App.state.files). These are consumed by
+  // App.Orchestrator.runBuild. The DECOMPOSE prompt asks the Boss for a strict
+  // JSON file MANIFEST; the WORKER preamble forces each worker to emit complete
+  // files as fenced ```file:<path>``` blocks; the INTEGRATOR prompt does one
+  // coherence pass over the whole tree, emitting only the files that changed.
+  // ---------------------------------------------------------------------------
+
+  // v5 §BUILD_DECOMPOSE_SYSTEM — Boss turn A (project-build mode). Reply STRICT
+  // JSON { "files":[ {path,purpose,role,deps[]} ], "summary" }. No prose, no fences.
+  var BUILD_DECOMPOSE_SYSTEM =
+'You are the BOSS / architect of an autonomous AI software company in PROJECT BUILD mode.\n' +
+'The user gives you ONE goal (e.g. "build a todo web app"). Plan a COMPLETE, COHERENT, RUNNABLE\n' +
+'multi-file project that your worker agents will write into a shared file workspace.\n' +
+'\n' +
+'Available worker roles (use the exact key string) — pick the best fit per file:\n' +
+'- "engineer"  : code/logic files (.js, .py, .json, build/config).\n' +
+'- "designer"  : markup/style files (.html, .css) and visual structure.\n' +
+'- "researcher": files that need gathered/synthesized external facts.\n' +
+'- "writer"    : prose files (README.md, docs, copy).\n' +
+'- "generalist": anything that does not clearly fit the above.\n' +
+'\n' +
+'Plan rules:\n' +
+'- For a WEB project: include an "index.html" ENTRY point plus the css/js it needs, and a "README.md".\n' +
+'- Keep the file count SENSIBLE: 3 to 8 files. Do not over-split.\n' +
+'- Use real relative paths with "/" for folders (e.g. "index.html", "css/style.css", "js/app.js",\n' +
+'  "README.md"). No leading "/" or "./"; no "..".\n' +
+'- Set "deps" so each file lists the OTHER files it relies on by path (e.g. js/app.js depends on\n' +
+'  index.html if it targets specific DOM ids; index.html depends on the css/js it references). Files\n' +
+'  with no deps are written FIRST and in PARALLEL; dependent files are written AFTER their deps so the\n' +
+'  worker can read them and stay consistent. Never create cycles.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "files": [\n' +
+'    { "path": "index.html",\n' +
+'      "purpose": "<one short sentence: what this file is and what it must contain>",\n' +
+'      "role": "<one of the role keys above>",\n' +
+'      "deps": [<paths of OTHER files in this manifest this file relies on; [] if none>] }\n' +
+'  ],\n' +
+'  "summary": "<2-3 sentences describing the overall project so each worker shares the same mental model>"\n' +
+'}\n' +
+'\n' +
+'- "deps" entries MUST be exact paths that also appear as some other item\'s "path". Drop bad refs.\n' +
+'- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // v5 §BUILD_WORKER_PREAMBLE — prepended to a build worker's instruction. Forces
+  // file-block output. The role BODY (expertise) is still used as the system prompt;
+  // this preamble REPLACES the chat/RESULT framing for build tasks.
+  var BUILD_WORKER_PREAMBLE =
+'You are a worker agent on a software team, building ONE coherent multi-file project in a shared workspace.\n' +
+'You are assigned one or more files to WRITE. You are given: the project summary, the manifest entry for\n' +
+'each of your files (path + purpose), and the FULL CURRENT CONTENT of the files yours depend on.\n' +
+'\n' +
+'Rules:\n' +
+'- Write EACH assigned file FULLY and runnably — the complete file contents, not a snippet or outline.\n' +
+'- Be CONSISTENT with the provided dependency files: match exact element ids/classes, file names,\n' +
+'  function/variable names, data shapes and relative paths so the project actually works together.\n' +
+'- Use real relative paths exactly as assigned. For web, reference sibling files by their given paths.\n' +
+'- Do not invent extra files you were not assigned. Do not add external dependencies unless unavoidable.\n' +
+'\n' +
+'OUTPUT FORMAT (STRICT): output ONLY fenced blocks, one per file, whose info-string is "file:" + the\n' +
+'exact path, with the COMPLETE file content inside. NO prose, explanation, or text outside the blocks:\n' +
+'```file:index.html\n' +
+'<!doctype html>\n' +
+'... the entire file ...\n' +
+'```\n' +
+'```file:css/style.css\n' +
+'... the entire file ...\n' +
+'```\n' +
+'Emit one block per assigned file and nothing else.';
+
+  // v5 §BUILD_INTEGRATOR_SYSTEM — one coherence pass over the whole tree. Output
+  // ONLY the files that need changes as ```file:<path>``` blocks, or the literal
+  // token OK if nothing needs changing.
+  var BUILD_INTEGRATOR_SYSTEM =
+'You are the integration reviewer for an autonomous AI software company. You are given the ENTIRE current\n' +
+'project file tree (each file: its path then its full content). Your job is a single COHERENCE pass:\n' +
+'find and fix cross-file mismatches that would break the project, such as:\n' +
+'- references to files/paths that do not exist or are misspelled,\n' +
+'- DOM ids/classes used in JS that the HTML does not define (or vice versa),\n' +
+'- undefined symbols, mismatched function/variable names across files,\n' +
+'- stylesheet/script tags pointing at the wrong path.\n' +
+'\n' +
+'Make the MINIMAL changes needed for the project to be coherent and runnable. Do NOT redesign, rename for\n' +
+'taste, or add features. Preserve each file\'s intent.\n' +
+'\n' +
+'OUTPUT FORMAT (STRICT): If NO changes are needed, reply with EXACTLY the single token:\n' +
+'OK\n' +
+'Otherwise output ONLY the files you changed, each as a fenced block whose info-string is "file:" + the\n' +
+'exact path, containing the COMPLETE updated file content. NO prose outside the blocks. Do not emit files\n' +
+'you did not change.';
+
   // §6.3 BOSS_SYNTH_SYSTEM (Boss turn B).
   var BOSS_SYNTH_SYSTEM =
 'You are the BOSS of an autonomous AI company. Your workers have completed their subtasks.\n' +
@@ -466,6 +562,18 @@ window.App = window.App || {};
     // is the canonical ROLES.boss.system; exposed here too for symmetry.
     BOSS_DECOMPOSE_SYSTEM: BOSS_DECOMPOSE_SYSTEM,
     BOSS_SYNTH_SYSTEM: BOSS_SYNTH_SYSTEM,
+
+    // ---------------------------------------------------------------------------
+    // v5 §PROJECT BUILD MODE — file-oriented pipeline prompts + caps. Consumed by
+    // App.Orchestrator.runBuild + App.Workspace. BUILD_DECOMPOSE_SYSTEM -> Boss
+    // file manifest (strict JSON); BUILD_WORKER_PREAMBLE -> per-file worker output
+    // as ```file:<path>``` blocks; BUILD_INTEGRATOR_SYSTEM -> one coherence pass.
+    // MAX_PROJECT_FILES caps the shared workspace (Workspace.write enforces).
+    // ---------------------------------------------------------------------------
+    BUILD_DECOMPOSE_SYSTEM: BUILD_DECOMPOSE_SYSTEM,
+    BUILD_WORKER_PREAMBLE: BUILD_WORKER_PREAMBLE,
+    BUILD_INTEGRATOR_SYSTEM: BUILD_INTEGRATOR_SYSTEM,
+    MAX_PROJECT_FILES: 200,
 
     // ---------------------------------------------------------------------------
     // Wave B/C orchestration toggles + prompts.
@@ -611,7 +719,7 @@ window.App = window.App || {};
 
     // persistence
     STORAGE_KEY: 'pixel_ai_company_v1',
-    SCHEMA_VERSION: 2,   // v3: bumped for artifacts/persona/memories/settings additions
+    SCHEMA_VERSION: 4,   // v3: artifacts/persona/memories/settings; v5: +files workspace + settings.github
 
     // enums + palette + roles
     TILES: TILES,
