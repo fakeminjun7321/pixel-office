@@ -765,6 +765,10 @@ window.App = window.App || {};
     // Inject (once) + load the OpenAI key field next to the Anthropic key.
     ensureOpenAIKeyField();
     var oaiI = $('set-openai-key'); if (oaiI) { oaiI.value = settings.openaiKey || ''; oaiI.type = 'password'; }
+    // Inject (once) + load the local-companion toggle + URL.
+    ensureCompanionField();
+    var ctog = $('set-companion-toggle'); if (ctog) ctog.checked = !!settings.useCompanion;
+    var curl = $('set-companion-url'); if (curl) curl.value = settings.companionUrl || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var dm = $('set-default-model'); if (dm) dm.value = settings.defaultModel || CFG().DEFAULT_MODEL;
     var bm = $('set-boss-model'); if (bm) bm.value = settings.bossModel || CFG().BOSS_MODEL;
     setWebSearchSwitch(!!settings.webSearch);
@@ -818,12 +822,60 @@ window.App = window.App || {};
     oaiI.type = (oaiI.type === 'password') ? 'text' : 'password';
   }
 
+  // Inject (once) the local-companion controls (checkbox + URL) after the OpenAI
+  // key field, reusing the existing .field styling. Lets Claude-model agents run
+  // through the local subscription proxy (companion.py) with NO Anthropic key.
+  function ensureCompanionField() {
+    if ($('set-companion-toggle')) return; // already injected
+    var anchor = $('set-openai-key');
+    if (!anchor || typeof document === 'undefined') return;
+    var anchorField = anchor;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    if (!anchorField || !anchorField.parentNode) return;
+
+    var field = el('label', 'field');
+    field.appendChild(el('span', 'field-label', 'LOCAL COMPANION (SUBSCRIPTION)'));
+
+    var row = el('span', 'field-row');
+    var cb = document.createElement('input');
+    cb.id = 'set-companion-toggle';
+    cb.type = 'checkbox';
+    cb.style.flex = '0 0 auto';
+    var cbHint = el('span', 'field-hint', 'Use your Claude subscription via companion.py (no API key needed)');
+    cbHint.style.flex = '1';
+    row.appendChild(cb);
+    row.appendChild(cbHint);
+
+    var urlRow = el('span', 'field-row');
+    var url = document.createElement('input');
+    url.id = 'set-companion-url';
+    url.type = 'text';
+    url.autocomplete = 'off';
+    url.spellcheck = false;
+    url.placeholder = 'http://localhost:8787/v1/messages';
+    urlRow.appendChild(url);
+
+    var hint = el('span', 'field-hint',
+      'Run companion/companion.py, then enable. Works with the file:// or localhost app (not the https Pages site).');
+
+    field.appendChild(row);
+    field.appendChild(urlRow);
+    field.appendChild(hint);
+
+    if (anchorField.nextSibling) anchorField.parentNode.insertBefore(field, anchorField.nextSibling);
+    else anchorField.parentNode.appendChild(field);
+  }
+
   function saveSettings() {
     var s = STATE();
     if (!s) return;
     var settings = s.settings || (s.settings = {});
     var keyI = $('set-apikey'); if (keyI) settings.apiKey = keyI.value.trim();
     var oaiI = $('set-openai-key'); if (oaiI) settings.openaiKey = oaiI.value.trim();
+    var ctog = $('set-companion-toggle'); if (ctog) settings.useCompanion = !!ctog.checked;
+    var curl = $('set-companion-url'); if (curl) settings.companionUrl = curl.value.trim() || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var dm = $('set-default-model'); if (dm) settings.defaultModel = dm.value;
     var bm = $('set-boss-model'); if (bm) settings.bossModel = bm.value;
     var sw = $('set-websearch');

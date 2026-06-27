@@ -119,6 +119,8 @@ window.App = window.App || {};
     return {
       apiKey: '',
       openaiKey: '',                                   // v2: OpenAI key (for gpt-* models)
+      useCompanion: false,                             // v2: route Claude models through local subscription proxy
+      companionUrl: c.COMPANION_URL || 'http://localhost:8787/v1/messages',
       defaultModel: c.DEFAULT_MODEL || 'claude-sonnet-4-6',
       bossModel: c.BOSS_MODEL || 'claude-opus-4-8',
       webSearch: true,

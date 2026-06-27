@@ -274,6 +274,7 @@ window.App = window.App || {};
     // API
     API_URL: 'https://api.anthropic.com/v1/messages',
     OPENAI_URL: 'https://api.openai.com/v1/chat/completions',   // v2: OpenAI chat-completions endpoint
+    COMPANION_URL: 'http://localhost:8787/v1/messages',         // v2: local subscription proxy (companion.py)
     API_VERSION: '2023-06-01',
     DEFAULT_MODEL: 'claude-sonnet-4-6',          // worker default
     BOSS_MODEL:    'claude-opus-4-8',            // boss default

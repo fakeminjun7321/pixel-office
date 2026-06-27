@@ -408,7 +408,10 @@ window.App = window.App || {};
   // ---- Anthropic streaming attempt (unchanged wire format) ------------------
   function attemptAnthropic(opts, controller) {
     var cfg = App.config || {};
-    var API_URL = cfg.API_URL || 'https://api.anthropic.com/v1/messages';
+    var st = (App.state && App.state.settings) || {};
+    var useCompanion = !!(st.useCompanion && st.companionUrl);  // local subscription proxy
+    var API_URL = useCompanion ? st.companionUrl
+      : (cfg.API_URL || 'https://api.anthropic.com/v1/messages');
     var API_VERSION = cfg.API_VERSION || '2023-06-01';
     var MAX_TOKENS = cfg.MAX_TOKENS || 4096;
 
@@ -427,15 +430,18 @@ window.App = window.App || {};
       messages: Array.isArray(opts.messages) ? opts.messages : [],
       stream: true,
     };
-    var sentTools = Array.isArray(opts.tools) && opts.tools.length > 0;
+    // Companion proxy ignores server tools (no web_search via the CLI path).
+    var sentTools = !useCompanion && Array.isArray(opts.tools) && opts.tools.length > 0;
     if (sentTools) body.tools = opts.tools;
 
-    var headers = {
-      'x-api-key': opts.apiKey,
-      'anthropic-version': API_VERSION,
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'content-type': 'application/json',
-    };
+    var headers = useCompanion
+      ? { 'content-type': 'application/json' }   // companion needs no key/version headers
+      : {
+          'x-api-key': opts.apiKey,
+          'anthropic-version': API_VERSION,
+          'anthropic-dangerous-direct-browser-access': 'true',
+          'content-type': 'application/json',
+        };
 
     // Lifecycle hint: we're about to think.
     acc.onState('thinking');
@@ -688,8 +694,11 @@ window.App = window.App || {};
         return noopHandle();
       }
     } else {
-      if (!opts.apiKey) {
-        onError({ type: 'no_key', message: 'Set your API key in Settings' });
+      // Companion mode (local subscription proxy) needs no Anthropic key.
+      var _s = (App.state && App.state.settings) || {};
+      var _companion = !!(_s.useCompanion && _s.companionUrl);
+      if (!opts.apiKey && !_companion) {
+        onError({ type: 'no_key', message: 'Set your API key in Settings (or enable the companion)' });
         return noopHandle();
       }
     }
