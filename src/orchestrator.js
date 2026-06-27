@@ -96,8 +96,83 @@ window.App = window.App || {};
     syncAttentionBadge();
   }
 
+  // ===========================================================================
+  // MOOD / RELATIONSHIPS — subtle nudges after collaboration. All guarded; prefer
+  //   Agents helpers (owned by agents.js) but fall back to direct writes so this
+  //   never throws if a helper is missing during a partial load.
+  // ===========================================================================
+  function clamp01(n) { n = +n; if (!isFinite(n)) return 0; return n < 0 ? 0 : (n > 1 ? 1 : n); }
+
+  function markActivity(agent) {
+    if (!agent) return;
+    try {
+      var ag = AGENTS();
+      if (ag && typeof ag.markActivity === 'function') { ag.markActivity(agent); return; }
+    } catch (e) {}
+    try { agent._lastActivityTs = nowMs(); } catch (e) {}
+  }
+
+  function setMood(agent, value) {
+    if (!agent) return;
+    try {
+      var ag = AGENTS();
+      if (ag && typeof ag.setMood === 'function') { ag.setMood(agent, value); return; }
+    } catch (e) {}
+    try { agent.mood = clamp01(value); } catch (e) {}
+  }
+
+  function nudgeMood(agent, delta) {
+    if (!agent) return;
+    var cur = (typeof agent.mood === 'number') ? agent.mood
+      : (CFG().MOOD_DEFAULT != null ? CFG().MOOD_DEFAULT : 0.7);
+    setMood(agent, clamp01(cur + delta));
+  }
+
+  function adjustAffinity(a, b, delta) {
+    if (!a || !b || a === b || a.id === b.id) return;
+    try {
+      var ag = AGENTS();
+      if (ag && typeof ag.adjustAffinity === 'function') { ag.adjustAffinity(a, b.id, delta); return; }
+    } catch (e) {}
+    try {
+      if (!a.relationships || typeof a.relationships !== 'object') a.relationships = {};
+      var cur = (typeof a.relationships[b.id] === 'number') ? a.relationships[b.id] : 0.5;
+      a.relationships[b.id] = clamp01(cur + delta);
+    } catch (e) {}
+  }
+
+  // affinity(a, b) → current affinity a feels toward b (default 0.5).
+  function affinity(a, b) {
+    try {
+      if (a && b && a.relationships && typeof a.relationships[b.id] === 'number') return a.relationships[b.id];
+    } catch (e) {}
+    return 0.5;
+  }
+
+  // bondParticipants — after a collaboration, raise mutual affinity + lift mood for
+  //   everyone who worked together. Subtle (small deltas), guarded, never throws.
+  function bondParticipants(list, moodDelta, affDelta) {
+    try {
+      if (!Array.isArray(list)) return;
+      moodDelta = (typeof moodDelta === 'number') ? moodDelta : 0.05;
+      affDelta = (typeof affDelta === 'number') ? affDelta : 0.04;
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i];
+        if (!a) continue;
+        nudgeMood(a, moodDelta);
+        for (var j = 0; j < list.length; j++) {
+          if (i === j) continue;
+          adjustAffinity(a, list[j], affDelta);
+        }
+      }
+      saveSoon();
+    } catch (e) {}
+  }
+
   var Orchestrator = {};
   Orchestrator.PLAN_SCHEMA_VERSION = 1;
+  Orchestrator.adjustAffinity = adjustAffinity;
+  Orchestrator.bondParticipants = bondParticipants;
 
   // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
   // local companion (subscription proxy needs no key). Mirrors api.js's guard so
@@ -108,6 +183,67 @@ window.App = window.App || {};
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
     if (prov === 'openai') return !!set.openaiKey;
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+  }
+
+  // providerOf — resolve a model's provider ('anthropic' | 'openai' | ...).
+  function providerOf(model) {
+    try {
+      if (CFG().providerOf) return CFG().providerOf(model);
+      if (App.util && App.util.providerOf) return App.util.providerOf(model);
+    } catch (e) {}
+    return 'anthropic';
+  }
+
+  // clientToolsApplicable — true when the Browser-tools integration should expose
+  //   App.Tools specs to a worker: tools module present + enabled + an Anthropic
+  //   model (the only provider whose tool schema we pass through here).
+  function clientToolsApplicable(agent, settings) {
+    try {
+      if (!App.Tools || typeof App.Tools.specs !== 'function') return false;
+      if (typeof App.Tools.enabled === 'function' && !App.Tools.enabled()) return false;
+      var model = (agent && agent.model) || (settings && settings.defaultModel);
+      return providerOf(model) === 'anthropic';
+    } catch (e) { return false; }
+  }
+
+  // executeToolUses(blocks) → Promise<tool_result[]>. Runs App.Tools.run for each
+  //   {id,name,input} block and logs the activity. Bounded by the caller. Robust:
+  //   any failure yields an error tool_result rather than throwing.
+  function executeToolUses(blocks, agent) {
+    var jobs = [];
+    for (var i = 0; i < blocks.length; i++) {
+      (function (blk) {
+        var p;
+        try {
+          if (App.Tools && typeof App.Tools.run === 'function') {
+            p = App.Tools.run(blk.name, blk.input);
+          } else {
+            p = Promise.resolve({ ok: false, output: '', error: 'tools unavailable' });
+          }
+        } catch (e) {
+          p = Promise.resolve({ ok: false, output: '', error: String((e && e.message) || e) });
+        }
+        jobs.push(Promise.resolve(p).then(function (r) {
+          r = r || {};
+          var label = (agent && agent.name) || (agent && agent.role) || 'agent';
+          try { log(label, 'tool', 'tool', '🔧 ' + (blk.name || 'tool') + (r.ok ? ' ✓' : ' ✗')); } catch (e) {}
+          // surface in the agent transcript if the UI supports it.
+          try {
+            if (App.UI && App.UI.appendTranscript && agent) {
+              App.UI.appendTranscript(agent.id, 'tool', '[tool ' + (blk.name || '') + '] ' + truncate(r.ok ? r.output : (r.error || 'error'), 200));
+            }
+          } catch (e) {}
+          return {
+            type: 'tool_result',
+            tool_use_id: blk.id,
+            content: r.ok ? String(r.output == null ? '' : r.output)
+                          : ('ERROR: ' + String(r.error || 'tool failed')),
+            is_error: !r.ok,
+          };
+        }));
+      })(blocks[i]);
+    }
+    return Promise.all(jobs);
   }
 
   // slugify a title for artifact filenames (lowercase, dashes, no exotic chars).
@@ -735,7 +871,24 @@ window.App = window.App || {};
 
     // Web search decision.
     var wantWeb = !!(settings.webSearch && (task.needsWeb || roleDef.webSearchPreferred));
-    var tools = (wantWeb && CFG().WEB_SEARCH_TOOL) ? [CFG().WEB_SEARCH_TOOL] : undefined;
+    var toolList = [];
+    if (wantWeb && CFG().WEB_SEARCH_TOOL) toolList.push(CFG().WEB_SEARCH_TOOL);
+
+    // CLIENT TOOLS (Browser tools — calc/run_js/analyze_data). Anthropic-only; the
+    //   server-side stream parser in api.js doesn't surface tool_use args, so we
+    //   cannot run a true round-trip tool loop here. We EXPOSE the tools to the
+    //   model (so models that can answer without calling a tool benefit from the
+    //   schema/hint) and detect a tool_use stop gracefully (see startWorkerStream).
+    //   This is the deliberate "minimal, robust" integration the contract allows.
+    if (clientToolsApplicable(agent, settings)) {
+      try {
+        var specs = App.Tools.specs();
+        if (Array.isArray(specs)) {
+          for (var ti = 0; ti < specs.length; ti++) toolList.push(specs[ti]);
+        }
+      } catch (e) {}
+    }
+    var tools = toolList.length ? toolList : undefined;
 
     // No credentials path (defend; provider/companion-aware so GPT & companion work).
     if (!hasCredsFor(agent.model || settings.defaultModel)) {
@@ -748,16 +901,32 @@ window.App = window.App || {};
     ag.say(agent, truncate(task.title, 40), 3000);
     ag.goToFurniture(agent, 'desk', function () {
       ag.setState(agent, wantWeb ? 'searching' : 'coding');
-      startWorkerStream(task, agent, userContent, tools, wantWeb);
+      startWorkerStream(task, agent, [{ role: 'user', content: userContent }], tools, wantWeb, 0);
     });
   }
 
-  function startWorkerStream(task, agent, userContent, tools, wantWeb) {
+  // stopReasonOf(res) — pull stop_reason from the raw final stream event (Anthropic
+  //   message_delta.delta.stop_reason). null for OpenAI / unknown.
+  function stopReasonOf(res) {
+    try {
+      var raw = res && res.raw;
+      if (raw && raw.delta && typeof raw.delta.stop_reason === 'string') return raw.delta.stop_reason;
+    } catch (e) {}
+    return null;
+  }
+
+  // startWorkerStream — one streamed turn for `task`. messages[] is the running
+  //   conversation (mutated across the bounded tool loop). iter = tool-loop depth.
+  function startWorkerStream(task, agent, messages, tools, wantWeb, iter) {
     var ag = AGENTS();
     var settings = STATE().settings || {};
     var roleDef = ROLES()[task.role] || {};
     var sys = agent.systemPrompt || roleDef.system || '';
+    iter = iter || 0;
+    var MAX_TOOL_ITERS = (CFG().MAX_TOOL_ITERS != null) ? CFG().MAX_TOOL_ITERS : 2;
 
+    // accumulate text across loop iterations so partial answers aren't lost.
+    if (typeof task._acc !== 'string') task._acc = '';
     var acc = '';
     var bubbleAccum = '';
 
@@ -766,7 +935,7 @@ window.App = window.App || {};
       openaiKey: settings.openaiKey,        // GPT-model worker support
       model: agent.model || settings.defaultModel,
       system: sys,
-      messages: [{ role: 'user', content: userContent }],
+      messages: messages,
       tools: tools,
       onState: function (st) {
         if (st === 'searching') ag.setState(agent, 'searching');
@@ -776,17 +945,63 @@ window.App = window.App || {};
         acc += delta;
         bubbleAccum += delta;
         ag.say(agent, bubbleAccum.slice(-60), 3000);
+        markActivity(agent);   // recent-activity glow (drawn by pixelart.js)
         // Live transcript so clicking the worker shows progress.
         try { if (App.UI && App.UI.appendTranscript) App.UI.appendTranscript(agent.id, 'assistant', delta); } catch (e) {}
         // keep the board's running card text fresh occasionally
-        task.result = acc;
+        task.result = task._acc + acc;
       },
       onDone: function (res) {
-        var text = (res && res.text) || acc || '';
         if (res && res.usage) {
           agent.stats.tokensIn += (res.usage.input_tokens || 0);
           agent.stats.tokensOut += (res.usage.output_tokens || 0);
         }
+        task._acc += acc;
+
+        // TOOL LOOP (real path) — only if a future api.js surfaces structured
+        //   tool_use blocks on the result (res.toolUses [{id,name,input}]). Today's
+        //   api.js does not, so this branch is normally skipped; it's forward-safe.
+        var toolUses = res && Array.isArray(res.toolUses) ? res.toolUses : null;
+        if (toolUses && toolUses.length && tools && tools.length && iter < MAX_TOOL_ITERS) {
+          var s4 = STATE(); if (s4 && s4._activeStreams) delete s4._activeStreams[agent.id];
+          var asstContent = [];
+          if (acc && acc.trim()) asstContent.push({ type: 'text', text: acc });
+          for (var tu = 0; tu < toolUses.length; tu++) {
+            asstContent.push({ type: 'tool_use', id: toolUses[tu].id, name: toolUses[tu].name, input: toolUses[tu].input });
+          }
+          executeToolUses(toolUses, agent).then(function (results) {
+            var next = messages.slice();
+            next.push({ role: 'assistant', content: asstContent });
+            next.push({ role: 'user', content: results });
+            startWorkerStream(task, agent, next, tools, wantWeb, iter + 1);
+          }, function () {
+            // tool execution failed wholesale → finalize with what we have.
+            var t0 = task._acc || acc || ''; task._acc = '';
+            if (t0 && t0.trim()) onWorkerResult(task, t0); else failTask(task, '(tool loop failed)');
+          });
+          return;
+        }
+
+        // TOOL LOOP (fallback) — the model wanted to call a client tool but api.js
+        //   does not surface tool_use arguments/ids through its stream, so we cannot
+        //   execute a true tool_result round-trip. Robust fallback: nudge the model
+        //   to inline-compute (it already has its reasoning) and re-run once. Bounded.
+        if (stopReasonOf(res) === 'tool_use' && tools && tools.length && iter < MAX_TOOL_ITERS) {
+          try { log(agent.name || agent.role, 'tool', 'tool', '🔧 wanted a tool — asking for an inline answer'); } catch (e) {}
+          var follow = messages.slice();
+          if (acc && acc.trim()) follow.push({ role: 'assistant', content: acc });
+          follow.push({
+            role: 'user',
+            content: 'Tool execution is unavailable in this environment. Please complete the task by reasoning it out directly and provide the final answer inline (do not call any tools).',
+          });
+          var s3 = STATE(); if (s3 && s3._activeStreams) delete s3._activeStreams[agent.id];
+          // re-stream WITHOUT tools so it answers directly.
+          startWorkerStream(task, agent, follow, undefined, wantWeb, iter + 1);
+          return;
+        }
+
+        var text = task._acc || (res && res.text) || '';
+        task._acc = '';
         if (!text || !text.trim()) {
           failTask(task, '(empty result)');
           return;
@@ -1009,6 +1224,7 @@ window.App = window.App || {};
       ag.setState(agent, 'idle');
       ag.say(agent, '✓ done', 2500);
       clearAttention(agent);
+      nudgeMood(agent, 0.06);   // satisfaction from finishing work
       // honor a deferred break request (set while the agent was busy), else maybe wander.
       if (agent._wantBreak) {
         agent._wantBreak = false;
@@ -1038,6 +1254,7 @@ window.App = window.App || {};
       if (msg === 'NO_KEY') ag.say(agent, '🔑 set your API key in Settings', 4000);
       else ag.say(agent, '⚠ error', 3500);
       var s = STATE(); if (s && s._activeStreams) delete s._activeStreams[agent.id];
+      nudgeMood(agent, -0.07);   // frustration from a failed task
       // Flag for the user: no-key / rate-limit (429) / any API error.
       raiseAttention(agent);
     }
@@ -1204,12 +1421,24 @@ window.App = window.App || {};
       var pool = idleNonBoss();
       if (pool.length < 2) return;
 
-      // pick 2 distinct.
+      // pick 2 distinct — prefer a higher-affinity pairing (still some randomness).
       var a = pool[Math.floor(Math.random() * pool.length)];
-      var b = pool[Math.floor(Math.random() * pool.length)];
-      var guard = 0;
-      while (b === a && guard++ < 8) b = pool[Math.floor(Math.random() * pool.length)];
-      if (a === b) return;
+      var b = null;
+      var rest = [];
+      for (var ri = 0; ri < pool.length; ri++) { if (pool[ri] !== a) rest.push(pool[ri]); }
+      if (!rest.length) return;
+      if (Math.random() < 0.6) {
+        // affinity-weighted: pick the peer 'a' likes most (ties → random).
+        var best = rest[0], bestAff = affinity(a, rest[0]);
+        for (var rj = 1; rj < rest.length; rj++) {
+          var af = affinity(a, rest[rj]);
+          if (af > bestAff || (af === bestAff && Math.random() < 0.5)) { best = rest[rj]; bestAff = af; }
+        }
+        b = best;
+      } else {
+        b = rest[Math.floor(Math.random() * rest.length)];
+      }
+      if (!b || a === b) return;
 
       _lastChatter = s._time;
       _chatterActive = true;
@@ -1327,6 +1556,8 @@ window.App = window.App || {};
         try { ag.addMemory(a, 'watercooler: ' + truncate(topicLine, 80), 1); } catch (e) {}
         try { ag.addMemory(b, 'watercooler: ' + truncate(topicLine, 80), 1); } catch (e) {}
       }
+      // subtle bonding from a friendly chat.
+      try { bondParticipants([a, b], 0.03, 0.05); } catch (e) {}
       // return both to desks if still idle & free.
       [a, b].forEach(function (agt) {
         if (!agt) return;
@@ -1339,6 +1570,288 @@ window.App = window.App || {};
       });
     } catch (e) {}
     _chatterActive = false;
+  }
+
+  // ===========================================================================
+  // PRE-SYNTHESIS PIPELINE — adaptive replan → group debate → approval gate →
+  //   synthesize. Each phase is OPTIONAL (config-gated) and creds-guarded; if a
+  //   phase is off/unavailable we fall straight through to the next. Re-entrancy
+  //   is guarded by root._gating + per-phase done-flags so tick() can call this
+  //   repeatedly without double-firing. Never throws.
+  // ===========================================================================
+  function gatherWorkerResults(root) {
+    var kids = childrenOf(root.id);
+    kids.sort(function (a, b) {
+      var ai = (typeof a._depIndex === 'number') ? a._depIndex : 0;
+      var bi = (typeof b._depIndex === 'number') ? b._depIndex : 0;
+      return ai - bi;
+    });
+    var parts = [];
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      var roleLabel = (ROLES()[k.role] && ROLES()[k.role].label) || k.role;
+      var body = (k.status === 'done' && k.result) ? k.result
+        : ('(this subtask did not complete: ' + (k.error || 'no result') + ')');
+      parts.push('[' + roleLabel + ' — ' + k.title + ']\n' + body);
+    }
+    return parts.join('\n\n');
+  }
+
+  function bossModelFor() {
+    var settings = (STATE() && STATE().settings) || {};
+    var boss = ensureBoss();
+    return (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL;
+  }
+
+  // prepareSynthesis(root) — orchestrate the optional pre-synth phases, then synth.
+  function prepareSynthesis(root) {
+    try {
+      if (!root || root._synthStarted) return;
+      if (root._gating) return;             // a phase async-call is in flight
+      // PHASE 1 — adaptive replan (once).
+      if (CFG().ENABLE_REPLAN && !root._replanned) {
+        root._gating = true;
+        runReplanPhase(root, function (added) {
+          root._gating = false;
+          root._replanned = true;
+          // If new children were added, return; tick() will re-enter once they finish.
+          if (!added) prepareSynthesis(root);
+          // (if added>0, the new queued tasks are picked up next tick; when all
+          //  terminal again, checkRootsForSynthesis → prepareSynthesis runs phase 2.)
+        });
+        return;
+      }
+      // PHASE 2 — group debate / critique (once).
+      if (CFG().ENABLE_DEBATE && !root._debated) {
+        root._gating = true;
+        runDebatePhase(root, function () {
+          root._gating = false;
+          root._debated = true;
+          prepareSynthesis(root);
+        });
+        return;
+      }
+      // PHASE 3 — human approval gate (optional, default off).
+      if (CFG().ENABLE_APPROVAL && !root._approved && App.UI && typeof App.UI.openApproval === 'function') {
+        root._gating = true;
+        runApprovalPhase(root, function (proceed) {
+          root._gating = false;
+          if (proceed) { root._approved = true; prepareSynthesis(root); }
+          // if !proceed: runApprovalPhase already handled revise(re-queue)/reject(error).
+        });
+        return;
+      }
+      // All gates passed → synthesize.
+      Orchestrator.synthesize(root);
+    } catch (e) {
+      // Never block delivery on a gate failure.
+      try { Orchestrator.synthesize(root); } catch (e2) {}
+    }
+  }
+
+  // runReplanPhase — one Boss call: should we add more subtasks? cb(addedCount).
+  function runReplanPhase(root, cb) {
+    var settings = (STATE() && STATE().settings) || {};
+    var model = bossModelFor();
+    var sys = CFG().BOSS_REPLAN_SYSTEM;
+    if (!sys || !hasCredsFor(model)) { cb(0); return; }
+
+    var boss = ensureBoss();
+    var content = "USER'S ORIGINAL GOAL:\n" + (root.desc || '') +
+      "\n\nWORKER RESULTS SO FAR:\n" + gatherWorkerResults(root) +
+      "\n\nDecide whether more subtasks are needed. Reply with the strict JSON described in your instructions.";
+    var acc = '';
+    var done = false;
+    function finish(added) { if (done) return; done = true; cb(added || 0); }
+    try { log('Boss', 'system', 'system', '🔄 reviewing results (replan)…'); } catch (e) {}
+
+    var handle = App.API.stream({
+      apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
+      model: model,
+      system: sys,
+      messages: [{ role: 'user', content: content }],
+      onText: function (d) { acc += d; },
+      onDone: function (res) {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_replan'];
+        if (boss && res && res.usage) {
+          boss.stats.tokensIn += (res.usage.input_tokens || 0);
+          boss.stats.tokensOut += (res.usage.output_tokens || 0);
+        }
+        var decision = parseReplanDecision((res && res.text) || acc);
+        if (decision && decision.action === 'replan' && decision.newSubtasks && decision.newSubtasks.length) {
+          var n = addReplanSubtasks(root, decision.newSubtasks);
+          if (n > 0) {
+            try { log('Boss', 'all', 'system', '🔄 adding ' + n + ' follow-up task' + (n === 1 ? '' : 's') + (decision.reason ? ': ' + truncate(decision.reason, 60) : '')); } catch (e) {}
+            if (boss) { try { AGENTS().say(boss, '🔄 a bit more work…', 3000); } catch (e) {} }
+            refreshBoard(); saveSoon();
+          }
+          finish(n);
+        } else {
+          finish(0);
+        }
+      },
+      onError: function () {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_replan'];
+        finish(0);
+      },
+    });
+    var s = STATE(); if (s && s._activeStreams) s._activeStreams['__boss_replan'] = handle;
+  }
+
+  // parseReplanDecision — tolerant JSON parse → {action,newSubtasks,reason}|null.
+  function parseReplanDecision(raw) {
+    try {
+      if (!raw) return null;
+      var s = String(raw).replace(/^```(?:json|jsonc)?\s*/i, '').replace(/```\s*$/i, '');
+      var first = s.indexOf('{'), last = s.lastIndexOf('}');
+      if (first === -1 || last === -1 || last < first) return null;
+      var body = s.slice(first, last + 1).replace(/,(\s*[}\]])/g, '$1')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+      var obj = null;
+      try { obj = JSON.parse(body); }
+      catch (e) { var bal = braceBalancedPrefix(body); if (bal) { try { obj = JSON.parse(bal); } catch (e2) {} } }
+      if (!obj || typeof obj !== 'object') return null;
+      var action = (obj.action === 'replan') ? 'replan' : 'finish';
+      var list = [];
+      if (Array.isArray(obj.newSubtasks)) {
+        for (var i = 0; i < obj.newSubtasks.length; i++) {
+          var it = obj.newSubtasks[i];
+          if (!it || typeof it !== 'object') continue;
+          if (it.instruction == null || String(it.instruction).trim() === '') continue;
+          list.push(it);
+          if (list.length >= 4) break;
+        }
+      }
+      return { action: action, newSubtasks: list, reason: (typeof obj.reason === 'string' ? obj.reason : '') };
+    } catch (e) { return null; }
+  }
+
+  // addReplanSubtasks — append new children to an existing root; deps reference
+  //   ONLY pre-existing siblings by their order index in this round are ignored
+  //   (kept simple: new tasks have no inter-deps → run as a parallel follow-up wave).
+  function addReplanSubtasks(root, items) {
+    var s = STATE();
+    if (!s || !Array.isArray(s.tasks)) return 0;
+    var n = 0;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var role = (ROLES()[it.role]) ? it.role : 'generalist';
+      var t = {
+        id: uid('t'),
+        title: truncate(it.title || firstWords(it.instruction, 6), 48),
+        desc: String(it.instruction || ''),
+        assignee: null,
+        status: 'queued',
+        parentId: root.id,
+        subtaskIds: [],
+        result: null,
+        error: null,
+        createdAt: nowMs() + i,
+        role: role,
+        needsWeb: (typeof it.needsWeb === 'boolean') ? it.needsWeb
+          : !!(ROLES()[role] && ROLES()[role].webSearchPreferred),
+        _depIndex: 1000 + i,    // after the original wave
+        _depPlanIdx: null,
+        _depIds: [],            // explicit no-deps → parallel follow-up wave
+        verify: !!it.verify,
+        _retries: 0,
+        _qaDone: false,
+        _feedback: null,
+        _ctrl: null,
+      };
+      s.tasks.push(t);
+      root.subtaskIds.push(t.id);
+      n++;
+    }
+    return n;
+  }
+
+  // runDebatePhase — one batched critique call; appends critique notes to the root
+  //   for the synthesizer to consider. cb() always called (creds-guarded skip).
+  function runDebatePhase(root, cb) {
+    var settings = (STATE() && STATE().settings) || {};
+    var model = bossModelFor();
+    var sys = CFG().DEBATE_SYSTEM;
+    if (!sys || !hasCredsFor(model)) { cb(); return; }
+
+    var boss = ensureBoss();
+    var content = "USER'S ORIGINAL GOAL:\n" + (root.desc || '') +
+      "\n\nPEER RESULTS TO CRITIQUE:\n" + gatherWorkerResults(root) +
+      "\n\nProvide concise, actionable improvement notes.";
+    var acc = '';
+    var done = false;
+    function finish() { if (done) return; done = true; cb(); }
+    try { log('Boss', 'all', 'system', '💬 team critique round…'); } catch (e) {}
+
+    var handle = App.API.stream({
+      apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
+      model: model,
+      system: sys,
+      messages: [{ role: 'user', content: content }],
+      onText: function (d) { acc += d; },
+      onDone: function (res) {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_debate'];
+        if (boss && res && res.usage) {
+          boss.stats.tokensIn += (res.usage.input_tokens || 0);
+          boss.stats.tokensOut += (res.usage.output_tokens || 0);
+        }
+        var notes = ((res && res.text) || acc || '').trim();
+        if (notes) {
+          root._debateNotes = notes;
+          try { log('QA', 'Boss', 'msg', '💬 critique: ' + truncate(notes, 80)); } catch (e) {}
+        }
+        finish();
+      },
+      onError: function () {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_debate'];
+        finish();
+      },
+    });
+    var s = STATE(); if (s && s._activeStreams) s._activeStreams['__boss_debate'] = handle;
+  }
+
+  // runApprovalPhase — ask the user to approve the about-to-be-delivered work.
+  //   cb(proceed:boolean). On 'revise:<text>' we re-queue a follow-up task with the
+  //   feedback and DON'T proceed (cb(false)); on 'reject' we mark the root error.
+  function runApprovalPhase(root, cb) {
+    var payload = {
+      title: root.title,
+      goal: root.desc,
+      results: gatherWorkerResults(root),
+    };
+    var p;
+    try { p = App.UI.openApproval(payload); } catch (e) { cb(true); return; }
+    if (!p || typeof p.then !== 'function') { cb(true); return; }
+    p.then(function (decision) {
+      decision = String(decision || 'approve');
+      if (decision === 'approve') { cb(true); return; }
+      if (decision.indexOf('revise') === 0) {
+        var fb = '';
+        var ci = decision.indexOf(':');
+        if (ci >= 0) fb = decision.slice(ci + 1).trim();
+        var n = addReplanSubtasks(root, [{
+          role: 'generalist',
+          title: 'Revise per feedback',
+          instruction: 'Revise the delivered work to address this user feedback:\n' + (fb || '(no specifics given — improve overall quality)') +
+            '\n\nPrior combined results:\n' + gatherWorkerResults(root),
+        }]);
+        // allow another approval round after the revision lands.
+        root._approved = false;
+        if (n > 0) { try { log('user', 'Boss', 'msg', '✏ revise: ' + truncate(fb, 60)); } catch (e) {} refreshBoard(); saveSoon(); }
+        cb(false);
+        return;
+      }
+      // reject
+      root.status = 'error';
+      root.error = 'rejected by user';
+      root._synthStarted = true;
+      try { log('user', 'Boss', 'error', 'delivery rejected.'); } catch (e) {}
+      refreshBoard();
+      try { if (App.UI && App.UI.showFinalResult) App.UI.showFinalResult(root); } catch (e) {}
+      cb(false);
+    }, function () { cb(true); });
   }
 
   // ===========================================================================
@@ -1427,6 +1940,8 @@ window.App = window.App || {};
         try {
           if (boss && ag.addMemory) ag.addMemory(boss, 'Delivered: ' + truncate(rootTask.title, 80), 6);
         } catch (e) {}
+        // RELATIONSHIPS/MOOD: a successful sync bonds the team + lifts spirits.
+        try { bondParticipants(participants, 0.06, 0.05); } catch (e) {}
         if (boss) {
           boss.busy = false;
           ag.setState(boss, 'idle');
@@ -1502,6 +2017,10 @@ window.App = window.App || {};
       var body = (k.status === 'done' && k.result) ? k.result
         : ('(this subtask did not complete: ' + (k.error || 'no result') + ')');
       parts.push('\n[' + roleLabel + ' — ' + k.title + ']\n' + body);
+    }
+    // GROUP DEBATE notes (if a critique round ran) — let synthesis act on them.
+    if (rootTask._debateNotes) {
+      parts.push('\nTEAM CRITIQUE NOTES (address these where valid):\n' + rootTask._debateNotes);
     }
     parts.push('\nProduce the final answer for the user now.');
     return parts.join('\n');
@@ -1603,7 +2122,7 @@ window.App = window.App || {};
       if (!allTerminal) continue;
 
       if (anyDone) {
-        Orchestrator.synthesize(root);
+        prepareSynthesis(root);
       } else if (allError) {
         // All children failed → root error, no synthesis. (§7.6)
         root.status = 'error';

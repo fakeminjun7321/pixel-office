@@ -201,8 +201,10 @@ window.App = window.App || {};
     // 4) agents (y-sorted; Agents.draw computes its own screen coords).
     try { if (App.Agents && App.Agents.draw) App.Agents.draw(ctx); } catch (e) {}
 
-    // 5) FX overlay LAST (scanlines + bloom + vignette).
-    try { if (art.drawFX) art.drawFX(ctx, cssW, cssH, s._time); } catch (e) {}
+    // 5) FX overlay LAST (scanlines + bloom + vignette + day/night ambiance tint).
+    //    drawFX reads the loop clock (s._time) for scanline drift and the real local
+    //    hour for the ambiance tint — passing _time keeps the FX pass in lockstep.
+    try { if (art.drawFX) art.drawFX(ctx, cssW, cssH, (typeof s._time === 'number') ? s._time : 0); } catch (e) {}
   };
 
   // ---------------------------------------------------------------------------

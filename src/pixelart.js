@@ -599,6 +599,18 @@ window.App = window.App || {};
       var hair = pal.hair[(hp >> 3) % pal.hair.length];
       var longHair = (hp & 4) !== 0;
 
+      // Wave B/C: sprite CUSTOMIZATION. agent.sprite may override hair/skin (by
+      // palette index or explicit hex) and accent (the neon color). Defaults above
+      // are kept when a field is absent. Indices wrap; bad values fall through.
+      var sp = agent.sprite;
+      if (sp && typeof sp === 'object') {
+        if (typeof sp.skin === 'string') skin = sp.skin;
+        else if (typeof sp.skin === 'number' && pal.skin.length) skin = pal.skin[((sp.skin % pal.skin.length) + pal.skin.length) % pal.skin.length];
+        if (typeof sp.hair === 'string') hair = sp.hair;
+        else if (typeof sp.hair === 'number' && pal.hair.length) hair = pal.hair[((sp.hair % pal.hair.length) + pal.hair.length) % pal.hair.length];
+        if (typeof sp.accent === 'string' && sp.accent) color = sp.accent;
+      }
+
       // Vertical bob offset (idle/thinking/meeting/coffee) and walk lift.
       var bobY = 0;
       if (state === 'idle' || state === 'thinking' || state === 'meeting' || state === 'coffee') {
@@ -634,6 +646,53 @@ window.App = window.App || {};
     var rc = cfg().roleColor || {};
     return rc[role];
   }
+
+  // ===========================================================================
+  // drawAgentGlow(ctx, agent, sx, sy, size, strength)   — Wave B/C
+  // A soft radial activity halo pooled at the agent's FEET (sx,sy), in the agent's
+  // accent color. `strength` is 0..1 (Agents.activityGlow). Pure draw; drawn UNDER
+  // the sprite by the caller. Uses additive 'lighter' blending for a neon bloom and
+  // restores all state. Never throws.
+  // ===========================================================================
+  PixelArt.drawAgentGlow = function (ctx, agent, sx, sy, size, strength) {
+    try {
+      if (!agent || !ctx) return;
+      var st = Number(strength);
+      if (!isFinite(st) || st <= 0) return;
+      if (st > 1) st = 1;
+      var pal = P();
+      var s = size / ART_TILE;
+
+      // Accent: prefer custom sprite accent, then agent color, then role/cyan.
+      var color = (agent.sprite && typeof agent.sprite.accent === 'string' && agent.sprite.accent) ||
+        agent.color || roleColorFor(agent.role) || pal.cyan;
+
+      // Pool centered on the feet, slightly up so it hugs the ground like the
+      // selection ring. Radius grows a touch with strength; gentle pulse.
+      var pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(timeSec() * 4));
+      var cx = sx, cy = sy - 1 * s;
+      var rad = (10 + 4 * st) * s * pulse;
+      if (rad < 1) return;
+
+      var rgb = hexToRgb(color);
+      var inner = 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + (0.30 * st).toFixed(3) + ')';
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      g.addColorStop(0, inner);
+      g.addColorStop(0.55, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + (0.10 * st).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0)');
+      ctx.fillStyle = g;
+      // Flatten vertically so it reads as a floor pool, not a sphere.
+      ctx.translate(cx, cy);
+      ctx.scale(1, 0.5);
+      ctx.beginPath();
+      ctx.arc(0, 0, rad, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } catch (e) { /* never throw from draw */ }
+  };
 
   // --- Shared body parts (standing). Authored facing DOWN (visual.md §3.2),
   // adapted for up/side. Draws an outline underlay first for a 1px silhouette. ---
@@ -1287,9 +1346,55 @@ window.App = window.App || {};
         ctx.fillRect(0, 0, w, h);
       }
 
+      // --- Ambiance: day/night tint by hour (Wave B/C). A full-canvas wash whose
+      //     hue + alpha shift with the real local hour (cool blue at night, warm
+      //     amber at dawn/dusk, neutral at midday). Gated by CFG().AMBIANCE_ENABLED
+      //     (default ON). Kept subtle so the neon still pops. ---
+      if (cfg().AMBIANCE_ENABLED !== false) {
+        var tint = ambianceTint();
+        if (tint && tint.a > 0.001) {
+          ctx.fillStyle = 'rgba(' + tint.r + ',' + tint.g + ',' + tint.b + ',' + tint.a.toFixed(3) + ')';
+          ctx.fillRect(0, 0, w, h);
+        }
+      }
+
       ctx.restore();
     } catch (e) { /* never throw */ }
   };
+
+  // Ambiance tint for the current local hour. Returns {r,g,b,a}. Three anchor
+  // colors blended by hour: deep night (cool indigo), midday (no tint), and the
+  // dawn/dusk warm band (amber). Pure; deterministic per minute; never throws.
+  function ambianceTint() {
+    var hour = 12;
+    try { hour = new Date().getHours() + new Date().getMinutes() / 60; } catch (e) { hour = 12; }
+    if (!isFinite(hour)) hour = 12;
+
+    // "Daylight" factor 0..1: ~1 around noon, ~0 deep night (centered on 13:00).
+    var day = 0.5 + 0.5 * Math.cos(((hour - 13) / 24) * Math.PI * 2);
+    // "Golden" factor: peaks near 6:30 (dawn) and 18:30 (dusk).
+    function bump(center, width) {
+      var d = (hour - center) / width;
+      return Math.exp(-d * d);
+    }
+    var golden = Math.max(bump(6.5, 2.2), bump(18.5, 2.4));
+
+    // Night = cool indigo wash; alpha strongest when day≈0.
+    var nightA = (1 - day) * 0.22;
+    // Golden = warm amber wash, capped so it never overwhelms.
+    var goldA = golden * 0.12;
+
+    // Blend night (indigo) and golden (amber) additively over a neutral base.
+    var nr = 30, ng = 40, nb = 90;     // indigo
+    var gr = 255, gg = 150, gb = 60;   // amber
+    var totA = nightA + goldA;
+    if (totA <= 0.001) return { r: 0, g: 0, b: 0, a: 0 };
+    var r = (nr * nightA + gr * goldA) / totA;
+    var g = (ng * nightA + gg * goldA) / totA;
+    var b = (nb * nightA + gb * goldA) / totA;
+    if (totA > 0.30) totA = 0.30; // hard cap on overall tint strength
+    return { r: Math.round(r), g: Math.round(g), b: Math.round(b), a: totA };
+  }
 
   // ===========================================================================
   // glowText(ctx, text, sx, sy [, opts])   — SPEC §7.1

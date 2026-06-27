@@ -263,7 +263,9 @@ window.App = window.App || {};
 '      "instruction": "<the full, self-contained instruction for that worker>",\n' +
 '      "needsWeb": <true|false>,\n' +
 '      "deps": [<0-based indices of EARLIER plan items whose results this needs; [] if independent/parallel>],\n' +
-'      "verify": <optional true|false: true to have QA review this deliverable before it is accepted>\n' +
+'      "verify": <optional true|false: true to have QA review this deliverable before it is accepted>,\n' +
+'      "requiresApproval": <optional true|false: true to pause for a human approval gate before this\n' +
+'                           deliverable is accepted (only when the company has approval gating enabled)>\n' +
 '    }\n' +
 '  ],\n' +
 '  "final": "<one sentence telling yourself how to combine the workers\' results into the user\'s answer>"\n' +
@@ -280,6 +282,61 @@ window.App = window.App || {};
 '- "verify" is OPTIONAL (default false). Set it true for high-stakes deliverables (code, key analysis)\n' +
 '  that should pass a QA review pass before being accepted.\n' +
 '- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // ---------------------------------------------------------------------------
+  // Wave B/C §ADAPTIVE REPLAN — system prompt for the Boss's mid-run replan turn.
+  // After workers report back (but BEFORE final synthesis) the Boss may decide the
+  // plan needs adjusting. It is given the user goal + the workers' results and MUST
+  // reply with strict JSON {action,newSubtasks,reason}. 'finish' => proceed to
+  // synthesis as-is; 'replan' => spawn newSubtasks (same schema as decompose items)
+  // under the root before synthesizing. Parsed by Orchestrator (reuse parsePlan).
+  // ---------------------------------------------------------------------------
+  var BOSS_REPLAN_SYSTEM =
+'You are the BOSS / orchestrator of an autonomous AI company. Your workers have finished their subtasks\n' +
+'and you are about to synthesize the final answer. FIRST decide whether the current results are enough to\n' +
+'fully satisfy the user\'s original goal, or whether one short round of EXTRA subtasks would materially\n' +
+'improve the outcome (e.g. a gap surfaced, a result needs verification, a missing piece is now obvious).\n' +
+'\n' +
+'Be conservative: prefer to FINISH. Only ask for more work when there is a concrete, important gap that a\n' +
+'small number of focused subtasks would close. Do NOT replan for cosmetic or marginal improvements.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "action": "finish" | "replan",\n' +
+'  "newSubtasks": [\n' +
+'    { "role": "<one of: engineer|designer|researcher|writer|qa>",\n' +
+'      "title": "<=6 word label",\n' +
+'      "instruction": "<full self-contained instruction; the worker cannot see anything but this>",\n' +
+'      "needsWeb": <true|false>,\n' +
+'      "deps": [<0-based indices among THESE newSubtasks only; [] if independent>],\n' +
+'      "verify": <optional true|false>\n' +
+'    }\n' +
+'  ],\n' +
+'  "reason": "<one short sentence explaining the decision>"\n' +
+'}\n' +
+'\n' +
+'Rules:\n' +
+'- If action is "finish", "newSubtasks" MUST be an empty array [].\n' +
+'- If action is "replan", include 1-3 newSubtasks, each complete on its own. "deps" indices refer ONLY to\n' +
+'  other items in this newSubtasks array (0-based), never to the earlier plan; never create cycles.\n' +
+'- Use only the listed role keys. No comments, no trailing commas. Output valid JSON for JSON.parse.';
+
+  // ---------------------------------------------------------------------------
+  // Wave B/C §GROUP DEBATE — critique prompt. One bounded round: an agent reviews
+  // the COMBINED peer results and returns concise, actionable improvement notes
+  // that the Boss folds into the synthesis content. Not a rewrite, not a verdict —
+  // just the few highest-leverage notes. Kept short so it stays cheap + bounded.
+  // ---------------------------------------------------------------------------
+  var DEBATE_SYSTEM =
+'You are a sharp peer reviewer inside an autonomous AI company. You are shown the COMBINED results your\n' +
+'colleagues produced for the user\'s goal. Critique them as a group: find gaps, contradictions, weak spots,\n' +
+'and missed opportunities that would make the final synthesized answer stronger.\n' +
+'\n' +
+'Output ONLY a short list of concrete, actionable improvement notes (no preamble, no praise, no rewrite of\n' +
+'the work). Each note: one line, specific, and phrased so the Boss can act on it during synthesis. If the\n' +
+'results are already solid, say so in one line and list at most the single most useful refinement.\n' +
+'Keep it to at most 5 notes. Do not add headings or markdown beyond simple "- " bullets.';
 
   // §6.3 BOSS_SYNTH_SYSTEM (Boss turn B).
   var BOSS_SYNTH_SYSTEM =
@@ -409,6 +466,90 @@ window.App = window.App || {};
     // is the canonical ROLES.boss.system; exposed here too for symmetry.
     BOSS_DECOMPOSE_SYSTEM: BOSS_DECOMPOSE_SYSTEM,
     BOSS_SYNTH_SYSTEM: BOSS_SYNTH_SYSTEM,
+
+    // ---------------------------------------------------------------------------
+    // Wave B/C orchestration toggles + prompts.
+    //   ENABLE_REPLAN     : Boss may run ONE adaptive replan round before synthesis.
+    //   MAX_REPLAN_ROUNDS : hard cap on replan rounds per root (root._replanned gate).
+    //   ENABLE_DEBATE     : run ONE bounded peer-critique round before synthesis.
+    //   ENABLE_APPROVAL   : human-approval gate (default OFF so normal runs are
+    //                       unaffected; Orchestrator only gates when this is true).
+    // All are creds-guarded + defensive in the Orchestrator; absent creds => skip.
+    // ---------------------------------------------------------------------------
+    ENABLE_REPLAN: true,
+    MAX_REPLAN_ROUNDS: 1,
+    BOSS_REPLAN_SYSTEM: BOSS_REPLAN_SYSTEM,
+    ENABLE_DEBATE: true,
+    DEBATE_SYSTEM: DEBATE_SYSTEM,
+    ENABLE_APPROVAL: false,
+
+    // ---------------------------------------------------------------------------
+    // Wave B/C §BROWSER TOOLS — master toggle read by App.Tools.enabled(). When
+    // true (and settings allow + provider supports it), the Orchestrator exposes
+    // App.Tools.specs() to tool-capable workers. Tool implementations live in
+    // tools.js; this is only the on/off switch.
+    // ---------------------------------------------------------------------------
+    TOOLS_ENABLED: false,   // browser tools (calc/run_js/analyze_data) are built & sandboxed but
+                            // gated OFF by default: the Anthropic tool_use round-trip isn't fully
+                            // wired in api.js yet, so exposing them by default just burns a round-trip.
+    DEFAULT_LANG: 'en',
+
+    // ---------------------------------------------------------------------------
+    // Wave B/C §MOOD & RELATIONSHIPS — defaults for agent.mood (0..1) and the
+    // affinity model (agent.relationships[otherId] in roughly -1..1, 0 = neutral).
+    //   MOOD_DEFAULT      : starting/neutral mood for a new agent.
+    //   MOOD_MIN/MAX      : clamp range for mood.
+    //   AFFINITY_DEFAULT  : starting affinity toward an unknown colleague.
+    //   AFFINITY_MIN/MAX  : clamp range for affinity.
+    //   AFFINITY_NUDGE    : per-collaboration affinity increment (kept subtle).
+    //   MOOD_COLLAB_GAIN  : mood lift from a successful collaboration/synthesis.
+    //   MOOD_FAIL_DROP    : mood dip on an error/failed verify (subtle).
+    //   MOOD_DECAY        : per-? drift back toward MOOD_DEFAULT (callers apply).
+    // ---------------------------------------------------------------------------
+    MOOD_DEFAULT: 0.7,
+    MOOD_MIN: 0.0,
+    MOOD_MAX: 1.0,
+    AFFINITY_DEFAULT: 0.0,
+    AFFINITY_MIN: -1.0,
+    AFFINITY_MAX: 1.0,
+    AFFINITY_NUDGE: 0.08,
+    MOOD_COLLAB_GAIN: 0.06,
+    MOOD_FAIL_DROP: 0.10,
+    MOOD_DECAY: 0.01,
+
+    // ---------------------------------------------------------------------------
+    // Wave B/C §AMBIANCE — day/night tint overlay drawn in PixelArt.drawFX, keyed
+    // by the hour of day. AMBIANCE_ENABLED gates it. AMBIANCE_TINTS maps a coarse
+    // phase -> {color, alpha} (alpha is the overlay opacity, kept low). Phase is
+    // chosen from the hour: night/dawn/day/dusk. Pure rendering; no state writes.
+    // ---------------------------------------------------------------------------
+    AMBIANCE_ENABLED: true,
+    AMBIANCE_TINTS: {
+      night: { color: '#0a1440', alpha: 0.30 },   // 21:00–05:00 deep blue
+      dawn:  { color: '#ff8a5c', alpha: 0.14 },   // 05:00–08:00 warm sunrise
+      day:   { color: '#ffffff', alpha: 0.00 },   // 08:00–17:00 neutral (no tint)
+      dusk:  { color: '#9b5cff', alpha: 0.16 }    // 17:00–21:00 violet sunset
+    },
+    // phaseForHour(h) -> ambiance phase key. Pure helper for renderers.
+    phaseForHour: function (h) {
+      h = ((Number(h) % 24) + 24) % 24;
+      if (h >= 5 && h < 8) return 'dawn';
+      if (h >= 8 && h < 17) return 'day';
+      if (h >= 17 && h < 21) return 'dusk';
+      return 'night';
+    },
+
+    // ---------------------------------------------------------------------------
+    // Wave B/C §ACTIVITY GLOW — a soft halo PixelArt draws around an agent that
+    // produced output recently (agent._lastActivityTs). GLOW_ACTIVE_MS: how long
+    // after the last activity the glow stays at full strength before fading out
+    // over GLOW_FADE_MS. GLOW_RADIUS: halo radius in world px; GLOW_MAX_ALPHA: peak
+    // opacity. Color falls back to the agent's role color. Pure rendering.
+    // ---------------------------------------------------------------------------
+    GLOW_ACTIVE_MS: 2500,
+    GLOW_FADE_MS: 2500,
+    GLOW_RADIUS: 14,
+    GLOW_MAX_ALPHA: 0.45,
 
     // v3: worker artifact-emission hint (Orchestrator appends to worker instructions)
     // and the QA reviewer system prompt (Orchestrator QA loop).

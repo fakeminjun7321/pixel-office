@@ -895,6 +895,164 @@ select option{ background:var(--panel); color:var(--text); }
 .cost-empty{ color:var(--text-faint); font-size:11px; text-align:center; padding:18px 8px; }
 .cost-note{ font-size:9.5px; color:var(--text-faint); margin-top:10px; line-height:1.45; }
 
+/* =========================================================================
+   WAVE B/C — agent panel extras: mood, relationships, customize, terminal
+   ========================================================================= */
+.panel-extras{ flex:0 0 auto; }
+.panel-extras .persona-box{ margin-top:8px; }
+
+/* mood bar */
+.mood-bar{
+  height:8px; border-radius:5px; overflow:hidden; margin:2px 0 5px;
+  background:var(--void); border:1px solid var(--divider);
+}
+.mood-fill{ height:100%; border-radius:5px 0 0 5px; transition:width .25s ease; }
+.mood-label{ font-size:11px; font-weight:700; letter-spacing:.3px; }
+
+/* relationships list */
+.rel-line{ display:flex; align-items:center; gap:8px; padding:2px 0; font-size:11px; }
+.rel-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+.rel-name{ flex:1 1 auto; min-width:0; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rel-aff{ flex:0 0 auto; font-size:10px; font-weight:700; color:var(--cyan); font-variant-numeric:tabular-nums; }
+
+/* small swatches (customize editor) */
+.swatch.swatch-sm{ width:22px; height:22px; }
+.swatch.swatch-sm.active::after{ font-size:10px; }
+
+/* terminal / log section */
+.pe-terminal{ max-height:200px; }
+.term-line{
+  font-family:var(--mono); font-size:10.5px; line-height:1.5;
+  padding:2px 0; word-break:break-word; white-space:pre-wrap;
+  border-bottom:1px solid rgba(26,38,71,.4);
+}
+.term-line:last-child{ border-bottom:none; }
+.term-tag{ color:var(--text-faint); font-weight:700; margin-right:6px; }
+.term-line.term-in{ color:var(--blue); }
+.term-line.term-in .term-tag{ color:var(--blue); }
+.term-line.term-out{ color:var(--text); }
+.term-line.term-out .term-tag{ color:var(--cyan); }
+.term-line.term-tool{ color:var(--magenta); }
+.term-line.term-tool .term-tag{ color:var(--magenta); }
+.term-line.term-err{ color:var(--red); }
+.term-line.term-sys{ color:var(--text-dim); }
+
+/* =========================================================================
+   WAVE B/C — tool-call chip in transcript
+   ========================================================================= */
+.tx-tool{
+  display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+  margin:6px 0 6px 9px; padding:4px 9px;
+  background:rgba(255,61,240,.07); border:1px solid rgba(255,61,240,.35);
+  border-radius:6px; font-size:11px;
+}
+.tx-tool-ico{ color:var(--magenta); font-size:12px; }
+.tx-tool-name{ font-weight:800; letter-spacing:.5px; color:var(--magenta); text-transform:uppercase; font-size:10px; }
+.tx-tool-brief{ color:var(--text-dim); min-width:0; overflow:hidden; text-overflow:ellipsis; }
+
+/* =========================================================================
+   WAVE B/C — approval modal
+   ========================================================================= */
+.approval-goal{ margin-bottom:12px; }
+.approval-goal .pe-val{
+  font-size:12px; color:var(--text);
+  padding:8px 10px; background:var(--field);
+  border:1px solid var(--divider); border-left:3px solid var(--cyan); border-radius:5px;
+}
+.approval-meta{ font-size:10.5px; color:var(--text-faint); letter-spacing:.5px; margin-bottom:10px; }
+.approval-content{
+  max-height:38vh; overflow:auto; margin-bottom:14px;
+  padding:12px 14px; background:var(--floor);
+  border:1px solid var(--panel-edge); border-radius:6px;
+  box-shadow:inset 0 0 24px rgba(0,0,0,.45);
+  font-size:12px; line-height:1.55; color:var(--text);
+  white-space:pre-wrap; word-break:break-word;
+}
+.approval-content.md-body{ white-space:normal; }
+#approval-revise{
+  width:100%; resize:vertical; min-height:42px; max-height:120px;
+  background:var(--field); color:var(--text);
+  border:1px solid var(--panel-edge); border-radius:5px;
+  padding:8px 10px; font-family:var(--mono); font-size:12px; line-height:1.4;
+}
+#approval-revise:focus{ outline:none; border-color:var(--blue); box-shadow:0 0 0 2px rgba(77,124,255,.35); }
+
+/* =========================================================================
+   WAVE B/C — mobile drawer toggles + shared rail scrim
+   ========================================================================= */
+.btn-mobile{ display:none; }       /* shown only on narrow screens (see media query) */
+.rail-scrim{
+  position:absolute; inset:0; z-index:29;
+  background:var(--scrim); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);
+  opacity:0; pointer-events:none; transition:opacity .18s ease;
+}
+.rail-scrim.rail-scrim-on{ opacity:1; pointer-events:auto; }
+
+/* =========================================================================
+   WAVE B/C — MOBILE / RESPONSIVE (<=820px)
+   Collapse the CREW + ACTIVITY rails into slide-in drawers, let the HUD wrap,
+   keep canvas + modals usable, and grow touch targets.
+   ========================================================================= */
+@media (max-width:820px){
+  /* show drawer toggles, hide a couple of secondary HUD buttons to save room */
+  .btn-mobile{ display:inline-flex; }
+  #btn-presets, #btn-sessions{ display:none; }
+
+  /* let the HUD wrap so all controls remain reachable */
+  #hud{
+    height:auto; min-height:var(--hud-h);
+    flex-wrap:wrap; row-gap:6px; padding:6px 8px;
+    align-items:center;
+  }
+  /* take the full row (below the brand) so buttons actually WRAP instead of
+     sizing to content width and overflowing off-screen */
+  #hud-controls{ flex:1 1 100%; flex-wrap:wrap; justify-content:flex-start; }
+
+  /* rails become off-canvas drawers; slide in with .rail-open */
+  #agent-list, #log{
+    top:0; bottom:0;
+    width:min(80vw, 280px);
+    border-radius:0;
+    transition:transform .22s ease;
+    z-index:60;
+  }
+  #agent-list{ left:0; transform:translateX(-105%); }
+  #log{ right:0; transform:translateX(105%); }
+  #agent-list.rail-open, #log.rail-open{ transform:translateX(0); box-shadow:0 0 40px rgba(0,0,0,.7); }
+
+  /* the agent panel + board span the viewport on mobile */
+  #panel-agent{
+    top:auto; bottom:0; left:0; right:0;
+    width:100%; max-height:78vh; height:auto;
+    border-radius:var(--radius) var(--radius) 0 0;
+    z-index:70;
+  }
+  #board{
+    top:calc(var(--hud-h) + 6px); left:8px; right:8px;
+    width:auto; transform:none;
+    max-height:calc(100vh - var(--hud-h) - 16px);
+  }
+  .board-cols{ grid-template-columns:1fr; gap:8px; overflow-y:auto; }
+
+  /* keep the minimap out of the way on small screens */
+  #minimap-wrap{ right:8px; bottom:8px; }
+  #minimap{ width:120px; height:80px; }
+
+  /* modals: full-bleed cards, scrollable bodies */
+  .modal{ padding:10px; }
+  .modal-card{ width:100%; max-width:100%; max-height:92vh; }
+  .aa-grid{ display:block; }
+  .aa-preview{ margin-top:12px; }
+  .field-2col{ grid-template-columns:1fr; }
+
+  /* touch-friendly hit targets */
+  .btn{ min-height:34px; }
+  .btn-sq{ width:34px; height:34px; }
+  .swatch{ width:30px; height:30px; }
+  .panel-x{ width:32px; height:32px; }
+  .agent-row{ padding:11px 10px; }
+}
+
 /* reduced motion: calm all the loops */
 @media (prefers-reduced-motion:reduce){
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,
@@ -947,32 +1105,36 @@ select option{ background:var(--panel); color:var(--text); }
          App.UI relays it to Orchestrator.runBossTask. -->
     <div id="hud-center">
       <input id="hud-task-input" type="text" autocomplete="off" spellcheck="false"
+             data-i18n-ph="hud.task.ph"
              placeholder="Give the Boss a goal…  (Enter to dispatch)" />
-      <button id="hud-task-dispatch" class="btn btn-primary" type="button" title="Dispatch to Boss">DISPATCH</button>
+      <button id="hud-task-dispatch" class="btn btn-primary" type="button" data-i18n="hud.dispatch" data-i18n-title="hud.dispatch.title" title="Dispatch to Boss">DISPATCH</button>
     </div>
 
     <!-- Right: icon/text control buttons. ids are PINNED by SPEC §8. -->
     <nav id="hud-controls" aria-label="Controls">
+      <!-- Mobile drawer toggles (shown <=820px via styles.css; wired by App.UI). -->
+      <button id="btn-rail-crew" class="btn btn-sq btn-mobile" type="button" title="Toggle crew" aria-pressed="false" aria-label="Toggle crew rail">☰</button>
+      <button id="btn-rail-log"  class="btn btn-sq btn-mobile" type="button" title="Toggle activity" aria-pressed="false" aria-label="Toggle activity rail">▤</button>
       <button id="btn-task"        class="btn"        type="button" title="Task board / New Boss task">
-        <span class="btn-ico">▤</span><span class="btn-lbl">Tasks</span>
+        <span class="btn-ico">▤</span><span class="btn-lbl" data-i18n="hud.tasks">Tasks</span>
       </button>
       <button id="btn-add-agent"   class="btn"        type="button" title="Add a new agent">
-        <span class="btn-ico">＋</span><span class="btn-lbl">Agent</span>
+        <span class="btn-ico">＋</span><span class="btn-lbl" data-i18n="hud.agent">Agent</span>
       </button>
       <button id="btn-layout"      class="btn btn-toggle" type="button" title="Toggle layout edit" aria-pressed="false">
-        <span class="btn-ico">▦</span><span class="btn-lbl">Layout</span>
+        <span class="btn-ico">▦</span><span class="btn-lbl" data-i18n="hud.layout">Layout</span>
       </button>
       <button id="btn-settings"    class="btn"        type="button" title="Settings">
-        <span class="btn-ico">⚙</span><span class="btn-lbl">Settings</span>
+        <span class="btn-ico">⚙</span><span class="btn-lbl" data-i18n="hud.settings">Settings</span>
       </button>
       <button id="btn-artifacts"   class="btn"        type="button" title="Artifacts produced by agents">
-        <span class="btn-ico">📦</span><span class="btn-lbl">Artifacts</span><span id="artifacts-badge" class="hud-badge hidden">0</span>
+        <span class="btn-ico">📦</span><span class="btn-lbl" data-i18n="hud.artifacts">Artifacts</span><span id="artifacts-badge" class="hud-badge hidden">0</span>
       </button>
       <button id="btn-presets"     class="btn"        type="button" title="Start a preset company">
-        <span class="btn-ico">🏢</span><span class="btn-lbl">New Co.</span>
+        <span class="btn-ico">🏢</span><span class="btn-lbl" data-i18n="hud.newco">New Co.</span>
       </button>
       <button id="btn-sessions"    class="btn"        type="button" title="Save / load company sessions">
-        <span class="btn-ico">🗂</span><span class="btn-lbl">Sessions</span>
+        <span class="btn-ico">🗂</span><span class="btn-lbl" data-i18n="hud.sessions">Sessions</span>
       </button>
       <button id="btn-cost-meter"  class="btn cost-meter" type="button" title="Running session cost — click for breakdown">
         <span class="btn-ico">$</span><span id="cost-meter-amount" class="cost-amount">0.0000</span>
@@ -993,7 +1155,7 @@ select option{ background:var(--panel); color:var(--text); }
        ================================================================== -->
   <aside id="agent-list" aria-label="Agent roster">
     <div class="rail-head">
-      <span class="rail-title">CREW</span>
+      <span class="rail-title" data-i18n="rail.crew">CREW</span>
       <span id="agent-count" class="rail-count">0</span>
     </div>
     <div id="agent-list-body" class="rail-body">
@@ -1006,7 +1168,7 @@ select option{ background:var(--panel); color:var(--text); }
        ================================================================== -->
   <section id="log" aria-label="Activity log">
     <div class="rail-head">
-      <span class="rail-title">ACTIVITY</span>
+      <span class="rail-title" data-i18n="rail.activity">ACTIVITY</span>
       <span class="log-pulse" aria-hidden="true"></span>
     </div>
     <div id="log-body" class="rail-body">
@@ -1032,7 +1194,7 @@ select option{ background:var(--panel); color:var(--text); }
 
     <!-- Persona / memory (read-only) — filled by App.UI.refreshPersonaPanel() -->
     <details id="panel-agent-persona" class="persona-box">
-      <summary class="persona-summary">PERSONA &amp; MEMORY</summary>
+      <summary class="persona-summary" data-i18n="agent.persona">PERSONA &amp; MEMORY</summary>
       <div id="panel-agent-persona-body" class="persona-body">
         <!-- identity / plan / relationships + recent memories injected here -->
       </div>
@@ -1044,8 +1206,9 @@ select option{ background:var(--panel); color:var(--text); }
 
     <div class="panel-compose">
       <textarea id="panel-agent-input" rows="2" spellcheck="false"
+                data-i18n-ph="agent.chat.ph"
                 placeholder="Message this agent directly…  (Enter to send)"></textarea>
-      <button id="panel-agent-send" class="btn btn-primary" type="button">SEND</button>
+      <button id="panel-agent-send" class="btn btn-primary" type="button" data-i18n="agent.send">SEND</button>
     </div>
   </aside>
 
@@ -1057,27 +1220,28 @@ select option{ background:var(--panel); color:var(--text); }
     <div class="panel-accent" aria-hidden="true"></div>
 
     <header class="panel-head board-head">
-      <h2 class="board-title">TASK BOARD</h2>
+      <h2 class="board-title" data-i18n="board.title">TASK BOARD</h2>
       <button id="board-close" class="panel-x" type="button" title="Close" aria-label="Close board">✕</button>
     </header>
 
     <div class="board-dispatch">
       <textarea id="board-input" rows="2" spellcheck="false"
+                data-i18n-ph="board.task.ph"
                 placeholder="Give a big goal to the Boss — it will decompose &amp; delegate…"></textarea>
-      <button id="board-send" class="btn btn-primary btn-dispatch" type="button">DISPATCH</button>
+      <button id="board-send" class="btn btn-primary btn-dispatch" type="button" data-i18n="hud.dispatch">DISPATCH</button>
     </div>
 
     <div class="board-cols">
       <div class="board-col">
-        <div class="board-col-head col-queued">QUEUED <span class="col-count" data-col="queued">0</span></div>
+        <div class="board-col-head col-queued"><span data-i18n="board.queued">QUEUED</span> <span class="col-count" data-col="queued">0</span></div>
         <div id="board-col-queued" class="board-col-body"><!-- queued + blocked cards --></div>
       </div>
       <div class="board-col">
-        <div class="board-col-head col-running">RUNNING <span class="col-count" data-col="running">0</span></div>
+        <div class="board-col-head col-running"><span data-i18n="board.running">RUNNING</span> <span class="col-count" data-col="running">0</span></div>
         <div id="board-col-running" class="board-col-body"><!-- running cards --></div>
       </div>
       <div class="board-col">
-        <div class="board-col-head col-done">DONE <span class="col-count" data-col="done">0</span></div>
+        <div class="board-col-head col-done"><span data-i18n="board.done">DONE</span> <span class="col-count" data-col="done">0</span></div>
         <div id="board-col-done" class="board-col-body"><!-- done + error cards --></div>
       </div>
     </div>
@@ -1089,7 +1253,7 @@ select option{ background:var(--panel); color:var(--text); }
        Keys: §4.3 FURNITURE. App.UI may re-render/enhance, but ships ready.
        ================================================================== -->
   <div id="layout-palette" class="hidden" aria-label="Furniture palette">
-    <div class="palette-head">PLACE FURNITURE</div>
+    <div class="palette-head" data-i18n="layout.place">PLACE FURNITURE</div>
     <div class="palette-grid">
       <button class="palette-item" type="button" data-furniture="desk">         <span class="pi-ico">🖥</span><span class="pi-lbl">Desk</span></button>
       <button class="palette-item" type="button" data-furniture="chair">        <span class="pi-ico">🪑</span><span class="pi-lbl">Chair</span></button>
@@ -1101,8 +1265,8 @@ select option{ background:var(--panel); color:var(--text); }
       <button class="palette-item" type="button" data-furniture="whiteboard">   <span class="pi-ico">▥</span><span class="pi-lbl">Board</span></button>
     </div>
     <div class="palette-foot">
-      <span class="palette-hint">Click floor to place · click prop to remove · drag to move</span>
-      <button id="layout-done" class="btn btn-primary" type="button">DONE</button>
+      <span class="palette-hint" >Click floor to place · click prop to remove · drag to move</span>
+      <button id="layout-done" class="btn btn-primary" type="button" data-i18n="layout.done">DONE</button>
     </div>
   </div>
 
@@ -1118,7 +1282,7 @@ select option{ background:var(--panel); color:var(--text); }
       <div class="modal-card">
         <div class="panel-accent" aria-hidden="true"></div>
         <header class="modal-head">
-          <h2 class="modal-title">+ NEW AGENT</h2>
+          <h2 class="modal-title" data-i18n="add.title">+ NEW AGENT</h2>
           <button id="aa-cancel" class="panel-x" type="button" aria-label="Cancel">✕</button>
         </header>
 
@@ -1126,30 +1290,30 @@ select option{ background:var(--panel); color:var(--text); }
           <!-- left column: form fields -->
           <div class="aa-fields">
             <label class="field">
-              <span class="field-label">NAME</span>
+              <span class="field-label" data-i18n="add.name">NAME</span>
               <input id="aa-name" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Nova" />
             </label>
 
             <label class="field">
-              <span class="field-label">ROLE</span>
+              <span class="field-label" data-i18n="add.role">ROLE</span>
               <!-- populated from config.ROLES by App.UI -->
               <select id="aa-role"></select>
             </label>
 
             <div class="field">
-              <span class="field-label">MODEL</span>
+              <span class="field-label" data-i18n="add.model">MODEL</span>
               <!-- segmented neon tabs; filled from config.MODELS by App.UI -->
               <div id="aa-model" class="segmented" role="radiogroup" aria-label="Model"></div>
             </div>
 
             <div class="field">
-              <span class="field-label">NEON COLOR</span>
+              <span class="field-label" data-i18n="add.color">NEON COLOR</span>
               <!-- swatch row of signature neons + custom; filled by App.UI -->
               <div id="aa-color" class="swatch-row" role="radiogroup" aria-label="Accent color"></div>
             </div>
 
             <label class="field">
-              <span class="field-label">SYSTEM PROMPT <span class="field-opt">(optional override)</span></span>
+              <span class="field-label" data-i18n="add.system">SYSTEM PROMPT <span class="field-opt">(optional override)</span></span>
               <textarea id="aa-system" rows="4" spellcheck="false"
                         placeholder="Leave blank to use the role's default prompt…"></textarea>
             </label>
@@ -1157,7 +1321,7 @@ select option{ background:var(--panel); color:var(--text); }
 
           <!-- right column: live sprite preview -->
           <div class="aa-preview">
-            <span class="preview-label">PREVIEW</span>
+            <span class="preview-label" data-i18n="add.preview">PREVIEW</span>
             <div class="preview-stage">
               <canvas id="aa-preview-canvas" width="120" height="160" aria-hidden="true"></canvas>
             </div>
@@ -1165,7 +1329,7 @@ select option{ background:var(--panel); color:var(--text); }
         </div>
 
         <footer class="modal-foot">
-          <button id="aa-submit" class="btn btn-primary" type="button">CREATE AGENT</button>
+          <button id="aa-submit" class="btn btn-primary" type="button" data-i18n="add.create">CREATE AGENT</button>
         </footer>
       </div>
     </div>
@@ -1176,13 +1340,13 @@ select option{ background:var(--panel); color:var(--text); }
       <div class="modal-card">
         <div class="panel-accent" aria-hidden="true"></div>
         <header class="modal-head">
-          <h2 class="modal-title">⚙ SETTINGS</h2>
+          <h2 class="modal-title" data-i18n="set.title">⚙ SETTINGS</h2>
           <button id="set-close" class="panel-x" type="button" aria-label="Close">✕</button>
         </header>
 
         <div class="modal-body">
           <label class="field">
-            <span class="field-label">ANTHROPIC API KEY</span>
+            <span class="field-label" data-i18n="set.apikey">ANTHROPIC API KEY</span>
             <span class="field-row">
               <input id="set-apikey" type="password" autocomplete="off" spellcheck="false"
                      placeholder="sk-ant-…  (stored locally only)" />
@@ -1193,17 +1357,17 @@ select option{ background:var(--panel); color:var(--text); }
 
           <div class="field-2col">
             <label class="field">
-              <span class="field-label">WORKER MODEL</span>
+              <span class="field-label" data-i18n="set.worker">WORKER MODEL</span>
               <select id="set-default-model"></select>
             </label>
             <label class="field">
-              <span class="field-label">BOSS MODEL</span>
+              <span class="field-label" data-i18n="set.boss">BOSS MODEL</span>
               <select id="set-boss-model"></select>
             </label>
           </div>
 
           <div class="field field-inline">
-            <span class="field-label">WEB SEARCH</span>
+            <span class="field-label" data-i18n="set.websearch">WEB SEARCH</span>
             <!-- neon switch; App.UI toggles aria-checked + .on -->
             <button id="set-websearch" class="switch" type="button" role="switch" aria-checked="true" title="Toggle web search">
               <span class="switch-knob" aria-hidden="true"></span>
@@ -1212,7 +1376,7 @@ select option{ background:var(--panel); color:var(--text); }
           </div>
 
           <div class="field">
-            <span class="field-label">DATA</span>
+            <span class="field-label" data-i18n="set.data">DATA</span>
             <div class="btn-row">
               <button id="set-export" class="btn" type="button">⤓ Export JSON</button>
               <button id="set-import" class="btn" type="button">⤒ Import JSON</button>
@@ -1223,7 +1387,7 @@ select option{ background:var(--panel); color:var(--text); }
         </div>
 
         <footer class="modal-foot">
-          <button id="set-save" class="btn btn-primary" type="button">SAVE</button>
+          <button id="set-save" class="btn btn-primary" type="button" data-i18n="set.save">SAVE</button>
         </footer>
       </div>
     </div>
@@ -1511,7 +1675,9 @@ window.App = window.App || {};
 '      "instruction": "<the full, self-contained instruction for that worker>",\n' +
 '      "needsWeb": <true|false>,\n' +
 '      "deps": [<0-based indices of EARLIER plan items whose results this needs; [] if independent/parallel>],\n' +
-'      "verify": <optional true|false: true to have QA review this deliverable before it is accepted>\n' +
+'      "verify": <optional true|false: true to have QA review this deliverable before it is accepted>,\n' +
+'      "requiresApproval": <optional true|false: true to pause for a human approval gate before this\n' +
+'                           deliverable is accepted (only when the company has approval gating enabled)>\n' +
 '    }\n' +
 '  ],\n' +
 '  "final": "<one sentence telling yourself how to combine the workers\' results into the user\'s answer>"\n' +
@@ -1528,6 +1694,61 @@ window.App = window.App || {};
 '- "verify" is OPTIONAL (default false). Set it true for high-stakes deliverables (code, key analysis)\n' +
 '  that should pass a QA review pass before being accepted.\n' +
 '- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // ---------------------------------------------------------------------------
+  // Wave B/C §ADAPTIVE REPLAN — system prompt for the Boss's mid-run replan turn.
+  // After workers report back (but BEFORE final synthesis) the Boss may decide the
+  // plan needs adjusting. It is given the user goal + the workers' results and MUST
+  // reply with strict JSON {action,newSubtasks,reason}. 'finish' => proceed to
+  // synthesis as-is; 'replan' => spawn newSubtasks (same schema as decompose items)
+  // under the root before synthesizing. Parsed by Orchestrator (reuse parsePlan).
+  // ---------------------------------------------------------------------------
+  var BOSS_REPLAN_SYSTEM =
+'You are the BOSS / orchestrator of an autonomous AI company. Your workers have finished their subtasks\n' +
+'and you are about to synthesize the final answer. FIRST decide whether the current results are enough to\n' +
+'fully satisfy the user\'s original goal, or whether one short round of EXTRA subtasks would materially\n' +
+'improve the outcome (e.g. a gap surfaced, a result needs verification, a missing piece is now obvious).\n' +
+'\n' +
+'Be conservative: prefer to FINISH. Only ask for more work when there is a concrete, important gap that a\n' +
+'small number of focused subtasks would close. Do NOT replan for cosmetic or marginal improvements.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "action": "finish" | "replan",\n' +
+'  "newSubtasks": [\n' +
+'    { "role": "<one of: engineer|designer|researcher|writer|qa>",\n' +
+'      "title": "<=6 word label",\n' +
+'      "instruction": "<full self-contained instruction; the worker cannot see anything but this>",\n' +
+'      "needsWeb": <true|false>,\n' +
+'      "deps": [<0-based indices among THESE newSubtasks only; [] if independent>],\n' +
+'      "verify": <optional true|false>\n' +
+'    }\n' +
+'  ],\n' +
+'  "reason": "<one short sentence explaining the decision>"\n' +
+'}\n' +
+'\n' +
+'Rules:\n' +
+'- If action is "finish", "newSubtasks" MUST be an empty array [].\n' +
+'- If action is "replan", include 1-3 newSubtasks, each complete on its own. "deps" indices refer ONLY to\n' +
+'  other items in this newSubtasks array (0-based), never to the earlier plan; never create cycles.\n' +
+'- Use only the listed role keys. No comments, no trailing commas. Output valid JSON for JSON.parse.';
+
+  // ---------------------------------------------------------------------------
+  // Wave B/C §GROUP DEBATE — critique prompt. One bounded round: an agent reviews
+  // the COMBINED peer results and returns concise, actionable improvement notes
+  // that the Boss folds into the synthesis content. Not a rewrite, not a verdict —
+  // just the few highest-leverage notes. Kept short so it stays cheap + bounded.
+  // ---------------------------------------------------------------------------
+  var DEBATE_SYSTEM =
+'You are a sharp peer reviewer inside an autonomous AI company. You are shown the COMBINED results your\n' +
+'colleagues produced for the user\'s goal. Critique them as a group: find gaps, contradictions, weak spots,\n' +
+'and missed opportunities that would make the final synthesized answer stronger.\n' +
+'\n' +
+'Output ONLY a short list of concrete, actionable improvement notes (no preamble, no praise, no rewrite of\n' +
+'the work). Each note: one line, specific, and phrased so the Boss can act on it during synthesis. If the\n' +
+'results are already solid, say so in one line and list at most the single most useful refinement.\n' +
+'Keep it to at most 5 notes. Do not add headings or markdown beyond simple "- " bullets.';
 
   // §6.3 BOSS_SYNTH_SYSTEM (Boss turn B).
   var BOSS_SYNTH_SYSTEM =
@@ -1657,6 +1878,90 @@ window.App = window.App || {};
     // is the canonical ROLES.boss.system; exposed here too for symmetry.
     BOSS_DECOMPOSE_SYSTEM: BOSS_DECOMPOSE_SYSTEM,
     BOSS_SYNTH_SYSTEM: BOSS_SYNTH_SYSTEM,
+
+    // ---------------------------------------------------------------------------
+    // Wave B/C orchestration toggles + prompts.
+    //   ENABLE_REPLAN     : Boss may run ONE adaptive replan round before synthesis.
+    //   MAX_REPLAN_ROUNDS : hard cap on replan rounds per root (root._replanned gate).
+    //   ENABLE_DEBATE     : run ONE bounded peer-critique round before synthesis.
+    //   ENABLE_APPROVAL   : human-approval gate (default OFF so normal runs are
+    //                       unaffected; Orchestrator only gates when this is true).
+    // All are creds-guarded + defensive in the Orchestrator; absent creds => skip.
+    // ---------------------------------------------------------------------------
+    ENABLE_REPLAN: true,
+    MAX_REPLAN_ROUNDS: 1,
+    BOSS_REPLAN_SYSTEM: BOSS_REPLAN_SYSTEM,
+    ENABLE_DEBATE: true,
+    DEBATE_SYSTEM: DEBATE_SYSTEM,
+    ENABLE_APPROVAL: false,
+
+    // ---------------------------------------------------------------------------
+    // Wave B/C §BROWSER TOOLS — master toggle read by App.Tools.enabled(). When
+    // true (and settings allow + provider supports it), the Orchestrator exposes
+    // App.Tools.specs() to tool-capable workers. Tool implementations live in
+    // tools.js; this is only the on/off switch.
+    // ---------------------------------------------------------------------------
+    TOOLS_ENABLED: false,   // browser tools (calc/run_js/analyze_data) are built & sandboxed but
+                            // gated OFF by default: the Anthropic tool_use round-trip isn't fully
+                            // wired in api.js yet, so exposing them by default just burns a round-trip.
+    DEFAULT_LANG: 'en',
+
+    // ---------------------------------------------------------------------------
+    // Wave B/C §MOOD & RELATIONSHIPS — defaults for agent.mood (0..1) and the
+    // affinity model (agent.relationships[otherId] in roughly -1..1, 0 = neutral).
+    //   MOOD_DEFAULT      : starting/neutral mood for a new agent.
+    //   MOOD_MIN/MAX      : clamp range for mood.
+    //   AFFINITY_DEFAULT  : starting affinity toward an unknown colleague.
+    //   AFFINITY_MIN/MAX  : clamp range for affinity.
+    //   AFFINITY_NUDGE    : per-collaboration affinity increment (kept subtle).
+    //   MOOD_COLLAB_GAIN  : mood lift from a successful collaboration/synthesis.
+    //   MOOD_FAIL_DROP    : mood dip on an error/failed verify (subtle).
+    //   MOOD_DECAY        : per-? drift back toward MOOD_DEFAULT (callers apply).
+    // ---------------------------------------------------------------------------
+    MOOD_DEFAULT: 0.7,
+    MOOD_MIN: 0.0,
+    MOOD_MAX: 1.0,
+    AFFINITY_DEFAULT: 0.0,
+    AFFINITY_MIN: -1.0,
+    AFFINITY_MAX: 1.0,
+    AFFINITY_NUDGE: 0.08,
+    MOOD_COLLAB_GAIN: 0.06,
+    MOOD_FAIL_DROP: 0.10,
+    MOOD_DECAY: 0.01,
+
+    // ---------------------------------------------------------------------------
+    // Wave B/C §AMBIANCE — day/night tint overlay drawn in PixelArt.drawFX, keyed
+    // by the hour of day. AMBIANCE_ENABLED gates it. AMBIANCE_TINTS maps a coarse
+    // phase -> {color, alpha} (alpha is the overlay opacity, kept low). Phase is
+    // chosen from the hour: night/dawn/day/dusk. Pure rendering; no state writes.
+    // ---------------------------------------------------------------------------
+    AMBIANCE_ENABLED: true,
+    AMBIANCE_TINTS: {
+      night: { color: '#0a1440', alpha: 0.30 },   // 21:00–05:00 deep blue
+      dawn:  { color: '#ff8a5c', alpha: 0.14 },   // 05:00–08:00 warm sunrise
+      day:   { color: '#ffffff', alpha: 0.00 },   // 08:00–17:00 neutral (no tint)
+      dusk:  { color: '#9b5cff', alpha: 0.16 }    // 17:00–21:00 violet sunset
+    },
+    // phaseForHour(h) -> ambiance phase key. Pure helper for renderers.
+    phaseForHour: function (h) {
+      h = ((Number(h) % 24) + 24) % 24;
+      if (h >= 5 && h < 8) return 'dawn';
+      if (h >= 8 && h < 17) return 'day';
+      if (h >= 17 && h < 21) return 'dusk';
+      return 'night';
+    },
+
+    // ---------------------------------------------------------------------------
+    // Wave B/C §ACTIVITY GLOW — a soft halo PixelArt draws around an agent that
+    // produced output recently (agent._lastActivityTs). GLOW_ACTIVE_MS: how long
+    // after the last activity the glow stays at full strength before fading out
+    // over GLOW_FADE_MS. GLOW_RADIUS: halo radius in world px; GLOW_MAX_ALPHA: peak
+    // opacity. Color falls back to the agent's role color. Pure rendering.
+    // ---------------------------------------------------------------------------
+    GLOW_ACTIVE_MS: 2500,
+    GLOW_FADE_MS: 2500,
+    GLOW_RADIUS: 14,
+    GLOW_MAX_ALPHA: 0.45,
 
     // v3: worker artifact-emission hint (Orchestrator appends to worker instructions)
     // and the QA reviewer system prompt (Orchestrator QA loop).
@@ -1853,6 +2158,454 @@ window.App = window.App || {};
     providerOf: function (modelId) {
       return /^(gpt|o1|o3|o4|chatgpt)/i.test(String(modelId || '')) ? 'openai' : 'anthropic';
     }
+  };
+
+})();
+</script>
+<script>
+// =============================================================================
+// i18n.js  ->  App.I18n
+// PIXEL AI COMPANY ("NEON//WORKS") — lightweight, dependency-free UI i18n.
+//
+// LOAD ORDER: right after config.js (module #2). NO deps on other App modules
+//   except (optionally) App.Store for persistence and App.state for the current
+//   language. Everything is guarded; nothing throws at load.
+//
+// CONTRACT (Wave B — Korean UI toggle):
+//   App.I18n.STRINGS = { en:{...}, ko:{...} }   // UI label dictionaries
+//   App.I18n.t(key, vars?)   -> translated string for current lang.
+//                               Fallback chain: current -> en -> key.
+//                               vars: {name:'x'} replaces "{name}" tokens.
+//   App.I18n.getLang()       -> 'en' | 'ko'  (from settings.lang, default 'en')
+//   App.I18n.setLang(l)      -> set + persist (App.Store.save) + re-apply DOM,
+//                               then notify App.UI to re-render dynamic bits.
+//   App.I18n.apply(root?)    -> translate every element under root (default
+//                               document) carrying:
+//                                 [data-i18n]        -> textContent
+//                                 [data-i18n-ph]     -> placeholder attr
+//                                 [data-i18n-title]  -> title attr
+//                                 [data-i18n-html]   -> innerHTML (TRUSTED keys)
+//                               Missing keys are LEFT ALONE (additive — never
+//                               blanks out existing text).
+//   App.I18n.langs()         -> ['en','ko']  (available languages)
+//
+// SELF-INSTALL: on DOMContentLoaded (or immediately if DOM is ready) call
+//   apply(document) so static shell.html labels translate on first paint.
+//
+// ASCII-only source (Korean strings live inside string literals, which is
+// allowed). No raw control bytes. Classic <script>; no import/export.
+// =============================================================================
+window.App = window.App || {};
+
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------------------
+  // STRING DICTIONARIES.
+  // Keys are dotted namespaces grouped by surface. en is the canonical set;
+  // ko mirrors it. If a ko key is missing, t() falls back to en, then the key.
+  // Korean text is intentionally inside string literals (UTF-8) — the rest of
+  // the source stays ASCII per project hygiene rules.
+  // ---------------------------------------------------------------------------
+  var STRINGS = {
+    en: {
+      // --- brand / hud header ---
+      'brand.tagline': 'AI AGENT COLLECTIVE',
+
+      // --- hud buttons (labels) ---
+      'hud.dispatch': 'DISPATCH',
+      'hud.tasks': 'Tasks',
+      'hud.agent': 'Agent',
+      'hud.layout': 'Layout',
+      'hud.settings': 'Settings',
+      'hud.artifacts': 'Artifacts',
+      'hud.newco': 'New Co.',
+      'hud.sessions': 'Sessions',
+      'hud.flow': 'Flow',
+
+      // --- hud button titles (tooltips) ---
+      'hud.dispatch.title': 'Dispatch to Boss',
+      'hud.tasks.title': 'Task board / New Boss task',
+      'hud.agent.title': 'Add a new agent',
+      'hud.layout.title': 'Toggle layout edit',
+      'hud.settings.title': 'Settings',
+      'hud.artifacts.title': 'Artifacts produced by agents',
+      'hud.newco.title': 'Start a preset company',
+      'hud.sessions.title': 'Save / load company sessions',
+      'hud.cost.title': 'Running session cost - click for breakdown',
+      'hud.zoomout.title': 'Zoom out',
+      'hud.zoomin.title': 'Zoom in',
+      'hud.reset.title': 'Reset view',
+      'hud.pause.title': 'Pause / resume',
+      'hud.flow.title': 'Workflow graph',
+
+      // --- task input placeholder ---
+      'hud.task.ph': 'Give the Boss a goal...  (Enter to dispatch)',
+
+      // --- rails ---
+      'rail.crew': 'CREW',
+      'rail.activity': 'ACTIVITY',
+
+      // --- agent panel ---
+      'agent.title': 'Agent',
+      'agent.subtitle': 'role / state / model',
+      'agent.persona': 'PERSONA & MEMORY',
+      'agent.mood': 'MOOD & RELATIONSHIPS',
+      'agent.terminal': 'TERMINAL / LOG',
+      'agent.customize': 'CUSTOMIZE',
+      'agent.send': 'SEND',
+      'agent.chat.ph': 'Message this agent directly...  (Enter to send)',
+
+      // --- task board ---
+      'board.title': 'TASK BOARD',
+      'board.dispatch': 'DISPATCH',
+      'board.queued': 'QUEUED',
+      'board.running': 'RUNNING',
+      'board.done': 'DONE',
+      'board.task.ph': 'Give a big goal to the Boss - it will decompose & delegate...',
+
+      // --- layout / furniture palette ---
+      'layout.place': 'PLACE FURNITURE',
+      'layout.desk': 'Desk',
+      'layout.chair': 'Chair',
+      'layout.server': 'Server',
+      'layout.table': 'Table',
+      'layout.plant': 'Plant',
+      'layout.coffee': 'Coffee',
+      'layout.sign': 'Sign',
+      'layout.board': 'Board',
+      'layout.done': 'DONE',
+
+      // --- add-agent modal ---
+      'add.name': 'NAME',
+      'add.role': 'ROLE',
+      'add.model': 'MODEL',
+      'add.color': 'NEON COLOR',
+      'add.system': 'SYSTEM PROMPT',
+      'add.preview': 'PREVIEW',
+      'add.create': 'CREATE AGENT',
+      'add.name.ph': 'e.g. Nova',
+      'add.system.ph': "Leave blank to use the role's default prompt...",
+
+      // --- settings modal ---
+      'set.title': 'SETTINGS',
+      'set.apikey': 'ANTHROPIC API KEY',
+      'set.worker': 'WORKER MODEL',
+      'set.boss': 'BOSS MODEL',
+      'set.websearch': 'WEB SEARCH',
+      'set.language': 'LANGUAGE',
+      'set.data': 'DATA',
+      'set.save': 'SAVE',
+      'set.apikey.ph': 'sk-ant-...  (stored locally only)',
+
+      // --- generic actions ---
+      'btn.close': 'Close',
+      'btn.cancel': 'Cancel',
+      'btn.ok': 'OK',
+      'btn.next': 'Next',
+      'btn.skip': 'Skip',
+      'btn.back': 'Back',
+      'btn.done': 'Done',
+      'btn.approve': 'Approve',
+      'btn.revise': 'Revise',
+      'btn.reject': 'Reject',
+
+      // --- command palette ---
+      'palette.title': 'COMMAND PALETTE',
+      'palette.ph': 'Type a command...',
+
+      // --- workflow graph ---
+      'graph.title': 'WORKFLOW',
+      'graph.empty': 'No active tasks to graph yet.',
+
+      // --- onboarding / tour ---
+      'tour.help': 'Help / Tour',
+
+      // --- common state words ---
+      'state.queued': 'queued',
+      'state.running': 'running',
+      'state.done': 'done',
+      'state.error': 'error'
+    },
+
+    ko: {
+      'brand.tagline': 'AI 에이전트 컬렉티브',
+
+      'hud.dispatch': '지시',
+      'hud.tasks': '작업',
+      'hud.agent': '에이전트',
+      'hud.layout': '배치',
+      'hud.settings': '설정',
+      'hud.artifacts': '산출물',
+      'hud.newco': '새 회사',
+      'hud.sessions': '세션',
+      'hud.flow': '흐름',
+
+      'hud.dispatch.title': '보스에게 지시',
+      'hud.tasks.title': '작업 보드 / 새 보스 작업',
+      'hud.agent.title': '새 에이전트 추가',
+      'hud.layout.title': '배치 편집 전환',
+      'hud.settings.title': '설정',
+      'hud.artifacts.title': '에이전트가 만든 산출물',
+      'hud.newco.title': '프리셋 회사 시작',
+      'hud.sessions.title': '회사 세션 저장 / 불러오기',
+      'hud.cost.title': '현재 세션 비용 - 클릭하면 내역',
+      'hud.zoomout.title': '축소',
+      'hud.zoomin.title': '확대',
+      'hud.reset.title': '화면 초기화',
+      'hud.pause.title': '일시정지 / 재개',
+      'hud.flow.title': '워크플로 그래프',
+
+      'hud.task.ph': '보스에게 목표를 지시하세요...  (Enter로 전송)',
+
+      'rail.crew': '직원',
+      'rail.activity': '활동',
+
+      'agent.title': '에이전트',
+      'agent.subtitle': '역할 / 상태 / 모델',
+      'agent.persona': '성격 & 기억',
+      'agent.mood': '기분 & 관계',
+      'agent.terminal': '터미널 / 로그',
+      'agent.customize': '꾸미기',
+      'agent.send': '전송',
+      'agent.chat.ph': '이 에이전트에게 직접 메시지...  (Enter로 전송)',
+
+      'board.title': '작업 보드',
+      'board.dispatch': '지시',
+      'board.queued': '대기',
+      'board.running': '진행 중',
+      'board.done': '완료',
+      'board.task.ph': '보스에게 큰 목표를 지시하세요 - 분해하고 위임합니다...',
+
+      'layout.place': '가구 배치',
+      'layout.desk': '책상',
+      'layout.chair': '의자',
+      'layout.server': '서버',
+      'layout.table': '테이블',
+      'layout.plant': '화분',
+      'layout.coffee': '커피',
+      'layout.sign': '간판',
+      'layout.board': '보드',
+      'layout.done': '완료',
+
+      'add.name': '이름',
+      'add.role': '역할',
+      'add.model': '모델',
+      'add.color': '네온 색상',
+      'add.system': '시스템 프롬프트',
+      'add.preview': '미리보기',
+      'add.create': '에이전트 생성',
+      'add.name.ph': '예: Nova',
+      'add.system.ph': '비워두면 역할 기본 프롬프트를 사용합니다...',
+
+      'set.title': '설정',
+      'set.apikey': 'ANTHROPIC API 키',
+      'set.worker': '워커 모델',
+      'set.boss': '보스 모델',
+      'set.websearch': '웹 검색',
+      'set.language': '언어',
+      'set.data': '데이터',
+      'set.save': '저장',
+      'set.apikey.ph': 'sk-ant-...  (로컬에만 저장됨)',
+
+      'btn.close': '닫기',
+      'btn.cancel': '취소',
+      'btn.ok': '확인',
+      'btn.next': '다음',
+      'btn.skip': '건너뛰기',
+      'btn.back': '이전',
+      'btn.done': '완료',
+      'btn.approve': '승인',
+      'btn.revise': '수정 요청',
+      'btn.reject': '거부',
+
+      'palette.title': '명령 팔레트',
+      'palette.ph': '명령을 입력하세요...',
+
+      'graph.title': '워크플로',
+      'graph.empty': '아직 그릴 활성 작업이 없습니다.',
+
+      'tour.help': '도움말 / 둘러보기',
+
+      'state.queued': '대기',
+      'state.running': '진행 중',
+      'state.done': '완료',
+      'state.error': '오류'
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Available languages — derived from the dictionary keys (en is canonical).
+  // ---------------------------------------------------------------------------
+  function langs() {
+    try {
+      var ks = Object.keys(STRINGS);
+      return ks.length ? ks : ['en'];
+    } catch (e) { return ['en']; }
+  }
+
+  function isLang(l) {
+    return !!(l && Object.prototype.hasOwnProperty.call(STRINGS, l));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Current language — sourced from App.state.settings.lang, default 'en'.
+  // We never throw if App.state isn't ready yet.
+  // ---------------------------------------------------------------------------
+  function getLang() {
+    try {
+      var s = App.state && App.state.settings;
+      var l = s && s.lang;
+      if (isLang(l)) return l;
+    } catch (e) {}
+    return 'en';
+  }
+
+  function setLang(l) {
+    if (!isLang(l)) return getLang();
+    try {
+      App.state = App.state || {};
+      App.state.settings = App.state.settings || {};
+      App.state.settings.lang = l;
+    } catch (e) {}
+    // persist (guarded — Store may not be loaded in isolation)
+    try {
+      if (App.Store && typeof App.Store.save === 'function') App.Store.save();
+    } catch (e) {}
+    // reflect in DOM immediately
+    try { apply(document); } catch (e) {}
+    // let the UI layer re-render any dynamic (JS-built) strings
+    try {
+      if (App.UI && typeof App.UI.onLangChange === 'function') App.UI.onLangChange(l);
+    } catch (e) {}
+    // mark <html lang> for a11y / CSS hooks (best-effort)
+    try {
+      if (document && document.documentElement) document.documentElement.setAttribute('lang', l);
+    } catch (e) {}
+    return l;
+  }
+
+  // ---------------------------------------------------------------------------
+  // t(key, vars) — fallback chain: current lang -> en -> key.
+  // vars: { name: 'x' } substitutes occurrences of "{name}".
+  // ---------------------------------------------------------------------------
+  function lookup(lang, key) {
+    var d = STRINGS[lang];
+    if (d && Object.prototype.hasOwnProperty.call(d, key)) return d[key];
+    return undefined;
+  }
+
+  function interpolate(str, vars) {
+    if (!vars || typeof str !== 'string') return str;
+    return str.replace(/\{([a-zA-Z0-9_]+)\}/g, function (m, name) {
+      return Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : m;
+    });
+  }
+
+  function t(key, vars) {
+    if (typeof key !== 'string' || !key) return '';
+    var lang = getLang();
+    var v = lookup(lang, key);
+    if (typeof v === 'undefined' && lang !== 'en') v = lookup('en', key);
+    if (typeof v === 'undefined') v = key; // last resort: return the key itself
+    return interpolate(v, vars);
+  }
+
+  // Like t(), but returns undefined when the key is unknown (so apply() can
+  // LEAVE existing DOM text untouched rather than overwriting it with the key).
+  function tOrNull(key) {
+    if (typeof key !== 'string' || !key) return undefined;
+    var lang = getLang();
+    var v = lookup(lang, key);
+    if (typeof v === 'undefined' && lang !== 'en') v = lookup('en', key);
+    return v; // may be undefined
+  }
+
+  // ---------------------------------------------------------------------------
+  // apply(root) — translate marked elements. ADDITIVE: unknown keys are skipped
+  // so we never blank out text we don't have a translation for.
+  // ---------------------------------------------------------------------------
+  function each(list, fn) {
+    if (!list) return;
+    for (var i = 0; i < list.length; i++) {
+      try { fn(list[i]); } catch (e) {}
+    }
+  }
+
+  function apply(root) {
+    var scope = root || (typeof document !== 'undefined' ? document : null);
+    if (!scope || typeof scope.querySelectorAll !== 'function') return;
+
+    // textContent
+    each(scope.querySelectorAll('[data-i18n]'), function (el) {
+      var key = el.getAttribute('data-i18n');
+      var v = tOrNull(key);
+      if (typeof v === 'string') el.textContent = v;
+    });
+
+    // placeholder
+    each(scope.querySelectorAll('[data-i18n-ph]'), function (el) {
+      var key = el.getAttribute('data-i18n-ph');
+      var v = tOrNull(key);
+      if (typeof v === 'string') el.setAttribute('placeholder', v);
+    });
+
+    // title
+    each(scope.querySelectorAll('[data-i18n-title]'), function (el) {
+      var key = el.getAttribute('data-i18n-title');
+      var v = tOrNull(key);
+      if (typeof v === 'string') el.setAttribute('title', v);
+    });
+
+    // innerHTML (only for keys WE author — values are trusted dictionary text)
+    each(scope.querySelectorAll('[data-i18n-html]'), function (el) {
+      var key = el.getAttribute('data-i18n-html');
+      var v = tOrNull(key);
+      if (typeof v === 'string') el.innerHTML = v;
+    });
+
+    // aria-label (a11y convenience)
+    each(scope.querySelectorAll('[data-i18n-aria]'), function (el) {
+      var key = el.getAttribute('data-i18n-aria');
+      var v = tOrNull(key);
+      if (typeof v === 'string') el.setAttribute('aria-label', v);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // SELF-INSTALL — translate the static shell once the DOM exists.
+  // ---------------------------------------------------------------------------
+  function boot() {
+    try {
+      if (document && document.documentElement) {
+        document.documentElement.setAttribute('lang', getLang());
+      }
+    } catch (e) {}
+    try { apply(document); } catch (e) {}
+  }
+
+  try {
+    if (typeof document !== 'undefined') {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot, { once: true });
+      } else {
+        // DOM already parsed (script appended late) — apply now.
+        boot();
+      }
+    }
+  } catch (e) {}
+
+  // ---------------------------------------------------------------------------
+  // PUBLIC API
+  // ---------------------------------------------------------------------------
+  App.I18n = {
+    STRINGS: STRINGS,
+    t: t,
+    getLang: getLang,
+    setLang: setLang,
+    apply: apply,
+    langs: langs,
+    has: function (key) { return typeof tOrNull(key) === 'string'; }
   };
 
 })();
@@ -2123,6 +2876,435 @@ window.App = window.App || {};
     htmlPreviewSrcdoc: htmlPreviewSrcdoc
   };
 
+})();
+</script>
+<script>
+// =============================================================================
+// tools.js  ->  App.Tools
+// PIXEL AI COMPANY ("NEON//WORKS") — sandboxed, time-limited BROWSER TOOLS that
+// LLM workers can call (Anthropic tool-use format). Pure, self-contained, with
+// NO access to App state or the DOM from within executed code.
+//
+// LOAD ORDER: after markdown.js, before pixelart.js. NO deps on other modules
+// except a soft read of App.config.TOOLS_ENABLED + App.state.settings.
+//
+// CONTRACT:
+//   App.Tools.specs()            -> [ {name, description, input_schema}, ... ]
+//                                    (Anthropic-format client tool definitions)
+//   App.Tools.run(name, input)   -> Promise<{ok, output, error?}>
+//   App.Tools.enabled()          -> boolean (config flag && settings allow)
+//
+// TOOLS:
+//   calc(expression)        -> safe arithmetic evaluation (no scope, validated)
+//   run_js(code)            -> run JS in a Web Worker w/ hard timeout (~2s),
+//                              capturing console.* + the returned value
+//   analyze_data(text)      -> parse CSV/JSON, summarize rows/cols + numeric
+//                              column min/max/mean
+//
+// SAFETY: every tool is sandboxed and time-limited; nothing here ever hangs,
+// touches App/DOM from executed user code, or throws into the rAF loop.
+// =============================================================================
+window.App = window.App || {};
+
+(function () {
+  'use strict';
+
+  var WORKER_TIMEOUT_MS = 2000; // hard cap for run_js execution
+
+  // ---------------------------------------------------------------------------
+  // helpers
+  // ---------------------------------------------------------------------------
+  function ok(output) { return { ok: true, output: String(output == null ? '' : output) }; }
+  function fail(error) {
+    var e = (error && error.message) ? error.message : String(error == null ? 'error' : error);
+    return { ok: false, output: '', error: e };
+  }
+
+  function num(n) {
+    // Compact numeric formatting: integers stay integers, floats trimmed.
+    if (!isFinite(n)) return String(n);
+    if (Math.floor(n) === n) return String(n);
+    return String(Math.round(n * 1e6) / 1e6);
+  }
+
+  // ---------------------------------------------------------------------------
+  // calc — safe arithmetic. Whitelist characters, then evaluate in an empty
+  // scope. No identifiers (no Math, no names) are allowed through the regex, so
+  // there is no way to reach globals/scope; we additionally call with no `this`.
+  // Supports + - * / % ( ) and decimal / exponent (e) numbers.
+  // ---------------------------------------------------------------------------
+  var CALC_RE = /^[\s0-9eE.+\-*/%()]+$/;
+
+  function calc(expr) {
+    expr = String(expr == null ? '' : expr).trim();
+    if (!expr) return fail('empty expression');
+    if (expr.length > 1000) return fail('expression too long');
+    if (!CALC_RE.test(expr)) return fail('expression contains invalid characters (only numbers and + - * / % ( ) . e are allowed)');
+    // Guard against 'e' used as a bare identifier (e.g. "e+1"): must be digit-e-digit.
+    // Strip valid scientific notation, then ensure no stray letters remain.
+    var stripped = expr.replace(/\d(?:\.\d+)?[eE][+\-]?\d+/g, '0');
+    if (/[eE]/.test(stripped)) return fail('invalid use of exponent notation');
+    var fn, result;
+    try {
+      // Indirect, scope-free evaluation. Input is character-whitelisted above.
+      fn = new Function('"use strict"; return (' + expr + ');');
+      result = fn.call(null);
+    } catch (err) {
+      return fail('could not evaluate: ' + (err && err.message ? err.message : err));
+    }
+    if (typeof result !== 'number' || !isFinite(result)) {
+      return fail('result is not a finite number');
+    }
+    return ok(num(result));
+  }
+
+  // ---------------------------------------------------------------------------
+  // run_js — execute arbitrary JS in a throwaway Web Worker with a hard timeout.
+  // Captures console.log/info/warn/error output and the final returned value.
+  // The Worker has no DOM and no access to App; it is terminated unconditionally
+  // when done or on timeout, so it can never hang the page.
+  // ---------------------------------------------------------------------------
+  function buildWorkerSource() {
+    // The Worker body. Kept as a plain string so it can be Blob-ified.
+    // It wraps user code in a function, redirects console, runs it, and posts
+    // back { logs, result }. ASCII only; no control bytes.
+    return [
+      'self.onmessage = function (ev) {',
+      '  var code = ev.data && ev.data.code;',
+      '  var logs = [];',
+      '  function fmt(a) {',
+      '    try {',
+      '      if (typeof a === "string") return a;',
+      '      if (a === undefined) return "undefined";',
+      '      return JSON.stringify(a);',
+      '    } catch (e) { return String(a); }',
+      '  }',
+      '  function rec(level) {',
+      '    return function () {',
+      '      var parts = [];',
+      '      for (var i = 0; i < arguments.length; i++) parts.push(fmt(arguments[i]));',
+      '      logs.push((level ? "[" + level + "] " : "") + parts.join(" "));',
+      '    };',
+      '  }',
+      '  var console = { log: rec(""), info: rec("info"), warn: rec("warn"), error: rec("error"), debug: rec("") };',
+      '  self.console = console;',
+      '  var result, errMsg = null;',
+      '  try {',
+      '    var fn = new Function("console", "\\"use strict\\";" + code);',
+      '    result = fn(console);',
+      '  } catch (e) {',
+      '    errMsg = (e && e.message) ? e.message : String(e);',
+      '  }',
+      '  var resultStr;',
+      '  try {',
+      '    if (result === undefined) resultStr = "undefined";',
+      '    else if (typeof result === "string") resultStr = result;',
+      '    else resultStr = JSON.stringify(result);',
+      '  } catch (e2) { resultStr = String(result); }',
+      '  self.postMessage({ logs: logs, result: resultStr, error: errMsg });',
+      '};'
+    ].join('\n');
+  }
+
+  function runJs(code) {
+    code = String(code == null ? '' : code);
+    if (!code.trim()) return Promise.resolve(fail('empty code'));
+    if (code.length > 100000) return Promise.resolve(fail('code too long'));
+
+    if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined' || !URL.createObjectURL) {
+      return Promise.resolve(fail('Web Worker sandbox is unavailable in this environment'));
+    }
+
+    return new Promise(function (resolve) {
+      var worker = null, url = null, timer = null, settled = false;
+
+      function cleanup() {
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (worker) { try { worker.terminate(); } catch (e) {} worker = null; }
+        if (url) { try { URL.revokeObjectURL(url); } catch (e2) {} url = null; }
+      }
+      function done(res) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(res);
+      }
+
+      try {
+        var blob = new Blob([buildWorkerSource()], { type: 'application/javascript' });
+        url = URL.createObjectURL(blob);
+        worker = new Worker(url);
+      } catch (err) {
+        cleanup();
+        resolve(fail('could not create sandbox: ' + (err && err.message ? err.message : err)));
+        return;
+      }
+
+      worker.onmessage = function (ev) {
+        var d = ev.data || {};
+        var logs = (d.logs && d.logs.length) ? d.logs.join('\n') : '';
+        if (d.error) {
+          var out = logs ? (logs + '\n') : '';
+          done({ ok: false, output: out, error: d.error });
+          return;
+        }
+        var pieces = [];
+        if (logs) pieces.push(logs);
+        pieces.push('=> ' + (d.result == null ? 'undefined' : d.result));
+        done(ok(pieces.join('\n')));
+      };
+
+      worker.onerror = function (e) {
+        var msg = (e && e.message) ? e.message : 'worker error';
+        try { e.preventDefault && e.preventDefault(); } catch (ignore) {}
+        done(fail(msg));
+      };
+
+      timer = setTimeout(function () {
+        done(fail('execution timed out after ' + WORKER_TIMEOUT_MS + 'ms'));
+      }, WORKER_TIMEOUT_MS);
+
+      try {
+        worker.postMessage({ code: code });
+      } catch (err2) {
+        done(fail('could not start sandbox: ' + (err2 && err2.message ? err2.message : err2)));
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // analyze_data — parse CSV or JSON text, return a summary: row/column counts
+  // and, for each numeric column, min/max/mean. Auto-detects format.
+  // ---------------------------------------------------------------------------
+  function looksLikeJson(text) {
+    var t = text.trim();
+    return t.charAt(0) === '{' || t.charAt(0) === '[';
+  }
+
+  // Minimal RFC-4180-ish CSV row parser (handles quoted fields, escaped quotes,
+  // embedded commas/newlines). Returns array of rows, each an array of strings.
+  function parseCsv(text) {
+    var rows = [], row = [], field = '', i = 0, c, inQuotes = false;
+    var n = text.length;
+    while (i < n) {
+      c = text.charAt(i);
+      if (inQuotes) {
+        if (c === '"') {
+          if (text.charAt(i + 1) === '"') { field += '"'; i += 2; continue; }
+          inQuotes = false; i++; continue;
+        }
+        field += c; i++; continue;
+      }
+      if (c === '"') { inQuotes = true; i++; continue; }
+      if (c === ',') { row.push(field); field = ''; i++; continue; }
+      if (c === '\r') { i++; continue; }
+      if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+      field += c; i++;
+    }
+    // flush trailing field/row
+    if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  function isNumericStr(s) {
+    if (s == null) return false;
+    s = String(s).trim();
+    if (s === '') return false;
+    return !isNaN(Number(s)) && isFinite(Number(s));
+  }
+
+  function summarizeColumns(headers, records) {
+    // records: array of objects keyed by header
+    var lines = [];
+    for (var h = 0; h < headers.length; h++) {
+      var key = headers[h];
+      var vals = [];
+      for (var r = 0; r < records.length; r++) {
+        var v = records[r][key];
+        if (isNumericStr(v)) vals.push(Number(v));
+      }
+      if (vals.length === 0) {
+        lines.push('  ' + key + ': non-numeric (' + records.length + ' values)');
+        continue;
+      }
+      var min = vals[0], max = vals[0], sum = 0;
+      for (var k = 0; k < vals.length; k++) {
+        if (vals[k] < min) min = vals[k];
+        if (vals[k] > max) max = vals[k];
+        sum += vals[k];
+      }
+      var mean = sum / vals.length;
+      lines.push('  ' + key + ': numeric n=' + vals.length +
+        ' min=' + num(min) + ' max=' + num(max) + ' mean=' + num(mean));
+    }
+    return lines;
+  }
+
+  function analyzeData(text) {
+    text = String(text == null ? '' : text);
+    if (!text.trim()) return fail('empty data');
+    if (text.length > 2000000) return fail('data too large (max 2MB)');
+
+    try {
+      if (looksLikeJson(text)) {
+        var data = JSON.parse(text);
+        var arr;
+        if (Array.isArray(data)) {
+          arr = data;
+        } else if (data && typeof data === 'object') {
+          // Single object, or an object wrapping an array — try to find an array.
+          var inner = null;
+          for (var kk in data) {
+            if (data.hasOwnProperty(kk) && Array.isArray(data[kk])) { inner = data[kk]; break; }
+          }
+          arr = inner || [data];
+        } else {
+          return ok('JSON scalar value: ' + JSON.stringify(data));
+        }
+        if (arr.length === 0) return ok('JSON array is empty (0 rows).');
+
+        // Collect union of keys across object rows.
+        var allObjects = true, headerSet = {};
+        for (var a = 0; a < arr.length; a++) {
+          if (arr[a] && typeof arr[a] === 'object' && !Array.isArray(arr[a])) {
+            for (var hk in arr[a]) if (arr[a].hasOwnProperty(hk)) headerSet[hk] = true;
+          } else { allObjects = false; }
+        }
+        if (!allObjects) {
+          // Array of scalars: treat as one numeric column.
+          var recs = [];
+          for (var s = 0; s < arr.length; s++) recs.push({ value: arr[s] });
+          var out0 = ['JSON array of ' + arr.length + ' scalar values (1 column):'];
+          out0 = out0.concat(summarizeColumns(['value'], recs));
+          return ok(out0.join('\n'));
+        }
+        var headers = Object.keys(headerSet);
+        var out1 = ['JSON: ' + arr.length + ' rows, ' + headers.length + ' columns.',
+          'Columns:'];
+        out1 = out1.concat(summarizeColumns(headers, arr));
+        return ok(out1.join('\n'));
+      }
+
+      // CSV path
+      var rows = parseCsv(text);
+      if (rows.length === 0) return fail('no rows parsed');
+      var headerRow = rows[0];
+      var body = rows.slice(1);
+      // Build records keyed by header.
+      var records = [];
+      for (var b = 0; b < body.length; b++) {
+        // skip fully empty trailing rows
+        var rr = body[b];
+        var allEmpty = true;
+        for (var e = 0; e < rr.length; e++) { if (String(rr[e]).trim() !== '') { allEmpty = false; break; } }
+        if (allEmpty) continue;
+        var obj = {};
+        for (var ci = 0; ci < headerRow.length; ci++) obj[headerRow[ci]] = rr[ci];
+        records.push(obj);
+      }
+      var out2 = ['CSV: ' + records.length + ' rows, ' + headerRow.length + ' columns.',
+        'Columns:'];
+      out2 = out2.concat(summarizeColumns(headerRow, records));
+      return ok(out2.join('\n'));
+    } catch (err) {
+      return fail('could not parse data: ' + (err && err.message ? err.message : err));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // public: enabled()
+  // ---------------------------------------------------------------------------
+  function enabled() {
+    try {
+      var cfg = App.config || {};
+      var cfgOn = (cfg.TOOLS_ENABLED === undefined) ? true : !!cfg.TOOLS_ENABLED;
+      if (!cfgOn) return false;
+      var st = App.state || {};
+      var settings = st.settings || {};
+      // settings.toolsEnabled is optional; only disables when explicitly false.
+      if (settings.toolsEnabled === false) return false;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // ---------------------------------------------------------------------------
+  // public: specs() — Anthropic tool-use definitions.
+  // ---------------------------------------------------------------------------
+  function specs() {
+    return [
+      {
+        name: 'calc',
+        description: 'Evaluate a mathematical arithmetic expression and return the numeric result. ' +
+          'Supports + - * / % parentheses and decimal/scientific numbers. Use for any precise arithmetic.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            expression: { type: 'string', description: 'The arithmetic expression to evaluate, e.g. "(3 + 4) * 2 / 7".' }
+          },
+          required: ['expression']
+        }
+      },
+      {
+        name: 'run_js',
+        description: 'Run a snippet of sandboxed JavaScript in an isolated Web Worker (no DOM, no network) ' +
+          'with a hard ~2s timeout. Returns captured console output and the value of the final expression ' +
+          '(use a trailing return or console.log). Use for computation, string/data processing, or quick logic checks.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            code: { type: 'string', description: 'JavaScript source to execute. End with `return <value>;` to capture a result.' }
+          },
+          required: ['code']
+        }
+      },
+      {
+        name: 'analyze_data',
+        description: 'Parse CSV or JSON text and return summary statistics: number of rows and columns, and for ' +
+          'each numeric column the count, min, max, and mean. Format (CSV vs JSON) is auto-detected.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            data: { type: 'string', description: 'The raw CSV or JSON text to analyze.' }
+          },
+          required: ['data']
+        }
+      }
+    ];
+  }
+
+  // ---------------------------------------------------------------------------
+  // public: run(name, input) -> Promise<{ok, output, error?}>
+  // ---------------------------------------------------------------------------
+  function run(name, input) {
+    try {
+      input = input || {};
+      switch (name) {
+        case 'calc':
+          return Promise.resolve(calc(input.expression !== undefined ? input.expression : input.expr));
+        case 'run_js':
+          return runJs(input.code !== undefined ? input.code : input.js);
+        case 'analyze_data':
+          return Promise.resolve(analyzeData(input.data !== undefined ? input.data : input.text));
+        default:
+          return Promise.resolve(fail('unknown tool: ' + name));
+      }
+    } catch (err) {
+      return Promise.resolve(fail('tool execution error: ' + (err && err.message ? err.message : err)));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // attach
+  // ---------------------------------------------------------------------------
+  App.Tools = {
+    specs: specs,
+    run: run,
+    enabled: enabled,
+    // exposed for testing / direct use:
+    _calc: calc,
+    _runJs: runJs,
+    _analyzeData: analyzeData
+  };
 })();
 </script>
 <script>
@@ -2727,6 +3909,18 @@ window.App = window.App || {};
       var hair = pal.hair[(hp >> 3) % pal.hair.length];
       var longHair = (hp & 4) !== 0;
 
+      // Wave B/C: sprite CUSTOMIZATION. agent.sprite may override hair/skin (by
+      // palette index or explicit hex) and accent (the neon color). Defaults above
+      // are kept when a field is absent. Indices wrap; bad values fall through.
+      var sp = agent.sprite;
+      if (sp && typeof sp === 'object') {
+        if (typeof sp.skin === 'string') skin = sp.skin;
+        else if (typeof sp.skin === 'number' && pal.skin.length) skin = pal.skin[((sp.skin % pal.skin.length) + pal.skin.length) % pal.skin.length];
+        if (typeof sp.hair === 'string') hair = sp.hair;
+        else if (typeof sp.hair === 'number' && pal.hair.length) hair = pal.hair[((sp.hair % pal.hair.length) + pal.hair.length) % pal.hair.length];
+        if (typeof sp.accent === 'string' && sp.accent) color = sp.accent;
+      }
+
       // Vertical bob offset (idle/thinking/meeting/coffee) and walk lift.
       var bobY = 0;
       if (state === 'idle' || state === 'thinking' || state === 'meeting' || state === 'coffee') {
@@ -2762,6 +3956,53 @@ window.App = window.App || {};
     var rc = cfg().roleColor || {};
     return rc[role];
   }
+
+  // ===========================================================================
+  // drawAgentGlow(ctx, agent, sx, sy, size, strength)   — Wave B/C
+  // A soft radial activity halo pooled at the agent's FEET (sx,sy), in the agent's
+  // accent color. `strength` is 0..1 (Agents.activityGlow). Pure draw; drawn UNDER
+  // the sprite by the caller. Uses additive 'lighter' blending for a neon bloom and
+  // restores all state. Never throws.
+  // ===========================================================================
+  PixelArt.drawAgentGlow = function (ctx, agent, sx, sy, size, strength) {
+    try {
+      if (!agent || !ctx) return;
+      var st = Number(strength);
+      if (!isFinite(st) || st <= 0) return;
+      if (st > 1) st = 1;
+      var pal = P();
+      var s = size / ART_TILE;
+
+      // Accent: prefer custom sprite accent, then agent color, then role/cyan.
+      var color = (agent.sprite && typeof agent.sprite.accent === 'string' && agent.sprite.accent) ||
+        agent.color || roleColorFor(agent.role) || pal.cyan;
+
+      // Pool centered on the feet, slightly up so it hugs the ground like the
+      // selection ring. Radius grows a touch with strength; gentle pulse.
+      var pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(timeSec() * 4));
+      var cx = sx, cy = sy - 1 * s;
+      var rad = (10 + 4 * st) * s * pulse;
+      if (rad < 1) return;
+
+      var rgb = hexToRgb(color);
+      var inner = 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + (0.30 * st).toFixed(3) + ')';
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      g.addColorStop(0, inner);
+      g.addColorStop(0.55, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + (0.10 * st).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0)');
+      ctx.fillStyle = g;
+      // Flatten vertically so it reads as a floor pool, not a sphere.
+      ctx.translate(cx, cy);
+      ctx.scale(1, 0.5);
+      ctx.beginPath();
+      ctx.arc(0, 0, rad, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } catch (e) { /* never throw from draw */ }
+  };
 
   // --- Shared body parts (standing). Authored facing DOWN (visual.md §3.2),
   // adapted for up/side. Draws an outline underlay first for a 1px silhouette. ---
@@ -3415,9 +4656,55 @@ window.App = window.App || {};
         ctx.fillRect(0, 0, w, h);
       }
 
+      // --- Ambiance: day/night tint by hour (Wave B/C). A full-canvas wash whose
+      //     hue + alpha shift with the real local hour (cool blue at night, warm
+      //     amber at dawn/dusk, neutral at midday). Gated by CFG().AMBIANCE_ENABLED
+      //     (default ON). Kept subtle so the neon still pops. ---
+      if (cfg().AMBIANCE_ENABLED !== false) {
+        var tint = ambianceTint();
+        if (tint && tint.a > 0.001) {
+          ctx.fillStyle = 'rgba(' + tint.r + ',' + tint.g + ',' + tint.b + ',' + tint.a.toFixed(3) + ')';
+          ctx.fillRect(0, 0, w, h);
+        }
+      }
+
       ctx.restore();
     } catch (e) { /* never throw */ }
   };
+
+  // Ambiance tint for the current local hour. Returns {r,g,b,a}. Three anchor
+  // colors blended by hour: deep night (cool indigo), midday (no tint), and the
+  // dawn/dusk warm band (amber). Pure; deterministic per minute; never throws.
+  function ambianceTint() {
+    var hour = 12;
+    try { hour = new Date().getHours() + new Date().getMinutes() / 60; } catch (e) { hour = 12; }
+    if (!isFinite(hour)) hour = 12;
+
+    // "Daylight" factor 0..1: ~1 around noon, ~0 deep night (centered on 13:00).
+    var day = 0.5 + 0.5 * Math.cos(((hour - 13) / 24) * Math.PI * 2);
+    // "Golden" factor: peaks near 6:30 (dawn) and 18:30 (dusk).
+    function bump(center, width) {
+      var d = (hour - center) / width;
+      return Math.exp(-d * d);
+    }
+    var golden = Math.max(bump(6.5, 2.2), bump(18.5, 2.4));
+
+    // Night = cool indigo wash; alpha strongest when day≈0.
+    var nightA = (1 - day) * 0.22;
+    // Golden = warm amber wash, capped so it never overwhelms.
+    var goldA = golden * 0.12;
+
+    // Blend night (indigo) and golden (amber) additively over a neutral base.
+    var nr = 30, ng = 40, nb = 90;     // indigo
+    var gr = 255, gg = 150, gb = 60;   // amber
+    var totA = nightA + goldA;
+    if (totA <= 0.001) return { r: 0, g: 0, b: 0, a: 0 };
+    var r = (nr * nightA + gr * goldA) / totA;
+    var g = (ng * nightA + gg * goldA) / totA;
+    var b = (nb * nightA + gb * goldA) / totA;
+    if (totA > 0.30) totA = 0.30; // hard cap on overall tint strength
+    return { r: Math.round(r), g: Math.round(g), b: Math.round(b), a: totA };
+  }
 
   // ===========================================================================
   // glowText(ctx, text, sx, sy [, opts])   — SPEC §7.1
@@ -5250,6 +6537,8 @@ window.App = window.App || {};
       theme: 'neon',
       sound: true,            // v3: completion chime on/off
       liveChatter: false,     // v3: watercooler uses an LLM call when true; canned lines when false
+      lang: (c.DEFAULT_LANG || 'en'),  // Wave B: UI language (i18n) — 'en' | 'ko'
+      onboarded: false,       // Wave C: first-run guided tour completed flag
     };
   }
 
@@ -5302,6 +6591,43 @@ window.App = window.App || {};
     }
     if (out.length > 50) out = out.slice(out.length - 50);
     return out;
+  }
+
+  // Wave B/C: sanitize a persisted mood value -> number in [0,1].
+  // Falls back to CFG().MOOD_DEFAULT (or 0.7) when missing/invalid.
+  function normalizeMood(m) {
+    var def = cfg().MOOD_DEFAULT;
+    if (typeof def !== 'number') def = 0.7;
+    if (typeof m !== 'number' || !isFinite(m)) return def;
+    return clamp(m, 0, 1);
+  }
+
+  // Wave B/C: sanitize a persisted relationships map -> { otherId: affinity }
+  // where affinity is a finite number clamped to [-1,1]. Drops bad keys/values.
+  function normalizeRelationships(r) {
+    var out = {};
+    if (!r || typeof r !== 'object') return out;
+    for (var k in r) {
+      if (!Object.prototype.hasOwnProperty.call(r, k)) continue;
+      if (!k || typeof k !== 'string') continue;
+      var v = r[k];
+      if (typeof v !== 'number' || !isFinite(v)) continue;
+      out[k] = clamp(v, -1, 1);
+    }
+    return out;
+  }
+
+  // Wave B/C: sanitize a persisted sprite/customization blob.
+  // Returns a {hair, skin, accent} string-triple (empty strings -> renderer
+  // uses its own defaults). Returns null when nothing customized, so we don't
+  // bloat saves with empty objects for agents that were never customized.
+  function normalizeSprite(sp) {
+    if (!sp || typeof sp !== 'object') return null;
+    var hair = (sp.hair == null) ? '' : String(sp.hair);
+    var skin = (sp.skin == null) ? '' : String(sp.skin);
+    var accent = (sp.accent == null) ? '' : String(sp.accent);
+    if (!hair && !skin && !accent) return null;
+    return { hair: hair, skin: skin, accent: accent };
   }
 
   // v3: sanitize one Artifact for persistence/load.
@@ -5467,9 +6793,15 @@ window.App = window.App || {};
       // v3: persona + memories (default from ROLES if absent on disk)
       persona: normalizePersona(a.persona, role),
       memories: normalizeMemories(a.memories),
+      // Wave B/C: social/affect + sprite customization (default-safe; migrate
+      // older saves that lack these by supplying CFG defaults / empty maps).
+      mood: normalizeMood(a.mood),
+      relationships: normalizeRelationships(a.relationships),
+      sprite: normalizeSprite(a.sprite),
       _idleSince: 0,
       _onArrive: null,
       _attention: false,      // v3: runtime-only attention marker
+      _lastActivityTs: 0,     // Wave B/C: runtime-only activity-glow timestamp
     };
     return agent;
   }
@@ -5504,7 +6836,11 @@ window.App = window.App || {};
       // v3: persist persona + memories (so accumulated context survives reload)
       persona: normalizePersona(a.persona, a.role),
       memories: normalizeMemories(a.memories),
-      // STRIPPED: x,y,path,anim,bubble,busy,temp,_idleSince,_onArrive,_attention
+      // Wave B/C: persist mood, relationships, sprite customization.
+      mood: normalizeMood(a.mood),
+      relationships: normalizeRelationships(a.relationships),
+      sprite: normalizeSprite(a.sprite),   // null when never customized (omitted-ish)
+      // STRIPPED: x,y,path,anim,bubble,busy,temp,_idleSince,_onArrive,_attention,_lastActivityTs
     };
   }
 
@@ -5733,6 +7069,23 @@ window.App = window.App || {};
         blob.v = 2;
         v = 2;
       }
+      // v2 -> v3 (Wave B/C): settings.lang/onboarded + agent.mood/relationships/
+      // sprite. All agent fields are filled with safe defaults by rebuildAgent's
+      // normalizers on load, so this step only needs to ensure the settings keys
+      // exist; everything else is a forward no-op. Run whenever v<3 regardless of
+      // whether SCHEMA_VERSION was bumped to 3 (defensive).
+      if (v < 3) {
+        if (blob.settings && typeof blob.settings === 'object') {
+          if (typeof blob.settings.lang === 'undefined') {
+            blob.settings.lang = (cfg().DEFAULT_LANG || 'en');
+          }
+          if (typeof blob.settings.onboarded === 'undefined') {
+            blob.settings.onboarded = false;
+          }
+        }
+        // agent.mood/relationships/sprite left absent -> rebuildAgent defaults.
+        v = 3;
+      }
       // Always stamp to current after running known steps.
       blob.v = target;
       return blob;
@@ -5802,9 +7155,14 @@ window.App = window.App || {};
       // the inline fallback so store-only seeding still produces complete agents)
       persona: normalizePersona(spec.persona, role),
       memories: Array.isArray(spec.memories) ? normalizeMemories(spec.memories) : [],
+      // Wave B/C: mood / relationships / sprite (default-safe).
+      mood: normalizeMood(spec.mood),
+      relationships: normalizeRelationships(spec.relationships),
+      sprite: normalizeSprite(spec.sprite),
       _idleSince: 0,
       _onArrive: null,
       _attention: false,
+      _lastActivityTs: 0,
     };
     s.agents.push(agent);
     return agent;
@@ -6352,6 +7710,10 @@ window.App = window.App || {};
           color: a.color,
           systemPrompt: a.systemPrompt,
           persona: a.persona,
+          // Wave B/C: forward optional social/sprite fields if a preset defines them.
+          mood: a.mood,
+          relationships: a.relationships,
+          sprite: a.sprite,
         });
       }
 
@@ -6448,6 +7810,39 @@ window.App = window.App || {};
   }
   function nowMs() { return Date.now(); }
 
+  // Clamp a number into 0..1 (NaN-safe). Used for mood + affinity.
+  function clamp01n(v) {
+    v = Number(v);
+    if (!isFinite(v)) return 0.7;
+    if (v < 0) return 0;
+    if (v > 1) return 1;
+    return v;
+  }
+  // Normalize a relationships map → { otherId: affinity(0..1) }. Drops junk.
+  function normRelations(rel) {
+    var out = {};
+    if (!rel || typeof rel !== 'object') return out;
+    for (var k in rel) {
+      if (!rel.hasOwnProperty(k)) continue;
+      var a = Number(rel[k]);
+      if (!isFinite(a)) continue;
+      out[k] = (a < 0) ? 0 : (a > 1 ? 1 : a);
+    }
+    return out;
+  }
+  // Normalize a sprite-customization object. All fields optional; unknown → defaults
+  // resolved at draw time. We keep only string/number primitives we recognize.
+  function normSprite(sp) {
+    if (!sp || typeof sp !== 'object') return null;
+    var out = {};
+    if (typeof sp.hair === 'string') out.hair = sp.hair;
+    else if (typeof sp.hair === 'number') out.hair = sp.hair | 0;
+    if (typeof sp.skin === 'string') out.skin = sp.skin;
+    else if (typeof sp.skin === 'number') out.skin = sp.skin | 0;
+    if (typeof sp.accent === 'string') out.accent = sp.accent;
+    return out;
+  }
+
   // Pose classes — anim.frame resets when an agent crosses between these.
   // SPEC §6.5: setState resets anim.frame on "pose-class change".
   function poseClass(state) {
@@ -6515,6 +7910,12 @@ window.App = window.App || {};
       persona: resolvePersona(rdef, spec),
       memories: Array.isArray(spec.memories) ? spec.memories.slice() : [],
       _attention: false,
+      // Wave B/C: mood (0..1), relationships (otherId -> affinity 0..1),
+      // sprite customization, and an activity timestamp that drives the glow.
+      mood: (typeof spec.mood === 'number') ? clamp01n(spec.mood) : (CFG().MOOD_DEFAULT != null ? clamp01n(CFG().MOOD_DEFAULT) : 0.7),
+      relationships: (spec.relationships && typeof spec.relationships === 'object') ? normRelations(spec.relationships) : {},
+      sprite: normSprite(spec.sprite),
+      _lastActivityTs: 0,
     };
 
     if (s && Array.isArray(s.agents)) s.agents.push(agent);
@@ -6718,6 +8119,67 @@ window.App = window.App || {};
   Agents.setAttention = function (agent, on) {
     if (!agent) return;
     agent._attention = !!on;
+  };
+
+  // ===========================================================================
+  // Wave B/C: ACTIVITY GLOW + MOOD + RELATIONSHIPS
+  // ===========================================================================
+
+  // markActivity(agent) — stamp the agent as "recently active" so PixelArt draws a
+  // glow that decays over CFG().GLOW_DECAY_MS. Called on streamed text + by the
+  // orchestrator on collaboration. Cheap; never throws.
+  Agents.markActivity = function (agent) {
+    if (!agent) return;
+    agent._lastActivityTs = nowMs();
+  };
+
+  // activityGlow(agent) — 0..1 strength of the recent-activity glow (1 right after
+  // markActivity, decaying linearly to 0 after GLOW_DECAY_MS). Pure read; safe.
+  Agents.activityGlow = function (agent) {
+    if (!agent || !agent._lastActivityTs) return 0;
+    var decay = CFG().GLOW_DECAY_MS || 2500;
+    if (decay <= 0) return 0;
+    var age = nowMs() - agent._lastActivityTs;
+    if (age < 0) age = 0;
+    if (age >= decay) return 0;
+    return 1 - (age / decay);
+  };
+
+  // setMood(agent, value) — set mood, clamped to 0..1. Returns the clamped value.
+  Agents.setMood = function (agent, value) {
+    if (!agent) return 0;
+    agent.mood = clamp01n(value);
+    return agent.mood;
+  };
+
+  // adjustMood(agent, delta) — nudge mood by delta (clamped). Returns new mood.
+  Agents.adjustMood = function (agent, delta) {
+    if (!agent) return 0;
+    var base = (typeof agent.mood === 'number') ? agent.mood : (CFG().MOOD_DEFAULT != null ? CFG().MOOD_DEFAULT : 0.7);
+    agent.mood = clamp01n(base + (Number(delta) || 0));
+    return agent.mood;
+  };
+
+  // adjustAffinity(agent, otherId, delta) — nudge how much `agent` likes `otherId`
+  // by delta (clamped 0..1). Starts from the configured default affinity. Returns
+  // the new affinity, or 0 on bad input. Subtle by design (orchestrator passes
+  // small deltas after collaboration).
+  Agents.adjustAffinity = function (agent, otherId, delta) {
+    if (!agent || !otherId || otherId === agent.id) return 0;
+    if (!agent.relationships || typeof agent.relationships !== 'object') agent.relationships = {};
+    var def = (CFG().AFFINITY_DEFAULT != null) ? CFG().AFFINITY_DEFAULT : 0.5;
+    var cur = (typeof agent.relationships[otherId] === 'number') ? agent.relationships[otherId] : def;
+    var next = clamp01n(cur + (Number(delta) || 0));
+    agent.relationships[otherId] = next;
+    return next;
+  };
+
+  // affinity(agent, otherId) — current affinity (default if unset). Pure read.
+  Agents.affinity = function (agent, otherId) {
+    var def = (CFG().AFFINITY_DEFAULT != null) ? CFG().AFFINITY_DEFAULT : 0.5;
+    if (!agent || !agent.relationships || !otherId) return def;
+    var v = agent.relationships[otherId];
+    return (typeof v === 'number') ? v : def;
   };
 
   // ===========================================================================
@@ -6997,11 +8459,21 @@ window.App = window.App || {};
         // Selection ring UNDER the agent.
         if (selected && art.drawSelection) art.drawSelection(ctx, a, scr.x, scr.y, size);
 
+        // Wave B/C: activity glow UNDER the agent (a soft pool that fades with
+        // recent streaming activity). Drawn before the sprite so it reads as a halo.
+        if (art.drawAgentGlow) {
+          var glow = Agents.activityGlow(a);
+          if (glow > 0.01) {
+            try { art.drawAgentGlow(ctx, a, scr.x, scr.y, size, glow); } catch (e) {}
+          }
+        }
+
         // The sprite (feet anchor).
         if (art.drawAgent) {
           art.drawAgent(ctx, a, scr.x, scr.y, size, {
             seated: (a.state === 'coding' || a.state === 'searching'),
             selected: selected,
+            glow: art.drawAgentGlow ? 0 : Agents.activityGlow(a),
           });
         }
 
@@ -7097,6 +8569,8 @@ window.App = window.App || {};
       onText: function (delta) {
         assistantText += delta;
         bubbleAccum += delta;
+        // Wave B/C: mark activity so the agent glows while it streams.
+        agent._lastActivityTs = nowMs();
         // bubble shows the tail of the stream (truncated by say()).
         Agents.say(agent, bubbleAccum.slice(-60), 3000);
         try {
@@ -7414,8 +8888,83 @@ window.App = window.App || {};
     syncAttentionBadge();
   }
 
+  // ===========================================================================
+  // MOOD / RELATIONSHIPS — subtle nudges after collaboration. All guarded; prefer
+  //   Agents helpers (owned by agents.js) but fall back to direct writes so this
+  //   never throws if a helper is missing during a partial load.
+  // ===========================================================================
+  function clamp01(n) { n = +n; if (!isFinite(n)) return 0; return n < 0 ? 0 : (n > 1 ? 1 : n); }
+
+  function markActivity(agent) {
+    if (!agent) return;
+    try {
+      var ag = AGENTS();
+      if (ag && typeof ag.markActivity === 'function') { ag.markActivity(agent); return; }
+    } catch (e) {}
+    try { agent._lastActivityTs = nowMs(); } catch (e) {}
+  }
+
+  function setMood(agent, value) {
+    if (!agent) return;
+    try {
+      var ag = AGENTS();
+      if (ag && typeof ag.setMood === 'function') { ag.setMood(agent, value); return; }
+    } catch (e) {}
+    try { agent.mood = clamp01(value); } catch (e) {}
+  }
+
+  function nudgeMood(agent, delta) {
+    if (!agent) return;
+    var cur = (typeof agent.mood === 'number') ? agent.mood
+      : (CFG().MOOD_DEFAULT != null ? CFG().MOOD_DEFAULT : 0.7);
+    setMood(agent, clamp01(cur + delta));
+  }
+
+  function adjustAffinity(a, b, delta) {
+    if (!a || !b || a === b || a.id === b.id) return;
+    try {
+      var ag = AGENTS();
+      if (ag && typeof ag.adjustAffinity === 'function') { ag.adjustAffinity(a, b.id, delta); return; }
+    } catch (e) {}
+    try {
+      if (!a.relationships || typeof a.relationships !== 'object') a.relationships = {};
+      var cur = (typeof a.relationships[b.id] === 'number') ? a.relationships[b.id] : 0.5;
+      a.relationships[b.id] = clamp01(cur + delta);
+    } catch (e) {}
+  }
+
+  // affinity(a, b) → current affinity a feels toward b (default 0.5).
+  function affinity(a, b) {
+    try {
+      if (a && b && a.relationships && typeof a.relationships[b.id] === 'number') return a.relationships[b.id];
+    } catch (e) {}
+    return 0.5;
+  }
+
+  // bondParticipants — after a collaboration, raise mutual affinity + lift mood for
+  //   everyone who worked together. Subtle (small deltas), guarded, never throws.
+  function bondParticipants(list, moodDelta, affDelta) {
+    try {
+      if (!Array.isArray(list)) return;
+      moodDelta = (typeof moodDelta === 'number') ? moodDelta : 0.05;
+      affDelta = (typeof affDelta === 'number') ? affDelta : 0.04;
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i];
+        if (!a) continue;
+        nudgeMood(a, moodDelta);
+        for (var j = 0; j < list.length; j++) {
+          if (i === j) continue;
+          adjustAffinity(a, list[j], affDelta);
+        }
+      }
+      saveSoon();
+    } catch (e) {}
+  }
+
   var Orchestrator = {};
   Orchestrator.PLAN_SCHEMA_VERSION = 1;
+  Orchestrator.adjustAffinity = adjustAffinity;
+  Orchestrator.bondParticipants = bondParticipants;
 
   // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
   // local companion (subscription proxy needs no key). Mirrors api.js's guard so
@@ -7426,6 +8975,67 @@ window.App = window.App || {};
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
     if (prov === 'openai') return !!set.openaiKey;
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+  }
+
+  // providerOf — resolve a model's provider ('anthropic' | 'openai' | ...).
+  function providerOf(model) {
+    try {
+      if (CFG().providerOf) return CFG().providerOf(model);
+      if (App.util && App.util.providerOf) return App.util.providerOf(model);
+    } catch (e) {}
+    return 'anthropic';
+  }
+
+  // clientToolsApplicable — true when the Browser-tools integration should expose
+  //   App.Tools specs to a worker: tools module present + enabled + an Anthropic
+  //   model (the only provider whose tool schema we pass through here).
+  function clientToolsApplicable(agent, settings) {
+    try {
+      if (!App.Tools || typeof App.Tools.specs !== 'function') return false;
+      if (typeof App.Tools.enabled === 'function' && !App.Tools.enabled()) return false;
+      var model = (agent && agent.model) || (settings && settings.defaultModel);
+      return providerOf(model) === 'anthropic';
+    } catch (e) { return false; }
+  }
+
+  // executeToolUses(blocks) → Promise<tool_result[]>. Runs App.Tools.run for each
+  //   {id,name,input} block and logs the activity. Bounded by the caller. Robust:
+  //   any failure yields an error tool_result rather than throwing.
+  function executeToolUses(blocks, agent) {
+    var jobs = [];
+    for (var i = 0; i < blocks.length; i++) {
+      (function (blk) {
+        var p;
+        try {
+          if (App.Tools && typeof App.Tools.run === 'function') {
+            p = App.Tools.run(blk.name, blk.input);
+          } else {
+            p = Promise.resolve({ ok: false, output: '', error: 'tools unavailable' });
+          }
+        } catch (e) {
+          p = Promise.resolve({ ok: false, output: '', error: String((e && e.message) || e) });
+        }
+        jobs.push(Promise.resolve(p).then(function (r) {
+          r = r || {};
+          var label = (agent && agent.name) || (agent && agent.role) || 'agent';
+          try { log(label, 'tool', 'tool', '🔧 ' + (blk.name || 'tool') + (r.ok ? ' ✓' : ' ✗')); } catch (e) {}
+          // surface in the agent transcript if the UI supports it.
+          try {
+            if (App.UI && App.UI.appendTranscript && agent) {
+              App.UI.appendTranscript(agent.id, 'tool', '[tool ' + (blk.name || '') + '] ' + truncate(r.ok ? r.output : (r.error || 'error'), 200));
+            }
+          } catch (e) {}
+          return {
+            type: 'tool_result',
+            tool_use_id: blk.id,
+            content: r.ok ? String(r.output == null ? '' : r.output)
+                          : ('ERROR: ' + String(r.error || 'tool failed')),
+            is_error: !r.ok,
+          };
+        }));
+      })(blocks[i]);
+    }
+    return Promise.all(jobs);
   }
 
   // slugify a title for artifact filenames (lowercase, dashes, no exotic chars).
@@ -8053,7 +9663,24 @@ window.App = window.App || {};
 
     // Web search decision.
     var wantWeb = !!(settings.webSearch && (task.needsWeb || roleDef.webSearchPreferred));
-    var tools = (wantWeb && CFG().WEB_SEARCH_TOOL) ? [CFG().WEB_SEARCH_TOOL] : undefined;
+    var toolList = [];
+    if (wantWeb && CFG().WEB_SEARCH_TOOL) toolList.push(CFG().WEB_SEARCH_TOOL);
+
+    // CLIENT TOOLS (Browser tools — calc/run_js/analyze_data). Anthropic-only; the
+    //   server-side stream parser in api.js doesn't surface tool_use args, so we
+    //   cannot run a true round-trip tool loop here. We EXPOSE the tools to the
+    //   model (so models that can answer without calling a tool benefit from the
+    //   schema/hint) and detect a tool_use stop gracefully (see startWorkerStream).
+    //   This is the deliberate "minimal, robust" integration the contract allows.
+    if (clientToolsApplicable(agent, settings)) {
+      try {
+        var specs = App.Tools.specs();
+        if (Array.isArray(specs)) {
+          for (var ti = 0; ti < specs.length; ti++) toolList.push(specs[ti]);
+        }
+      } catch (e) {}
+    }
+    var tools = toolList.length ? toolList : undefined;
 
     // No credentials path (defend; provider/companion-aware so GPT & companion work).
     if (!hasCredsFor(agent.model || settings.defaultModel)) {
@@ -8066,16 +9693,32 @@ window.App = window.App || {};
     ag.say(agent, truncate(task.title, 40), 3000);
     ag.goToFurniture(agent, 'desk', function () {
       ag.setState(agent, wantWeb ? 'searching' : 'coding');
-      startWorkerStream(task, agent, userContent, tools, wantWeb);
+      startWorkerStream(task, agent, [{ role: 'user', content: userContent }], tools, wantWeb, 0);
     });
   }
 
-  function startWorkerStream(task, agent, userContent, tools, wantWeb) {
+  // stopReasonOf(res) — pull stop_reason from the raw final stream event (Anthropic
+  //   message_delta.delta.stop_reason). null for OpenAI / unknown.
+  function stopReasonOf(res) {
+    try {
+      var raw = res && res.raw;
+      if (raw && raw.delta && typeof raw.delta.stop_reason === 'string') return raw.delta.stop_reason;
+    } catch (e) {}
+    return null;
+  }
+
+  // startWorkerStream — one streamed turn for `task`. messages[] is the running
+  //   conversation (mutated across the bounded tool loop). iter = tool-loop depth.
+  function startWorkerStream(task, agent, messages, tools, wantWeb, iter) {
     var ag = AGENTS();
     var settings = STATE().settings || {};
     var roleDef = ROLES()[task.role] || {};
     var sys = agent.systemPrompt || roleDef.system || '';
+    iter = iter || 0;
+    var MAX_TOOL_ITERS = (CFG().MAX_TOOL_ITERS != null) ? CFG().MAX_TOOL_ITERS : 2;
 
+    // accumulate text across loop iterations so partial answers aren't lost.
+    if (typeof task._acc !== 'string') task._acc = '';
     var acc = '';
     var bubbleAccum = '';
 
@@ -8084,7 +9727,7 @@ window.App = window.App || {};
       openaiKey: settings.openaiKey,        // GPT-model worker support
       model: agent.model || settings.defaultModel,
       system: sys,
-      messages: [{ role: 'user', content: userContent }],
+      messages: messages,
       tools: tools,
       onState: function (st) {
         if (st === 'searching') ag.setState(agent, 'searching');
@@ -8094,17 +9737,63 @@ window.App = window.App || {};
         acc += delta;
         bubbleAccum += delta;
         ag.say(agent, bubbleAccum.slice(-60), 3000);
+        markActivity(agent);   // recent-activity glow (drawn by pixelart.js)
         // Live transcript so clicking the worker shows progress.
         try { if (App.UI && App.UI.appendTranscript) App.UI.appendTranscript(agent.id, 'assistant', delta); } catch (e) {}
         // keep the board's running card text fresh occasionally
-        task.result = acc;
+        task.result = task._acc + acc;
       },
       onDone: function (res) {
-        var text = (res && res.text) || acc || '';
         if (res && res.usage) {
           agent.stats.tokensIn += (res.usage.input_tokens || 0);
           agent.stats.tokensOut += (res.usage.output_tokens || 0);
         }
+        task._acc += acc;
+
+        // TOOL LOOP (real path) — only if a future api.js surfaces structured
+        //   tool_use blocks on the result (res.toolUses [{id,name,input}]). Today's
+        //   api.js does not, so this branch is normally skipped; it's forward-safe.
+        var toolUses = res && Array.isArray(res.toolUses) ? res.toolUses : null;
+        if (toolUses && toolUses.length && tools && tools.length && iter < MAX_TOOL_ITERS) {
+          var s4 = STATE(); if (s4 && s4._activeStreams) delete s4._activeStreams[agent.id];
+          var asstContent = [];
+          if (acc && acc.trim()) asstContent.push({ type: 'text', text: acc });
+          for (var tu = 0; tu < toolUses.length; tu++) {
+            asstContent.push({ type: 'tool_use', id: toolUses[tu].id, name: toolUses[tu].name, input: toolUses[tu].input });
+          }
+          executeToolUses(toolUses, agent).then(function (results) {
+            var next = messages.slice();
+            next.push({ role: 'assistant', content: asstContent });
+            next.push({ role: 'user', content: results });
+            startWorkerStream(task, agent, next, tools, wantWeb, iter + 1);
+          }, function () {
+            // tool execution failed wholesale → finalize with what we have.
+            var t0 = task._acc || acc || ''; task._acc = '';
+            if (t0 && t0.trim()) onWorkerResult(task, t0); else failTask(task, '(tool loop failed)');
+          });
+          return;
+        }
+
+        // TOOL LOOP (fallback) — the model wanted to call a client tool but api.js
+        //   does not surface tool_use arguments/ids through its stream, so we cannot
+        //   execute a true tool_result round-trip. Robust fallback: nudge the model
+        //   to inline-compute (it already has its reasoning) and re-run once. Bounded.
+        if (stopReasonOf(res) === 'tool_use' && tools && tools.length && iter < MAX_TOOL_ITERS) {
+          try { log(agent.name || agent.role, 'tool', 'tool', '🔧 wanted a tool — asking for an inline answer'); } catch (e) {}
+          var follow = messages.slice();
+          if (acc && acc.trim()) follow.push({ role: 'assistant', content: acc });
+          follow.push({
+            role: 'user',
+            content: 'Tool execution is unavailable in this environment. Please complete the task by reasoning it out directly and provide the final answer inline (do not call any tools).',
+          });
+          var s3 = STATE(); if (s3 && s3._activeStreams) delete s3._activeStreams[agent.id];
+          // re-stream WITHOUT tools so it answers directly.
+          startWorkerStream(task, agent, follow, undefined, wantWeb, iter + 1);
+          return;
+        }
+
+        var text = task._acc || (res && res.text) || '';
+        task._acc = '';
         if (!text || !text.trim()) {
           failTask(task, '(empty result)');
           return;
@@ -8327,6 +10016,7 @@ window.App = window.App || {};
       ag.setState(agent, 'idle');
       ag.say(agent, '✓ done', 2500);
       clearAttention(agent);
+      nudgeMood(agent, 0.06);   // satisfaction from finishing work
       // honor a deferred break request (set while the agent was busy), else maybe wander.
       if (agent._wantBreak) {
         agent._wantBreak = false;
@@ -8356,6 +10046,7 @@ window.App = window.App || {};
       if (msg === 'NO_KEY') ag.say(agent, '🔑 set your API key in Settings', 4000);
       else ag.say(agent, '⚠ error', 3500);
       var s = STATE(); if (s && s._activeStreams) delete s._activeStreams[agent.id];
+      nudgeMood(agent, -0.07);   // frustration from a failed task
       // Flag for the user: no-key / rate-limit (429) / any API error.
       raiseAttention(agent);
     }
@@ -8522,12 +10213,24 @@ window.App = window.App || {};
       var pool = idleNonBoss();
       if (pool.length < 2) return;
 
-      // pick 2 distinct.
+      // pick 2 distinct — prefer a higher-affinity pairing (still some randomness).
       var a = pool[Math.floor(Math.random() * pool.length)];
-      var b = pool[Math.floor(Math.random() * pool.length)];
-      var guard = 0;
-      while (b === a && guard++ < 8) b = pool[Math.floor(Math.random() * pool.length)];
-      if (a === b) return;
+      var b = null;
+      var rest = [];
+      for (var ri = 0; ri < pool.length; ri++) { if (pool[ri] !== a) rest.push(pool[ri]); }
+      if (!rest.length) return;
+      if (Math.random() < 0.6) {
+        // affinity-weighted: pick the peer 'a' likes most (ties → random).
+        var best = rest[0], bestAff = affinity(a, rest[0]);
+        for (var rj = 1; rj < rest.length; rj++) {
+          var af = affinity(a, rest[rj]);
+          if (af > bestAff || (af === bestAff && Math.random() < 0.5)) { best = rest[rj]; bestAff = af; }
+        }
+        b = best;
+      } else {
+        b = rest[Math.floor(Math.random() * rest.length)];
+      }
+      if (!b || a === b) return;
 
       _lastChatter = s._time;
       _chatterActive = true;
@@ -8645,6 +10348,8 @@ window.App = window.App || {};
         try { ag.addMemory(a, 'watercooler: ' + truncate(topicLine, 80), 1); } catch (e) {}
         try { ag.addMemory(b, 'watercooler: ' + truncate(topicLine, 80), 1); } catch (e) {}
       }
+      // subtle bonding from a friendly chat.
+      try { bondParticipants([a, b], 0.03, 0.05); } catch (e) {}
       // return both to desks if still idle & free.
       [a, b].forEach(function (agt) {
         if (!agt) return;
@@ -8657,6 +10362,288 @@ window.App = window.App || {};
       });
     } catch (e) {}
     _chatterActive = false;
+  }
+
+  // ===========================================================================
+  // PRE-SYNTHESIS PIPELINE — adaptive replan → group debate → approval gate →
+  //   synthesize. Each phase is OPTIONAL (config-gated) and creds-guarded; if a
+  //   phase is off/unavailable we fall straight through to the next. Re-entrancy
+  //   is guarded by root._gating + per-phase done-flags so tick() can call this
+  //   repeatedly without double-firing. Never throws.
+  // ===========================================================================
+  function gatherWorkerResults(root) {
+    var kids = childrenOf(root.id);
+    kids.sort(function (a, b) {
+      var ai = (typeof a._depIndex === 'number') ? a._depIndex : 0;
+      var bi = (typeof b._depIndex === 'number') ? b._depIndex : 0;
+      return ai - bi;
+    });
+    var parts = [];
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      var roleLabel = (ROLES()[k.role] && ROLES()[k.role].label) || k.role;
+      var body = (k.status === 'done' && k.result) ? k.result
+        : ('(this subtask did not complete: ' + (k.error || 'no result') + ')');
+      parts.push('[' + roleLabel + ' — ' + k.title + ']\n' + body);
+    }
+    return parts.join('\n\n');
+  }
+
+  function bossModelFor() {
+    var settings = (STATE() && STATE().settings) || {};
+    var boss = ensureBoss();
+    return (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL;
+  }
+
+  // prepareSynthesis(root) — orchestrate the optional pre-synth phases, then synth.
+  function prepareSynthesis(root) {
+    try {
+      if (!root || root._synthStarted) return;
+      if (root._gating) return;             // a phase async-call is in flight
+      // PHASE 1 — adaptive replan (once).
+      if (CFG().ENABLE_REPLAN && !root._replanned) {
+        root._gating = true;
+        runReplanPhase(root, function (added) {
+          root._gating = false;
+          root._replanned = true;
+          // If new children were added, return; tick() will re-enter once they finish.
+          if (!added) prepareSynthesis(root);
+          // (if added>0, the new queued tasks are picked up next tick; when all
+          //  terminal again, checkRootsForSynthesis → prepareSynthesis runs phase 2.)
+        });
+        return;
+      }
+      // PHASE 2 — group debate / critique (once).
+      if (CFG().ENABLE_DEBATE && !root._debated) {
+        root._gating = true;
+        runDebatePhase(root, function () {
+          root._gating = false;
+          root._debated = true;
+          prepareSynthesis(root);
+        });
+        return;
+      }
+      // PHASE 3 — human approval gate (optional, default off).
+      if (CFG().ENABLE_APPROVAL && !root._approved && App.UI && typeof App.UI.openApproval === 'function') {
+        root._gating = true;
+        runApprovalPhase(root, function (proceed) {
+          root._gating = false;
+          if (proceed) { root._approved = true; prepareSynthesis(root); }
+          // if !proceed: runApprovalPhase already handled revise(re-queue)/reject(error).
+        });
+        return;
+      }
+      // All gates passed → synthesize.
+      Orchestrator.synthesize(root);
+    } catch (e) {
+      // Never block delivery on a gate failure.
+      try { Orchestrator.synthesize(root); } catch (e2) {}
+    }
+  }
+
+  // runReplanPhase — one Boss call: should we add more subtasks? cb(addedCount).
+  function runReplanPhase(root, cb) {
+    var settings = (STATE() && STATE().settings) || {};
+    var model = bossModelFor();
+    var sys = CFG().BOSS_REPLAN_SYSTEM;
+    if (!sys || !hasCredsFor(model)) { cb(0); return; }
+
+    var boss = ensureBoss();
+    var content = "USER'S ORIGINAL GOAL:\n" + (root.desc || '') +
+      "\n\nWORKER RESULTS SO FAR:\n" + gatherWorkerResults(root) +
+      "\n\nDecide whether more subtasks are needed. Reply with the strict JSON described in your instructions.";
+    var acc = '';
+    var done = false;
+    function finish(added) { if (done) return; done = true; cb(added || 0); }
+    try { log('Boss', 'system', 'system', '🔄 reviewing results (replan)…'); } catch (e) {}
+
+    var handle = App.API.stream({
+      apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
+      model: model,
+      system: sys,
+      messages: [{ role: 'user', content: content }],
+      onText: function (d) { acc += d; },
+      onDone: function (res) {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_replan'];
+        if (boss && res && res.usage) {
+          boss.stats.tokensIn += (res.usage.input_tokens || 0);
+          boss.stats.tokensOut += (res.usage.output_tokens || 0);
+        }
+        var decision = parseReplanDecision((res && res.text) || acc);
+        if (decision && decision.action === 'replan' && decision.newSubtasks && decision.newSubtasks.length) {
+          var n = addReplanSubtasks(root, decision.newSubtasks);
+          if (n > 0) {
+            try { log('Boss', 'all', 'system', '🔄 adding ' + n + ' follow-up task' + (n === 1 ? '' : 's') + (decision.reason ? ': ' + truncate(decision.reason, 60) : '')); } catch (e) {}
+            if (boss) { try { AGENTS().say(boss, '🔄 a bit more work…', 3000); } catch (e) {} }
+            refreshBoard(); saveSoon();
+          }
+          finish(n);
+        } else {
+          finish(0);
+        }
+      },
+      onError: function () {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_replan'];
+        finish(0);
+      },
+    });
+    var s = STATE(); if (s && s._activeStreams) s._activeStreams['__boss_replan'] = handle;
+  }
+
+  // parseReplanDecision — tolerant JSON parse → {action,newSubtasks,reason}|null.
+  function parseReplanDecision(raw) {
+    try {
+      if (!raw) return null;
+      var s = String(raw).replace(/^```(?:json|jsonc)?\s*/i, '').replace(/```\s*$/i, '');
+      var first = s.indexOf('{'), last = s.lastIndexOf('}');
+      if (first === -1 || last === -1 || last < first) return null;
+      var body = s.slice(first, last + 1).replace(/,(\s*[}\]])/g, '$1')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+      var obj = null;
+      try { obj = JSON.parse(body); }
+      catch (e) { var bal = braceBalancedPrefix(body); if (bal) { try { obj = JSON.parse(bal); } catch (e2) {} } }
+      if (!obj || typeof obj !== 'object') return null;
+      var action = (obj.action === 'replan') ? 'replan' : 'finish';
+      var list = [];
+      if (Array.isArray(obj.newSubtasks)) {
+        for (var i = 0; i < obj.newSubtasks.length; i++) {
+          var it = obj.newSubtasks[i];
+          if (!it || typeof it !== 'object') continue;
+          if (it.instruction == null || String(it.instruction).trim() === '') continue;
+          list.push(it);
+          if (list.length >= 4) break;
+        }
+      }
+      return { action: action, newSubtasks: list, reason: (typeof obj.reason === 'string' ? obj.reason : '') };
+    } catch (e) { return null; }
+  }
+
+  // addReplanSubtasks — append new children to an existing root; deps reference
+  //   ONLY pre-existing siblings by their order index in this round are ignored
+  //   (kept simple: new tasks have no inter-deps → run as a parallel follow-up wave).
+  function addReplanSubtasks(root, items) {
+    var s = STATE();
+    if (!s || !Array.isArray(s.tasks)) return 0;
+    var n = 0;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var role = (ROLES()[it.role]) ? it.role : 'generalist';
+      var t = {
+        id: uid('t'),
+        title: truncate(it.title || firstWords(it.instruction, 6), 48),
+        desc: String(it.instruction || ''),
+        assignee: null,
+        status: 'queued',
+        parentId: root.id,
+        subtaskIds: [],
+        result: null,
+        error: null,
+        createdAt: nowMs() + i,
+        role: role,
+        needsWeb: (typeof it.needsWeb === 'boolean') ? it.needsWeb
+          : !!(ROLES()[role] && ROLES()[role].webSearchPreferred),
+        _depIndex: 1000 + i,    // after the original wave
+        _depPlanIdx: null,
+        _depIds: [],            // explicit no-deps → parallel follow-up wave
+        verify: !!it.verify,
+        _retries: 0,
+        _qaDone: false,
+        _feedback: null,
+        _ctrl: null,
+      };
+      s.tasks.push(t);
+      root.subtaskIds.push(t.id);
+      n++;
+    }
+    return n;
+  }
+
+  // runDebatePhase — one batched critique call; appends critique notes to the root
+  //   for the synthesizer to consider. cb() always called (creds-guarded skip).
+  function runDebatePhase(root, cb) {
+    var settings = (STATE() && STATE().settings) || {};
+    var model = bossModelFor();
+    var sys = CFG().DEBATE_SYSTEM;
+    if (!sys || !hasCredsFor(model)) { cb(); return; }
+
+    var boss = ensureBoss();
+    var content = "USER'S ORIGINAL GOAL:\n" + (root.desc || '') +
+      "\n\nPEER RESULTS TO CRITIQUE:\n" + gatherWorkerResults(root) +
+      "\n\nProvide concise, actionable improvement notes.";
+    var acc = '';
+    var done = false;
+    function finish() { if (done) return; done = true; cb(); }
+    try { log('Boss', 'all', 'system', '💬 team critique round…'); } catch (e) {}
+
+    var handle = App.API.stream({
+      apiKey: settings.apiKey,
+      openaiKey: settings.openaiKey,
+      model: model,
+      system: sys,
+      messages: [{ role: 'user', content: content }],
+      onText: function (d) { acc += d; },
+      onDone: function (res) {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_debate'];
+        if (boss && res && res.usage) {
+          boss.stats.tokensIn += (res.usage.input_tokens || 0);
+          boss.stats.tokensOut += (res.usage.output_tokens || 0);
+        }
+        var notes = ((res && res.text) || acc || '').trim();
+        if (notes) {
+          root._debateNotes = notes;
+          try { log('QA', 'Boss', 'msg', '💬 critique: ' + truncate(notes, 80)); } catch (e) {}
+        }
+        finish();
+      },
+      onError: function () {
+        var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_debate'];
+        finish();
+      },
+    });
+    var s = STATE(); if (s && s._activeStreams) s._activeStreams['__boss_debate'] = handle;
+  }
+
+  // runApprovalPhase — ask the user to approve the about-to-be-delivered work.
+  //   cb(proceed:boolean). On 'revise:<text>' we re-queue a follow-up task with the
+  //   feedback and DON'T proceed (cb(false)); on 'reject' we mark the root error.
+  function runApprovalPhase(root, cb) {
+    var payload = {
+      title: root.title,
+      goal: root.desc,
+      results: gatherWorkerResults(root),
+    };
+    var p;
+    try { p = App.UI.openApproval(payload); } catch (e) { cb(true); return; }
+    if (!p || typeof p.then !== 'function') { cb(true); return; }
+    p.then(function (decision) {
+      decision = String(decision || 'approve');
+      if (decision === 'approve') { cb(true); return; }
+      if (decision.indexOf('revise') === 0) {
+        var fb = '';
+        var ci = decision.indexOf(':');
+        if (ci >= 0) fb = decision.slice(ci + 1).trim();
+        var n = addReplanSubtasks(root, [{
+          role: 'generalist',
+          title: 'Revise per feedback',
+          instruction: 'Revise the delivered work to address this user feedback:\n' + (fb || '(no specifics given — improve overall quality)') +
+            '\n\nPrior combined results:\n' + gatherWorkerResults(root),
+        }]);
+        // allow another approval round after the revision lands.
+        root._approved = false;
+        if (n > 0) { try { log('user', 'Boss', 'msg', '✏ revise: ' + truncate(fb, 60)); } catch (e) {} refreshBoard(); saveSoon(); }
+        cb(false);
+        return;
+      }
+      // reject
+      root.status = 'error';
+      root.error = 'rejected by user';
+      root._synthStarted = true;
+      try { log('user', 'Boss', 'error', 'delivery rejected.'); } catch (e) {}
+      refreshBoard();
+      try { if (App.UI && App.UI.showFinalResult) App.UI.showFinalResult(root); } catch (e) {}
+      cb(false);
+    }, function () { cb(true); });
   }
 
   // ===========================================================================
@@ -8745,6 +10732,8 @@ window.App = window.App || {};
         try {
           if (boss && ag.addMemory) ag.addMemory(boss, 'Delivered: ' + truncate(rootTask.title, 80), 6);
         } catch (e) {}
+        // RELATIONSHIPS/MOOD: a successful sync bonds the team + lifts spirits.
+        try { bondParticipants(participants, 0.06, 0.05); } catch (e) {}
         if (boss) {
           boss.busy = false;
           ag.setState(boss, 'idle');
@@ -8820,6 +10809,10 @@ window.App = window.App || {};
       var body = (k.status === 'done' && k.result) ? k.result
         : ('(this subtask did not complete: ' + (k.error || 'no result') + ')');
       parts.push('\n[' + roleLabel + ' — ' + k.title + ']\n' + body);
+    }
+    // GROUP DEBATE notes (if a critique round ran) — let synthesis act on them.
+    if (rootTask._debateNotes) {
+      parts.push('\nTEAM CRITIQUE NOTES (address these where valid):\n' + rootTask._debateNotes);
     }
     parts.push('\nProduce the final answer for the user now.');
     return parts.join('\n');
@@ -8921,7 +10914,7 @@ window.App = window.App || {};
       if (!allTerminal) continue;
 
       if (anyDone) {
-        Orchestrator.synthesize(root);
+        prepareSynthesis(root);
       } else if (allError) {
         // All children failed → root error, no synthesis. (§7.6)
         root.status = 'error';
@@ -8972,6 +10965,1096 @@ window.App = window.App || {};
 })();
 </script>
 <script>
+window.App = window.App || {};
+// =============================================================================
+// graph.js  ->  App.Graph   (WORKFLOW GRAPH — read-only DAG viewer)
+// PIXEL AI COMPANY ("NEON//WORKS")
+//
+// Loads BEFORE ui.js (so el/modal helpers from App.UI are not available yet —
+// this module brings its own tiny DOM helpers and styles, and mounts into the
+// existing #modal-root using the shared modal/panel CSS classes).
+//
+//   App.Graph.open()  -> opens a modal that draws the current Boss root task and
+//                        its child subtasks as a node graph. Columns are laid out
+//                        by dependency depth (computed from task._depIds /
+//                        _depIndex). Nodes are colored by status; edges connect a
+//                        dependency to its dependent.
+//
+// Self-install: injects a HUD button ("<> Flow") into #hud-controls that calls
+// App.Graph.open(). Everything is guarded; never throws into the rAF loop, and
+// no-ops gracefully when there are no tasks or dependencies missing.
+//
+// Classic <script>; no import/export. ASCII source. Attaches to window.App.
+// =============================================================================
+(function () {
+  'use strict';
+
+  function CFG()   { return App.config || {}; }
+  function STATE() { return App.state; }
+
+  // --- status -> color -------------------------------------------------------
+  // Prefer the pinned config.stateColor map; fall back to sane defaults so the
+  // module is robust even if config shape changes.
+  var FALLBACK_STATUS = {
+    queued:  '#8294c4',
+    blocked: '#8294c4',
+    running: '#39d7ff',
+    done:    '#5dff9b',
+    error:   '#ff4d6d',
+    boss:    '#9b5cff'
+  };
+  function statusColor(status) {
+    var sc = CFG().stateColor || {};
+    if (status === 'done')    return sc.coding   || FALLBACK_STATUS.done;
+    if (status === 'running') return sc.walking  || FALLBACK_STATUS.running;
+    if (status === 'error')   return sc.error    || FALLBACK_STATUS.error;
+    if (status === 'queued' || status === 'blocked')
+      return sc.idle || FALLBACK_STATUS.queued;
+    return FALLBACK_STATUS.queued;
+  }
+
+  // --- tiny DOM helpers (self-contained; ui.js not loaded yet) ---------------
+  function elem(tag, cls, txt) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt != null) n.textContent = txt;
+    return n;
+  }
+  function on(node, evt, fn) {
+    if (node && node.addEventListener) node.addEventListener(evt, fn, false);
+  }
+
+  // ---------------------------------------------------------------------------
+  // DATA: find the most recent Boss root + its children; build a layered graph.
+  // ---------------------------------------------------------------------------
+  function tasksArr() {
+    var s = STATE();
+    return (s && Array.isArray(s.tasks)) ? s.tasks : [];
+  }
+
+  // Pick the latest root task (parentId == null). Prefer a running root; else the
+  // newest by createdAt.
+  function latestRoot() {
+    var ts = tasksArr();
+    var roots = [];
+    for (var i = 0; i < ts.length; i++) {
+      var t = ts[i];
+      if (t && t.parentId == null) roots.push(t);
+    }
+    if (!roots.length) return null;
+    roots.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+    // prefer a running root if one exists, else newest
+    for (var j = 0; j < roots.length; j++) {
+      if (roots[j].status === 'running') return roots[j];
+    }
+    return roots[0];
+  }
+
+  function childrenOf(rootId) {
+    var ts = tasksArr(), out = [];
+    for (var i = 0; i < ts.length; i++) {
+      if (ts[i] && ts[i].parentId === rootId) out.push(ts[i]);
+    }
+    return out;
+  }
+
+  // Compute a column depth for each child using _depIds (resolved dep task ids)
+  // first; fall back to _depIndex ordering if ids are absent. Depth 0 = no deps.
+  function computeLayout(root) {
+    var kids = childrenOf(root.id);
+    var byId = {};
+    var i;
+    for (i = 0; i < kids.length; i++) byId[kids[i].id] = kids[i];
+
+    var depthCache = {};
+    function depthOf(task, seen) {
+      if (!task) return 0;
+      if (depthCache[task.id] != null) return depthCache[task.id];
+      seen = seen || {};
+      if (seen[task.id]) return 0;        // cycle guard
+      seen[task.id] = true;
+
+      var deps = resolveDeps(task, kids);
+      if (!deps.length) { depthCache[task.id] = 0; return 0; }
+      var max = 0;
+      for (var k = 0; k < deps.length; k++) {
+        var d = byId[deps[k]];
+        if (d) max = Math.max(max, depthOf(d, seen) + 1);
+      }
+      depthCache[task.id] = max;
+      return max;
+    }
+
+    // group children by depth
+    var cols = {};   // depth -> [tasks]
+    var maxDepth = 0;
+    for (i = 0; i < kids.length; i++) {
+      var dpt = depthOf(kids[i], {});
+      maxDepth = Math.max(maxDepth, dpt);
+      (cols[dpt] = cols[dpt] || []).push(kids[i]);
+    }
+
+    return { root: root, kids: kids, cols: cols, maxDepth: maxDepth };
+  }
+
+  // Resolve a child's dependency task ids. Uses _depIds when present, otherwise
+  // derives from _depIndex (everything with a smaller _depIndex among siblings).
+  function resolveDeps(task, sibs) {
+    if (Array.isArray(task._depIds) && task._depIds.length) {
+      return task._depIds.slice();
+    }
+    // _depIndex-based fallback: a child depends on all siblings with a strictly
+    // smaller _depIndex (matches the sequential dependency convention).
+    if (typeof task._depIndex === 'number' && sibs) {
+      var ids = [];
+      for (var i = 0; i < sibs.length; i++) {
+        var s = sibs[i];
+        if (s === task) continue;
+        if (typeof s._depIndex === 'number' && s._depIndex < task._depIndex) {
+          ids.push(s.id);
+        }
+      }
+      return ids;
+    }
+    return [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // STYLES: injected once. Reuses modal/panel look; adds graph-specific bits.
+  // ---------------------------------------------------------------------------
+  var STYLE_ID = 'graph-styles';
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    var css = [
+      '.graph-wrap{position:relative;width:100%;overflow:auto;background:rgba(10,14,28,.55);',
+        'border:1px solid rgba(57,215,255,.18);border-radius:8px;padding:6px;min-height:220px;max-height:60vh}',
+      '.graph-canvas{display:block}',
+      '.graph-empty{padding:36px 16px;text-align:center;color:#8294c4;font-size:13px;letter-spacing:.04em}',
+      '.graph-legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:11px;color:#8294c4;letter-spacing:.04em}',
+      '.graph-legend .lg{display:inline-flex;align-items:center;gap:6px}',
+      '.graph-legend .sw{width:11px;height:11px;border-radius:2px;display:inline-block;box-shadow:0 0 6px currentColor}'
+    ].join('');
+    var st = elem('style');
+    st.id = STYLE_ID;
+    st.textContent = css;
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  // ---------------------------------------------------------------------------
+  // DRAW the graph onto an SVG element. Columns by depth; root on the far left.
+  // ---------------------------------------------------------------------------
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  function svgEl(tag, attrs) {
+    var n = document.createElementNS(SVG_NS, tag);
+    if (attrs) for (var k in attrs) {
+      if (attrs.hasOwnProperty(k)) n.setAttribute(k, attrs[k]);
+    }
+    return n;
+  }
+
+  function truncate(str, n) {
+    str = String(str == null ? '' : str);
+    return str.length > n ? str.slice(0, n - 1) + '…' : str;
+  }
+
+  function buildGraph(container, layout) {
+    container.innerHTML = '';
+    var root = layout.root, kids = layout.kids, cols = layout.cols;
+
+    // geometry
+    var NW = 168, NH = 52;              // node box
+    var COL_GAP = 96, ROW_GAP = 22;     // gaps
+    var PAD = 24;
+    var nColumns = layout.maxDepth + 2; // +1 for child columns range, +1 for root col
+    // Determine the tallest column (in node count) to size canvas height.
+    var maxRows = 1;
+    for (var d = 0; d <= layout.maxDepth; d++) {
+      var arr = cols[d] || [];
+      if (arr.length > maxRows) maxRows = arr.length;
+    }
+
+    var width = PAD * 2 + nColumns * NW + (nColumns - 1) * COL_GAP;
+    var height = PAD * 2 + maxRows * NH + (maxRows - 1) * ROW_GAP;
+    height = Math.max(height, NH + PAD * 2);
+
+    var svg = svgEl('svg', {
+      'class': 'graph-canvas',
+      width: width, height: height,
+      viewBox: '0 0 ' + width + ' ' + height
+    });
+
+    // position map: taskId -> {x,y,cx,cy}
+    var pos = {};
+
+    // ROOT node (column 0, vertically centered)
+    var rootX = PAD;
+    var rootY = (height - NH) / 2;
+    pos[root.id] = { x: rootX, y: rootY, cx: rootX + NW, cy: rootY + NH / 2 };
+
+    // CHILD columns: depth 0 -> column index 1, etc.
+    function colX(depth) { return PAD + (depth + 1) * (NW + COL_GAP); }
+    for (var depth = 0; depth <= layout.maxDepth; depth++) {
+      var list = cols[depth] || [];
+      var colH = list.length * NH + (list.length - 1) * ROW_GAP;
+      var startY = (height - colH) / 2;
+      for (var r = 0; r < list.length; r++) {
+        var ty = startY + r * (NH + ROW_GAP);
+        var tx = colX(depth);
+        pos[list[r].id] = { x: tx, y: ty, cx: tx + NW, cy: ty + NH / 2 };
+      }
+    }
+
+    // EDGES first (so nodes paint on top). root -> each child with no resolved
+    // sibling deps; child -> child for resolved deps.
+    var edgeLayer = svgEl('g', {});
+    svg.appendChild(edgeLayer);
+
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      var deps = resolveDeps(k, kids);
+      var to = pos[k.id];
+      if (!to) continue;
+      if (!deps.length) {
+        // connect from root
+        drawEdge(edgeLayer, pos[root.id], to, statusColor(k.status));
+      } else {
+        for (var j = 0; j < deps.length; j++) {
+          var from = pos[deps[j]];
+          if (from) drawEdge(edgeLayer, from, to, statusColor(k.status));
+        }
+      }
+    }
+
+    // NODES
+    drawNode(svg, pos[root.id], NW, NH, root, true);
+    for (var m = 0; m < kids.length; m++) {
+      var p = pos[kids[m].id];
+      if (p) drawNode(svg, p, NW, NH, kids[m], false);
+    }
+
+    container.appendChild(svg);
+  }
+
+  function drawEdge(layer, from, to, color) {
+    // from right-center of source to left-center of target; smooth cubic.
+    var x1 = from.cx, y1 = from.cy;
+    var x2 = to.x,  y2 = to.cy;
+    var mx = (x1 + x2) / 2;
+    var d = 'M' + x1 + ',' + y1 +
+            ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2;
+    var path = svgEl('path', {
+      d: d, fill: 'none',
+      stroke: color || '#39d7ff',
+      'stroke-width': '2',
+      'stroke-opacity': '0.55'
+    });
+    layer.appendChild(path);
+  }
+
+  function drawNode(svg, p, w, h, task, isRoot) {
+    var color = isRoot ? FALLBACK_STATUS.boss : statusColor(task.status);
+    var g = svgEl('g', {});
+
+    var rect = svgEl('rect', {
+      x: p.x, y: p.y, width: w, height: h, rx: 7, ry: 7,
+      fill: 'rgba(16,22,42,.92)',
+      stroke: color, 'stroke-width': isRoot ? '2.4' : '1.6'
+    });
+    g.appendChild(rect);
+
+    // status dot (top-left inside)
+    var dot = svgEl('circle', {
+      cx: p.x + 12, cy: p.y + 13, r: 4, fill: color
+    });
+    g.appendChild(dot);
+
+    // role / kind label (small, top)
+    var roleLabel = isRoot ? 'BOSS' : roleText(task.role);
+    var kind = svgEl('text', {
+      x: p.x + 24, y: p.y + 17,
+      fill: color, 'font-size': '9',
+      'font-family': 'monospace', 'letter-spacing': '0.08em'
+    });
+    kind.textContent = String(roleLabel).toUpperCase();
+    g.appendChild(kind);
+
+    // title (main)
+    var title = svgEl('text', {
+      x: p.x + 12, y: p.y + 35,
+      fill: '#dce6ff', 'font-size': '12',
+      'font-family': 'sans-serif'
+    });
+    title.textContent = truncate(task.title || task.desc || '(task)', 24);
+    g.appendChild(title);
+
+    // status text (bottom)
+    var st = svgEl('text', {
+      x: p.x + 12, y: p.y + 47,
+      fill: '#8294c4', 'font-size': '9',
+      'font-family': 'monospace', 'letter-spacing': '0.06em'
+    });
+    st.textContent = String(task.status || 'queued').toUpperCase();
+    g.appendChild(st);
+
+    svg.appendChild(g);
+  }
+
+  function roleText(role) {
+    var roles = CFG().ROLES || {};
+    if (roles[role] && roles[role].label) return roles[role].label;
+    return role || 'task';
+  }
+
+  // ---------------------------------------------------------------------------
+  // MODAL: mount into #modal-root reusing the shared modal/panel classes.
+  // ---------------------------------------------------------------------------
+  var MODAL_ID = 'modal-graph';
+
+  function closeModal() {
+    var m = document.getElementById(MODAL_ID);
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
+  function legend() {
+    var wrap = elem('div', 'graph-legend');
+    var items = [
+      ['queued', 'Queued', statusColor('queued')],
+      ['running', 'Running', statusColor('running')],
+      ['done', 'Done', statusColor('done')],
+      ['error', 'Error', statusColor('error')],
+      ['boss', 'Boss', FALLBACK_STATUS.boss]
+    ];
+    for (var i = 0; i < items.length; i++) {
+      var lg = elem('span', 'lg');
+      var sw = elem('span', 'sw');
+      sw.style.color = items[i][2];
+      sw.style.background = items[i][2];
+      lg.appendChild(sw);
+      lg.appendChild(document.createTextNode(items[i][1]));
+      wrap.appendChild(lg);
+    }
+    return wrap;
+  }
+
+  function open() {
+    try {
+      ensureStyles();
+      var root = document.getElementById('modal-root');
+      if (!root) return;
+
+      closeModal(); // re-render fresh each open
+
+      var modal = elem('div', 'modal');
+      modal.id = MODAL_ID;
+      var scrim = elem('div', 'modal-scrim');
+      on(scrim, 'click', closeModal);
+
+      var card = elem('div', 'modal-card');
+      var accent = elem('div', 'panel-accent');
+      card.appendChild(accent);
+
+      var head = elem('header', 'modal-head');
+      var title = elem('h2', 'modal-title', '◇ WORKFLOW FLOW');
+      var x = elem('button', 'panel-x', '✕');
+      x.type = 'button';
+      on(x, 'click', closeModal);
+      head.appendChild(title);
+      head.appendChild(x);
+
+      var body = elem('div', 'modal-body');
+
+      var theRoot = latestRoot();
+      if (!theRoot) {
+        var empty = elem('div', 'graph-empty',
+          'No workflow yet. Dispatch a goal to the Boss to see the task graph.');
+        body.appendChild(empty);
+      } else {
+        var goal = elem('div', 'result-goal',
+          'GOAL: ' + truncate(theRoot.desc || theRoot.title, 160));
+        body.appendChild(goal);
+
+        var wrap = elem('div', 'graph-wrap');
+        var layout = computeLayout(theRoot);
+        if (!layout.kids.length) {
+          // root exists but no children planned yet: draw root alone.
+          var solo = elem('div', 'graph-empty',
+            'Boss is planning… subtasks will appear here.');
+          // still show the single root node above the message
+          wrap.appendChild(buildSoloRoot(theRoot));
+          wrap.appendChild(solo);
+        } else {
+          buildGraph(wrap, layout);
+        }
+        body.appendChild(wrap);
+        body.appendChild(legend());
+      }
+
+      var foot = elem('footer', 'modal-foot');
+      var refresh = elem('button', 'btn', 'Refresh');
+      refresh.type = 'button';
+      on(refresh, 'click', function () { open(); });
+      var close = elem('button', 'btn btn-primary', 'Close');
+      close.type = 'button';
+      on(close, 'click', closeModal);
+      foot.appendChild(refresh);
+      foot.appendChild(close);
+
+      card.appendChild(head);
+      card.appendChild(body);
+      card.appendChild(foot);
+      modal.appendChild(scrim);
+      modal.appendChild(card);
+      root.appendChild(modal);
+    } catch (e) {
+      // never throw out of a UI action
+      try { if (App.UI && App.UI.toast) App.UI.toast('Flow view unavailable'); } catch (e2) {}
+    }
+  }
+
+  // Draw just the root node when there are no children yet.
+  function buildSoloRoot(root) {
+    var w = 168, h = 52, pad = 16;
+    var width = w + pad * 2, height = h + pad * 2;
+    var svg = svgEl('svg', {
+      'class': 'graph-canvas', width: width, height: height,
+      viewBox: '0 0 ' + width + ' ' + height
+    });
+    var p = { x: pad, y: pad, cx: pad + w, cy: pad + h / 2 };
+    drawNode(svg, p, w, h, root, true);
+    return svg;
+  }
+
+  // ---------------------------------------------------------------------------
+  // SELF-INSTALL: inject a HUD button into #hud-controls.
+  // ---------------------------------------------------------------------------
+  function installButton() {
+    try {
+      var controls = document.getElementById('hud-controls');
+      if (!controls) return false;
+      if (document.getElementById('btn-graph')) return true; // already installed
+      var btn = elem('button', 'btn');
+      btn.id = 'btn-graph';
+      btn.type = 'button';
+      btn.title = 'Workflow graph of the current Boss task';
+      var ico = elem('span', 'btn-ico', '◇'); // diamond
+      var lbl = elem('span', 'btn-lbl', 'Flow');
+      btn.appendChild(ico);
+      btn.appendChild(lbl);
+      on(btn, 'click', function () { open(); });
+      // Insert near the Tasks/Artifacts cluster: append before cost-meter if present.
+      var costMeter = document.getElementById('btn-cost-meter');
+      if (costMeter && costMeter.parentNode === controls) {
+        controls.insertBefore(btn, costMeter);
+      } else {
+        controls.appendChild(btn);
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function selfInstall() {
+    if (installButton()) return;
+    // HUD not ready yet; retry shortly (a few attempts), then give up quietly.
+    var tries = 0;
+    var timer = setInterval(function () {
+      tries++;
+      if (installButton() || tries > 20) clearInterval(timer);
+    }, 200);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', selfInstall, false);
+  } else {
+    selfInstall();
+  }
+
+  // public API
+  App.Graph = {
+    open: open,
+    _installButton: installButton,
+    _latestRoot: latestRoot,
+    _computeLayout: computeLayout
+  };
+})();
+</script>
+<script>
+window.App = window.App || {};
+/* ===========================================================================
+   palette.js -> App.Palette  [Wave B/C: Command palette]
+   Self-installing Ctrl/Cmd+K command palette. Lists actions wired to the
+   existing App API; each action is guarded via typeof so only available
+   commands appear. Esc closes. Injects its own DOM + styles, reusing the
+   existing modal look where practical. Never throws; no-ops if deps missing.
+   =========================================================================== */
+(function () {
+  'use strict';
+
+  var Palette = {};
+  var els = null;          // { wrap, scrim, card, input, list }
+  var actions = [];        // current full action list
+  var filtered = [];       // filtered subset
+  var activeIdx = 0;
+  var open = false;
+  var installed = false;
+
+  function CFG()   { return App.config || {}; }
+  function UI()    { return App.UI || null; }
+  function ORCH()  { return App.Orchestrator || null; }
+  function STATE() { return App.state || null; }
+
+  // ---- small helpers ------------------------------------------------------
+  function isFn(o, k) { return o && typeof o[k] === 'function'; }
+
+  function safe(fn) {
+    return function () {
+      try { fn(); } catch (e) { /* never throw into UI */ }
+    };
+  }
+
+  // ---- build the action set (only what's available) -----------------------
+  function buildActions() {
+    var out = [];
+    var ui = UI();
+    var orch = ORCH();
+
+    function add(label, hint, run) { out.push({ label: label, hint: hint || '', run: safe(run) }); }
+
+    // Dispatch goal -> focus the boss input
+    add('Dispatch goal', 'Boss task', function () {
+      var inp = document.getElementById('hud-task-input');
+      if (inp) { inp.focus(); try { inp.select(); } catch (e) {} }
+    });
+
+    if (isFn(ui, 'openAddAgent'))      add('New Agent', 'Hire', function () { ui.openAddAgent(); });
+    if (isFn(ui, 'openSettings'))      add('Settings', 'API keys, prefs', function () { ui.openSettings(); });
+
+    if (isFn(ui, 'openTaskBoard'))     add('Tasks', 'Task board', function () { ui.openTaskBoard(); });
+    else if (isFn(ui, 'openBoard'))    add('Tasks', 'Task board', function () { ui.openBoard(); });
+
+    if (isFn(ui, 'openArtifacts'))     add('Artifacts', 'Outputs', function () { ui.openArtifacts(); });
+    if (isFn(ui, 'openSessions'))      add('Sessions', 'Save / load', function () { ui.openSessions(); });
+    if (isFn(ui, 'openPresets'))       add('New Company', 'Presets', function () { ui.openPresets(); });
+    if (isFn(ui, 'openCostBreakdown')) add('Cost breakdown', 'Spend', function () { ui.openCostBreakdown(); });
+
+    if (isFn(App.Graph, 'open'))       add('Workflow Flow', 'Graph', function () { App.Graph.open(); });
+
+    if (isFn(ui, 'toggleLayoutEdit'))  add('Layout toggle', 'Edit layout', function () { ui.toggleLayoutEdit(); });
+
+    if (isFn(orch, 'breakEveryone'))   add('Coffee break', 'Send idle crew to lounge', function () { orch.breakEveryone(); });
+
+    // Pause / Resume — no public method; drive the existing status toggle.
+    var st = STATE();
+    if (st && typeof st.paused === 'boolean') {
+      add(st.paused ? 'Resume' : 'Pause', 'Simulation', function () {
+        var btn = document.getElementById('status-paused');
+        if (btn && isFn(btn, 'click')) btn.click();
+      });
+    }
+
+    if (isFn(ui, 'zoomIn'))    add('Zoom in', 'View', function () { ui.zoomIn(); });
+    if (isFn(ui, 'zoomOut'))   add('Zoom out', 'View', function () { ui.zoomOut(); });
+    if (isFn(ui, 'resetView')) add('Reset view', 'View', function () { ui.resetView(); });
+
+    if (isFn(App.Onboarding, 'start')) add('Help / Tour', 'Guided tour', function () { App.Onboarding.start(); });
+
+    return out;
+  }
+
+  // ---- fuzzy filter (subsequence match + simple scoring) ------------------
+  function fuzzy(query, text) {
+    if (!query) return 1;
+    var q = query.toLowerCase(), t = text.toLowerCase();
+    var qi = 0, score = 0, run = 0;
+    for (var ti = 0; ti < t.length && qi < q.length; ti++) {
+      if (t.charAt(ti) === q.charAt(qi)) {
+        qi++; run++; score += run;
+        if (ti === 0) score += 5;       // start bonus
+      } else { run = 0; }
+    }
+    return qi === q.length ? score + 1 : 0;
+  }
+
+  function applyFilter(query) {
+    var scored = [];
+    for (var i = 0; i < actions.length; i++) {
+      var a = actions[i];
+      var s = fuzzy(query, a.label + ' ' + a.hint);
+      if (s > 0) scored.push({ a: a, s: s });
+    }
+    scored.sort(function (x, y) { return y.s - x.s; });
+    filtered = scored.map(function (o) { return o.a; });
+    activeIdx = 0;
+    renderList();
+  }
+
+  function renderList() {
+    if (!els) return;
+    els.list.innerHTML = '';
+    if (!filtered.length) {
+      var empty = document.createElement('div');
+      empty.className = 'cmdp-empty';
+      empty.textContent = 'No matching commands';
+      els.list.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < filtered.length; i++) {
+      (function (idx) {
+        var a = filtered[idx];
+        var row = document.createElement('div');
+        row.className = 'cmdp-item' + (idx === activeIdx ? ' cmdp-active' : '');
+        row.setAttribute('role', 'option');
+        var lbl = document.createElement('span');
+        lbl.className = 'cmdp-lbl';
+        lbl.textContent = a.label;
+        row.appendChild(lbl);
+        if (a.hint) {
+          var h = document.createElement('span');
+          h.className = 'cmdp-hint';
+          h.textContent = a.hint;
+          row.appendChild(h);
+        }
+        row.addEventListener('mousemove', function () {
+          if (activeIdx !== idx) { activeIdx = idx; updateActive(); }
+        });
+        row.addEventListener('click', function () { choose(idx); });
+        els.list.appendChild(row);
+      })(i);
+    }
+  }
+
+  function updateActive() {
+    if (!els) return;
+    var rows = els.list.querySelectorAll('.cmdp-item');
+    for (var i = 0; i < rows.length; i++) {
+      if (i === activeIdx) {
+        rows[i].classList.add('cmdp-active');
+        try { rows[i].scrollIntoView({ block: 'nearest' }); } catch (e) {}
+      } else {
+        rows[i].classList.remove('cmdp-active');
+      }
+    }
+  }
+
+  function choose(idx) {
+    var a = filtered[idx];
+    closePalette();
+    if (a && typeof a.run === 'function') a.run();
+  }
+
+  // ---- DOM + styles -------------------------------------------------------
+  function injectStyles() {
+    if (document.getElementById('cmdp-styles')) return;
+    var css = '' +
+      '.cmdp-wrap{position:absolute;inset:0;z-index:120;display:flex;align-items:flex-start;justify-content:center;padding:12vh 20px 20px;}' +
+      '.cmdp-scrim{position:absolute;inset:0;background:var(--scrim,rgba(5,7,15,.72));backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);}' +
+      '.cmdp-card{position:relative;width:min(560px,94vw);max-height:64vh;display:flex;flex-direction:column;' +
+        'background:var(--panel,#0b1024);border:1px solid var(--panel-edge,#22305c);border-radius:10px;' +
+        'box-shadow:0 18px 60px rgba(0,0,0,.55);overflow:hidden;}' +
+      '.cmdp-input{appearance:none;border:0;outline:0;width:100%;box-sizing:border-box;' +
+        'padding:14px 16px;font-size:15px;font-family:inherit;letter-spacing:.5px;' +
+        'background:var(--field,#0a0f20);color:var(--text,#dce6ff);border-bottom:1px solid var(--divider,#1a2647);}' +
+      '.cmdp-input::placeholder{color:var(--text-faint,#4d5d8a);}' +
+      '.cmdp-list{overflow-y:auto;padding:6px;flex:1 1 auto;}' +
+      '.cmdp-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:6px;cursor:pointer;' +
+        'color:var(--text,#dce6ff);}' +
+      '.cmdp-item.cmdp-active{background:var(--btn-hover,#1d2c54);}' +
+      '.cmdp-lbl{font-size:13px;font-weight:700;letter-spacing:.6px;}' +
+      '.cmdp-hint{margin-left:auto;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-faint,#4d5d8a);}' +
+      '.cmdp-empty{padding:18px;text-align:center;color:var(--text-faint,#4d5d8a);font-size:12px;letter-spacing:1px;}' +
+      '.cmdp-foot{padding:7px 12px;border-top:1px solid var(--divider,#1a2647);font-size:10px;letter-spacing:1px;' +
+        'color:var(--text-faint,#4d5d8a);display:flex;gap:14px;}';
+    var style = document.createElement('style');
+    style.id = 'cmdp-styles';
+    style.textContent = css;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function mount() {
+    if (els) return els;
+    injectStyles();
+    var root = document.getElementById('modal-root') || document.body;
+    if (!root) return null;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'cmdp-wrap';
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-label', 'Command palette');
+
+    var scrim = document.createElement('div');
+    scrim.className = 'cmdp-scrim';
+    scrim.addEventListener('click', closePalette);
+
+    var card = document.createElement('div');
+    card.className = 'cmdp-card';
+
+    var input = document.createElement('input');
+    input.className = 'cmdp-input';
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('spellcheck', 'false');
+    input.placeholder = 'Type a command...';
+
+    var list = document.createElement('div');
+    list.className = 'cmdp-list';
+    list.setAttribute('role', 'listbox');
+
+    var foot = document.createElement('div');
+    foot.className = 'cmdp-foot';
+    var f1 = document.createElement('span'); f1.textContent = 'Enter run';
+    var f2 = document.createElement('span'); f2.textContent = 'Esc close';
+    foot.appendChild(f1); foot.appendChild(f2);
+
+    card.appendChild(input);
+    card.appendChild(list);
+    card.appendChild(foot);
+    wrap.appendChild(scrim);
+    wrap.appendChild(card);
+    root.appendChild(wrap);
+
+    input.addEventListener('input', function () { applyFilter(input.value); });
+    input.addEventListener('keydown', onInputKey);
+
+    els = { wrap: wrap, scrim: scrim, card: card, input: input, list: list };
+    return els;
+  }
+
+  function onInputKey(e) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (filtered.length) { activeIdx = (activeIdx + 1) % filtered.length; updateActive(); }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (filtered.length) { activeIdx = (activeIdx - 1 + filtered.length) % filtered.length; updateActive(); }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filtered.length) choose(activeIdx);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closePalette();
+    }
+  }
+
+  // ---- open / close -------------------------------------------------------
+  Palette.open = function () {
+    try {
+      if (open) return;
+      if (!mount()) return;
+      actions = buildActions();
+      els.wrap.style.display = 'flex';
+      els.input.value = '';
+      applyFilter('');
+      open = true;
+      // focus after paint so iOS/Safari accepts it
+      setTimeout(function () { try { els.input.focus(); } catch (e) {} }, 0);
+    } catch (e) { /* swallow */ }
+  };
+
+  function closePalette() {
+    try {
+      if (!open || !els) return;
+      els.wrap.style.display = 'none';
+      open = false;
+    } catch (e) {}
+  }
+  Palette.close = closePalette;
+  Palette.toggle = function () { if (open) closePalette(); else Palette.open(); };
+  Palette.isOpen = function () { return open; };
+
+  // ---- self-install global hotkey ----------------------------------------
+  function onKeyDown(e) {
+    try {
+      var k = (e.key || '').toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && k === 'k') {
+        e.preventDefault();
+        Palette.toggle();
+      }
+    } catch (err) {}
+  }
+
+  function install() {
+    if (installed) return;
+    installed = true;
+    try { document.addEventListener('keydown', onKeyDown, true); } catch (e) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install);
+  } else {
+    install();
+  }
+
+  App.Palette = Palette;
+})();
+</script>
+<script>
+window.App = window.App || {};
+/* ===========================================================================
+   onboarding.js -> App.Onboarding  [Wave B/C: First-run tour + empty states]
+   Self-installing. If !settings.onboarded, after load shows a short spotlight
+   tour over the HUD buttons (Next/Skip). On finish/skip sets onboarded=true and
+   persists via App.Store.save. App.Onboarding.start() re-runs it on demand.
+   Injects own DOM/styles. Guards everything; never blocks the app.
+   =========================================================================== */
+(function () {
+  'use strict';
+
+  var Onboarding = {};
+  var els = null;          // { wrap, scrim, spot, pop, title, body, dots, next, skip }
+  var steps = [];
+  var idx = 0;
+  var open = false;
+  var installed = false;
+
+  function STATE()  { return App.state || null; }
+  function settings() {
+    var s = STATE();
+    if (!s) return null;
+    if (!s.settings || typeof s.settings !== 'object') s.settings = {};
+    return s.settings;
+  }
+
+  function persist() {
+    try { if (App.Store && typeof App.Store.save === 'function') App.Store.save(); } catch (e) {}
+  }
+
+  function t(key, fallback) {
+    try {
+      if (App.I18n && typeof App.I18n.t === 'function') {
+        var v = App.I18n.t(key);
+        if (v && v !== key) return v;
+      }
+    } catch (e) {}
+    return fallback;
+  }
+
+  // ---- step definitions (resolved lazily so missing targets are skipped) --
+  function buildSteps() {
+    var defs = [
+      { sel: '#btn-settings',     title: t('tour.settings.title', 'Set your API key'),
+        body: t('tour.settings.body', 'Open Settings to add your Anthropic or OpenAI API key. Agents need it to think.') },
+      { sel: '#hud-task-input',   title: t('tour.dispatch.title', 'Dispatch a goal'),
+        body: t('tour.dispatch.body', 'Type a goal here and hit Dispatch. The Boss breaks it into subtasks for the crew.') },
+      { sel: '#world-canvas',     title: t('tour.watch.title', 'Watch the agents'),
+        body: t('tour.watch.body', 'Workers walk the office, collaborate, take breaks, and stream their results live.'),
+        fallbackSel: '#stage' },
+      { sel: '#btn-artifacts',    title: t('tour.artifacts.title', 'Collect artifacts'),
+        body: t('tour.artifacts.body', 'Finished outputs land in Artifacts with a formatted preview.') },
+      { sel: '#btn-sessions',     title: t('tour.sessions.title', 'Save sessions'),
+        body: t('tour.sessions.body', 'Save and reload entire company states from Sessions whenever you like.') }
+    ];
+    var out = [];
+    for (var i = 0; i < defs.length; i++) {
+      var d = defs[i];
+      var el = document.querySelector(d.sel) || (d.fallbackSel ? document.querySelector(d.fallbackSel) : null);
+      if (el) out.push({ el: el, title: d.title, body: d.body });
+    }
+    return out;
+  }
+
+  // ---- DOM + styles -------------------------------------------------------
+  function injectStyles() {
+    if (document.getElementById('onb-styles')) return;
+    var css = '' +
+      '.onb-wrap{position:absolute;inset:0;z-index:130;}' +
+      '.onb-scrim{position:absolute;inset:0;background:rgba(5,7,15,.62);transition:clip-path .2s ease;}' +
+      '.onb-spot{position:absolute;border:2px solid var(--accent,#5cf2ff);border-radius:8px;' +
+        'box-shadow:0 0 0 9999px rgba(5,7,15,.62),0 0 18px var(--accent,#5cf2ff);' +
+        'pointer-events:none;transition:all .2s ease;}' +
+      '.onb-pop{position:absolute;width:min(300px,84vw);background:var(--panel,#0b1024);' +
+        'border:1px solid var(--panel-edge,#22305c);border-radius:10px;padding:14px 15px;' +
+        'box-shadow:0 16px 48px rgba(0,0,0,.55);transition:all .2s ease;}' +
+      '.onb-title{margin:0 0 6px;font-size:13px;font-weight:800;letter-spacing:1px;color:var(--text,#dce6ff);}' +
+      '.onb-body{margin:0 0 12px;font-size:12px;line-height:1.5;color:var(--text-dim,#8294c4);}' +
+      '.onb-row{display:flex;align-items:center;gap:8px;}' +
+      '.onb-dots{display:flex;gap:5px;margin-right:auto;}' +
+      '.onb-dot{width:6px;height:6px;border-radius:50%;background:var(--divider,#1a2647);}' +
+      '.onb-dot.on{background:var(--accent,#5cf2ff);}' +
+      '.onb-btn{appearance:none;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;' +
+        'letter-spacing:.8px;padding:6px 12px;border-radius:5px;border:1px solid var(--panel-edge,#22305c);' +
+        'background:var(--btn,#16203f);color:var(--text,#dce6ff);}' +
+      '.onb-btn:hover{background:var(--btn-hover,#1d2c54);}' +
+      '.onb-btn.primary{background:var(--accent,#5cf2ff);color:#04121a;border-color:transparent;}' +
+      '.onb-skip{background:transparent;border-color:transparent;color:var(--text-faint,#4d5d8a);}';
+    var style = document.createElement('style');
+    style.id = 'onb-styles';
+    style.textContent = css;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function mount() {
+    if (els) return els;
+    injectStyles();
+    var root = document.getElementById('modal-root') || document.body;
+    if (!root) return null;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'onb-wrap';
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-label', 'Guided tour');
+
+    var spot = document.createElement('div');
+    spot.className = 'onb-spot';
+
+    var pop = document.createElement('div');
+    pop.className = 'onb-pop';
+
+    var title = document.createElement('h3');
+    title.className = 'onb-title';
+    var body = document.createElement('p');
+    body.className = 'onb-body';
+
+    var rowEl = document.createElement('div');
+    rowEl.className = 'onb-row';
+    var dots = document.createElement('div');
+    dots.className = 'onb-dots';
+    var skip = document.createElement('button');
+    skip.className = 'onb-btn onb-skip';
+    skip.type = 'button';
+    skip.textContent = t('tour.skip', 'Skip');
+    var next = document.createElement('button');
+    next.className = 'onb-btn primary';
+    next.type = 'button';
+
+    rowEl.appendChild(dots);
+    rowEl.appendChild(skip);
+    rowEl.appendChild(next);
+
+    pop.appendChild(title);
+    pop.appendChild(body);
+    pop.appendChild(rowEl);
+
+    wrap.appendChild(spot);
+    wrap.appendChild(pop);
+    root.appendChild(wrap);
+
+    skip.addEventListener('click', function () { finish(); });
+    next.addEventListener('click', function () { step(idx + 1); });
+    wrap.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); finish(); }
+    });
+
+    els = { wrap: wrap, spot: spot, pop: pop, title: title, body: body, dots: dots, next: next, skip: skip };
+    return els;
+  }
+
+  function renderDots() {
+    if (!els) return;
+    els.dots.innerHTML = '';
+    for (var i = 0; i < steps.length; i++) {
+      var d = document.createElement('span');
+      d.className = 'onb-dot' + (i === idx ? ' on' : '');
+      els.dots.appendChild(d);
+    }
+  }
+
+  function rect(el) {
+    try { return el.getBoundingClientRect(); } catch (e) { return null; }
+  }
+
+  function position(s) {
+    if (!els || !s || !s.el) return;
+    var r = rect(s.el);
+    if (!r) return;
+    var pad = 6;
+    var x = Math.max(2, r.left - pad);
+    var y = Math.max(2, r.top - pad);
+    var w = r.width + pad * 2;
+    var h = r.height + pad * 2;
+    els.spot.style.left = x + 'px';
+    els.spot.style.top = y + 'px';
+    els.spot.style.width = w + 'px';
+    els.spot.style.height = h + 'px';
+
+    // place popover: below the target if room, else above; clamp horizontally.
+    var vw = window.innerWidth || document.documentElement.clientWidth || 800;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 600;
+    var popW = Math.min(300, vw * 0.84);
+    var px = Math.min(Math.max(8, r.left), vw - popW - 8);
+    var py;
+    var below = r.bottom + 12;
+    if (below + 150 < vh) py = below;
+    else py = Math.max(8, r.top - 12 - 150);
+    els.pop.style.left = px + 'px';
+    els.pop.style.top = py + 'px';
+  }
+
+  function step(n) {
+    if (!els) return;
+    if (n >= steps.length) { finish(); return; }
+    idx = Math.max(0, n);
+    var s = steps[idx];
+    els.title.textContent = s.title || '';
+    els.body.textContent = s.body || '';
+    els.next.textContent = (idx >= steps.length - 1)
+      ? t('tour.done', 'Done')
+      : t('tour.next', 'Next');
+    renderDots();
+    position(s);
+  }
+
+  function onResize() { if (open && steps[idx]) position(steps[idx]); }
+
+  // ---- public start / finish ---------------------------------------------
+  Onboarding.start = function () {
+    try {
+      if (open) return;
+      if (!mount()) return;
+      steps = buildSteps();
+      if (!steps.length) { // nothing to point at — mark onboarded and bail.
+        var st = settings(); if (st) { st.onboarded = true; persist(); }
+        return;
+      }
+      els.wrap.style.display = 'block';
+      open = true;
+      window.addEventListener('resize', onResize);
+      step(0);
+      try { els.next.focus(); } catch (e) {}
+    } catch (e) { /* never block */ }
+  };
+
+  function finish() {
+    try {
+      if (!open) return;
+      open = false;
+      if (els) els.wrap.style.display = 'none';
+      window.removeEventListener('resize', onResize);
+      var st = settings();
+      if (st) { st.onboarded = true; persist(); }
+    } catch (e) {}
+  }
+  Onboarding.finish = finish;
+  Onboarding.isOpen = function () { return open; };
+
+  // ---- self-install: first-run autostart ----------------------------------
+  function maybeAutoStart() {
+    try {
+      var st = settings();
+      if (st && !st.onboarded) {
+        // small delay so the rest of the UI has laid out first. Re-check onboarded
+        // at fire time — Store may hydrate the saved session after this scheduling
+        // (main.js loads last), so a returning user must not get the tour again.
+        setTimeout(function () { var s2 = settings(); if (s2 && s2.onboarded) return; Onboarding.start(); }, 900);
+      }
+    } catch (e) {}
+  }
+
+  function install() {
+    if (installed) return;
+    installed = true;
+    maybeAutoStart();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install);
+  } else {
+    // already loaded — but settings may not be hydrated yet; defer a tick.
+    setTimeout(install, 0);
+  }
+
+  App.Onboarding = Onboarding;
+})();
+</script>
+<script>
 // =============================================================================
 // ui.js  →  App.UI
 // PIXEL AI COMPANY ("NEON//WORKS") — DOM overlays, modals, input, camera controls.
@@ -8992,6 +12075,21 @@ window.App = window.App || {};
 
   function CFG()    { return App.config || {}; }
   function STATE()  { return App.state; }
+  // i18n helper — returns translated string when App.I18n is present, else fallback.
+  function T(key, fallback, vars) {
+    try {
+      if (App.I18n && typeof App.I18n.t === 'function') {
+        var v = App.I18n.t(key, vars);
+        // App.I18n.t falls back to the key itself when missing; prefer our literal then.
+        if (v != null && v !== key) return v;
+      }
+    } catch (e) {}
+    return (fallback != null) ? fallback : key;
+  }
+  // Re-apply i18n to a (sub)tree if the module is available. Safe no-op otherwise.
+  function applyI18n(root) {
+    try { if (App.I18n && typeof App.I18n.apply === 'function') App.I18n.apply(root || document); } catch (e) {}
+  }
   function WORLD()  { return App.World; }
   function ROLES()  { return (App.config && App.config.ROLES) || {}; }
   function AGENTS() { return App.Agents; }
@@ -9117,8 +12215,15 @@ window.App = window.App || {};
       // Global "Coffee break" control (sends all idle non-boss agents on break).
       ensureCoffeeBreakButton();
 
+      // Mobile/responsive: wire the rail drawer toggles (shown <=820px via CSS).
+      on($('btn-rail-crew'), 'click', function () { toggleRailDrawer('agent-list', 'btn-rail-crew'); });
+      on($('btn-rail-log'),  'click', function () { toggleRailDrawer('log', 'btn-rail-log'); });
+
       // Logo glyph in the HUD.
       drawLogo();
+
+      // i18n: translate the static shell now that DOM + config are ready.
+      applyI18n(document);
 
       // (m5) Sync the web-search neon switch with persisted settings on first load,
       // so its .on/aria-checked state matches App.state before Settings is opened.
@@ -9137,6 +12242,45 @@ window.App = window.App || {};
     var scrim = modal.querySelector('.modal-scrim');
     on(scrim, 'click', function () { hide(modal); if (typeof after === 'function') after(); });
   }
+
+  // ===========================================================================
+  // MOBILE / RESPONSIVE — rail drawers
+  // On narrow screens the CREW + ACTIVITY rails collapse off-canvas; the two
+  // HUD toggle buttons slide them in as overlay drawers. The `.rail-open` class
+  // (styled in styles.css) does the showing; here we just flip it + aria + the
+  // shared scrim. Only one drawer is open at a time.
+  // ===========================================================================
+  function ensureRailScrim() {
+    var sc = $('rail-scrim');
+    if (sc) return sc;
+    var app = $('app');
+    if (!app) return null;
+    sc = el('div', 'rail-scrim');
+    sc.id = 'rail-scrim';
+    on(sc, 'click', closeRailDrawers);
+    app.appendChild(sc);
+    return sc;
+  }
+  function closeRailDrawers() {
+    ['agent-list', 'log'].forEach(function (id) { var n = $(id); if (n) n.classList.remove('rail-open'); });
+    ['btn-rail-crew', 'btn-rail-log'].forEach(function (id) {
+      var b = $(id); if (b) b.setAttribute('aria-pressed', 'false');
+    });
+    var sc = $('rail-scrim'); if (sc) sc.classList.remove('rail-scrim-on');
+  }
+  function toggleRailDrawer(railId, btnId) {
+    var rail = $(railId);
+    if (!rail) return;
+    var isOpen = rail.classList.contains('rail-open');
+    closeRailDrawers();
+    if (!isOpen) {
+      rail.classList.add('rail-open');
+      var b = $(btnId); if (b) b.setAttribute('aria-pressed', 'true');
+      var sc = ensureRailScrim(); if (sc) sc.classList.add('rail-scrim-on');
+    }
+  }
+  // Expose so other flows (e.g. opening a panel on mobile) can dismiss drawers.
+  UI.closeRailDrawers = closeRailDrawers;
 
   // ===========================================================================
   // SELECT / SEGMENTED POPULATION
@@ -9495,12 +12639,281 @@ window.App = window.App || {};
     var panel = $('panel-agent');
     show(panel);
     ensureBreakButton();
+    ensurePanelExtras();          // mood + customize + terminal/log sections (once)
     refreshSelectedPanel();
     refreshPersonaPanel(agentId);
     renderTranscript(agentId);
+    refreshPanelExtras(agentId);  // populate mood/customize/terminal for this agent
     startPanelPreview();
-    UI.refreshAgentList(); // highlight selected row
+    UI.refreshAgentList();        // highlight selected row
+    // On mobile, opening an agent panel should dismiss any open rail drawer.
+    if (typeof closeRailDrawers === 'function') closeRailDrawers();
   };
+
+  // -------------------------------------------------------------------------
+  // AGENT PANEL EXTRAS (Wave B/C): MOOD readout, CUSTOMIZE editor, TERMINAL log.
+  // Injected once into #panel-agent (after the persona box, before transcript).
+  // Reuses .persona-box / .field / .swatch styling for visual consistency.
+  // -------------------------------------------------------------------------
+  function ensurePanelExtras() {
+    if ($('panel-agent-extras')) return;
+    var personaBox = $('panel-agent-persona');
+    var transcript = $('panel-agent-transcript');
+    var panel = $('panel-agent');
+    if (!panel) return;
+
+    var wrap = el('div', 'panel-extras');
+    wrap.id = 'panel-agent-extras';
+
+    // --- MOOD + RELATIONSHIPS (read-only) ---
+    var moodBox = el('details', 'persona-box');
+    moodBox.id = 'panel-agent-mood';
+    var moodSum = el('summary', 'persona-summary');
+    moodSum.setAttribute('data-i18n', 'agent.mood');
+    moodSum.textContent = T('agent.mood', 'MOOD & RELATIONSHIPS');
+    moodBox.appendChild(moodSum);
+    var moodBody = el('div', 'persona-body');
+    moodBody.id = 'panel-agent-mood-body';
+    moodBox.appendChild(moodBody);
+    wrap.appendChild(moodBox);
+
+    // --- CUSTOMIZE (sprite hair/skin/accent) ---
+    var custBox = el('details', 'persona-box');
+    custBox.id = 'panel-agent-customize';
+    var custSum = el('summary', 'persona-summary');
+    custSum.setAttribute('data-i18n', 'agent.customize');
+    custSum.textContent = T('agent.customize', 'CUSTOMIZE');
+    custBox.appendChild(custSum);
+    var custBody = el('div', 'persona-body');
+    custBody.id = 'panel-agent-customize-body';
+    custBox.appendChild(custBody);
+    wrap.appendChild(custBox);
+
+    // --- TERMINAL / LOG (recent activity transcript) ---
+    var termBox = el('details', 'persona-box');
+    termBox.id = 'panel-agent-terminal';
+    var termSum = el('summary', 'persona-summary');
+    termSum.setAttribute('data-i18n', 'agent.terminal');
+    termSum.textContent = T('agent.terminal', 'TERMINAL / LOG');
+    termBox.appendChild(termSum);
+    var termBody = el('div', 'persona-body pe-terminal');
+    termBody.id = 'panel-agent-terminal-body';
+    termBox.appendChild(termBody);
+    wrap.appendChild(termBox);
+
+    // Insert after the persona box (or before transcript as a fallback).
+    if (personaBox && personaBox.parentNode) {
+      if (personaBox.nextSibling) personaBox.parentNode.insertBefore(wrap, personaBox.nextSibling);
+      else personaBox.parentNode.appendChild(wrap);
+    } else if (transcript && transcript.parentNode) {
+      transcript.parentNode.insertBefore(wrap, transcript);
+    } else {
+      panel.appendChild(wrap);
+    }
+  }
+
+  function refreshPanelExtras(agentId) {
+    refreshMoodPanel(agentId);
+    refreshCustomizePanel(agentId);
+    refreshTerminalPanel(agentId);
+  }
+
+  // Map a 0..1 mood to a label + accent color.
+  function moodLabel(m) {
+    m = Number(m); if (isNaN(m)) m = 0.7;
+    if (m >= 0.8) return { t: T('mood.great', 'Great'), c: 'var(--lime)' };
+    if (m >= 0.6) return { t: T('mood.good', 'Good'), c: 'var(--cyan)' };
+    if (m >= 0.4) return { t: T('mood.ok', 'OK'), c: 'var(--amber)' };
+    if (m >= 0.2) return { t: T('mood.low', 'Low'), c: 'var(--amber)' };
+    return { t: T('mood.down', 'Down'), c: 'var(--red)' };
+  }
+
+  function refreshMoodPanel(agentId) {
+    var body = $('panel-agent-mood-body');
+    if (!body) return;
+    clear(body);
+    var a = AGENTS() && AGENTS().byId ? AGENTS().byId(agentId) : null;
+    if (!a) return;
+
+    var mood = (typeof a.mood === 'number') ? a.mood : (CFG().MOOD_DEFAULT != null ? CFG().MOOD_DEFAULT : 0.7);
+    var ml = moodLabel(mood);
+    var moodField = el('div', 'pe-field');
+    moodField.appendChild(el('div', 'pe-key', T('panel.mood', 'Mood')));
+    var bar = el('div', 'mood-bar');
+    var fill = el('div', 'mood-fill');
+    fill.style.width = Math.round(clamp(mood, 0, 1) * 100) + '%';
+    fill.style.background = ml.c;
+    fill.style.boxShadow = '0 0 8px ' + ml.c;
+    bar.appendChild(fill);
+    moodField.appendChild(bar);
+    var moodTxt = el('div', 'mood-label', ml.t + ' · ' + Math.round(mood * 100) + '%');
+    moodTxt.style.color = ml.c;
+    moodField.appendChild(moodTxt);
+    body.appendChild(moodField);
+
+    // Top relationships (highest affinity first).
+    var relField = el('div', 'pe-field');
+    relField.appendChild(el('div', 'pe-key', T('panel.topRelationships', 'Top relationships')));
+    var rel = (a.relationships && typeof a.relationships === 'object') ? a.relationships : {};
+    var rows = [];
+    for (var oid in rel) {
+      if (!Object.prototype.hasOwnProperty.call(rel, oid)) continue;
+      var other = AGENTS() && AGENTS().byId ? AGENTS().byId(oid) : null;
+      if (!other) continue;
+      rows.push({ name: other.name, color: other.color, aff: Number(rel[oid]) || 0 });
+    }
+    rows.sort(function (x, y) { return y.aff - x.aff; });
+    rows = rows.slice(0, 4);
+    if (!rows.length) {
+      relField.appendChild(el('div', 'pe-empty', T('panel.noRelationships', 'No relationships yet.')));
+    } else {
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var line = el('div', 'rel-line');
+        var dot = el('span', 'rel-dot');
+        dot.style.background = r.color || 'var(--purple)';
+        dot.style.boxShadow = '0 0 6px ' + (r.color || 'var(--purple)');
+        line.appendChild(dot);
+        line.appendChild(el('span', 'rel-name', r.name));
+        var pct = el('span', 'rel-aff', Math.round(clamp(r.aff, 0, 1) * 100) + '%');
+        line.appendChild(pct);
+        relField.appendChild(line);
+      }
+    }
+    body.appendChild(relField);
+  }
+
+  // Sprite customization editor: hair / skin / accent swatches -> agent.sprite.
+  // Reads palette options from App.PixelArt (if exposed) or sensible defaults.
+  function spriteOptions() {
+    var pal = (CFG().palette) || {};
+    // Skin/hair palettes mirror pixelart.js defaults; accent reuses the neon swatch set.
+    return {
+      skin: ['#e8b48c', '#c98a63', '#f2c7a8', '#a86c4a'],
+      hair: ['#1a1d2e', '#3a2f4f', '#5a4a35', '#7a3b2b', '#cdd3e6'],
+      accent: [pal.cyan, pal.magenta, pal.purple, pal.blue, pal.lime, pal.amber, pal.red]
+        .filter(function (c) { return !!c; })
+    };
+  }
+
+  function refreshCustomizePanel(agentId) {
+    var body = $('panel-agent-customize-body');
+    if (!body) return;
+    clear(body);
+    var a = AGENTS() && AGENTS().byId ? AGENTS().byId(agentId) : null;
+    if (!a) return;
+    a.sprite = (a.sprite && typeof a.sprite === 'object') ? a.sprite : {};
+    var opts = spriteOptions();
+
+    var rowFor = function (label, key, colors, applyDefaultFrom) {
+      var f = el('div', 'pe-field');
+      f.appendChild(el('div', 'pe-key', label));
+      var rowEl = el('div', 'swatch-row');
+      var current = a.sprite[key];
+      for (var i = 0; i < colors.length; i++) {
+        (function (col) {
+          var sw = el('button', 'swatch swatch-sm');
+          sw.type = 'button';
+          sw.style.background = col;
+          sw.style.boxShadow = '0 0 6px ' + col;
+          sw.setAttribute('data-color', col);
+          if (current && String(current).toLowerCase() === String(col).toLowerCase()) sw.classList.add('active');
+          on(sw, 'click', function () {
+            a.sprite[key] = col;
+            highlightSegmented(rowEl, 'data-color', col);
+            persistCustomization();
+          });
+          rowEl.appendChild(sw);
+        })(colors[i]);
+      }
+      f.appendChild(rowEl);
+      return f;
+    };
+
+    body.appendChild(rowFor(T('customize.hair', 'Hair'), 'hair', opts.hair));
+    body.appendChild(rowFor(T('customize.skin', 'Skin'), 'skin', opts.skin));
+    body.appendChild(rowFor(T('customize.accent', 'Accent'), 'accent', opts.accent));
+
+    // Reset row
+    var resetField = el('div', 'pe-field');
+    var resetBtn = el('button', 'btn btn-sq', '↺');
+    resetBtn.type = 'button';
+    resetBtn.style.width = 'auto';
+    resetBtn.style.padding = '0 10px';
+    resetBtn.appendChild(document.createTextNode(' ' + T('customize.reset', 'Reset')));
+    on(resetBtn, 'click', function () {
+      a.sprite = {};
+      refreshCustomizePanel(agentId);
+      persistCustomization();
+    });
+    resetField.appendChild(resetBtn);
+    body.appendChild(resetField);
+  }
+
+  function persistCustomization() {
+    try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
+  }
+
+  // Terminal/log view: the agent's recent activity (conversation tail + memories
+  // + any logged tool calls), rendered monospace. Read-only, newest at bottom.
+  function refreshTerminalPanel(agentId) {
+    var body = $('panel-agent-terminal-body');
+    if (!body) return;
+    clear(body);
+    var a = AGENTS() && AGENTS().byId ? AGENTS().byId(agentId) : null;
+    if (!a) return;
+
+    var lines = collectAgentActivity(a);
+    if (!lines.length) {
+      body.appendChild(el('div', 'pe-empty', T('panel.noActivity', 'No activity yet.')));
+      return;
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i];
+      var row = el('div', 'term-line term-' + (ln.kind || 'sys'));
+      if (ln.tag) {
+        var tag = el('span', 'term-tag', ln.tag);
+        row.appendChild(tag);
+      }
+      row.appendChild(document.createTextNode(ln.text || ''));
+      body.appendChild(row);
+    }
+    body.scrollTop = body.scrollHeight;
+  }
+
+  // Gather a flat, time-ordered activity list for one agent from available state.
+  function collectAgentActivity(a) {
+    var out = [];
+    // Conversation turns (direct chat).
+    var conv = Array.isArray(a.conversation) ? a.conversation : [];
+    for (var i = Math.max(0, conv.length - 12); i < conv.length; i++) {
+      var t = conv[i] || {};
+      out.push({
+        kind: t.role === 'user' ? 'in' : 'out',
+        tag: t.role === 'user' ? '>' : a.name || 'agent',
+        text: truncate(String(t.content || ''), 400)
+      });
+    }
+    // Global log lines authored by this agent (tool calls / results live here).
+    try {
+      var glog = (STATE() && STATE().log) || [];
+      var mine = [];
+      for (var j = 0; j < glog.length; j++) {
+        var e = glog[j];
+        if (e && e.from === a.name) mine.push(e);
+      }
+      mine = mine.slice(-10);
+      for (var k = 0; k < mine.length; k++) {
+        var le = mine[k];
+        out.push({
+          kind: le.kind === 'error' ? 'err' : (le.kind === 'tool' ? 'tool' : 'sys'),
+          tag: le.kind === 'tool' ? '⚙' : '·',
+          text: truncate(String(le.text || ''), 400)
+        });
+      }
+    } catch (e) {}
+    return out;
+  }
 
   // Inject (once) a '☕ Break' button into the agent panel compose row; it sends
   // the open agent on a tea break via Orchestrator.sendOnBreak. Reuses .btn.
@@ -9567,8 +12980,10 @@ window.App = window.App || {};
     // accent
     var accent = $('panel-agent');
     if (accent) accent.style.setProperty('--accent', a.color || '#9b5cff');
-    // keep persona/memory in sync while the panel is open
+    // keep persona/memory + mood/terminal in sync while the panel is open
     refreshPersonaPanel(a.id);
+    if ($('panel-agent-mood-body')) refreshMoodPanel(a.id);
+    if ($('panel-agent-terminal-body')) refreshTerminalPanel(a.id);
   }
 
   // Read-only persona + recent memories for the open agent panel.
@@ -9670,6 +13085,31 @@ window.App = window.App || {};
       appendTurnNode(box, 'user', String(text || ''));
     }
     box.scrollTop = box.scrollHeight;
+  };
+
+  // ----- tool-call display (Wave B/C) ------------------------------------
+  // Orchestrator calls this when a worker invokes a browser tool so the user
+  // sees it inline. Renders a compact chip in the open transcript and refreshes
+  // the agent's terminal/log section. Safe no-op if the panel isn't open.
+  UI.logToolCall = function (agentId, name, brief) {
+    try {
+      var s = STATE();
+      // Always refresh the terminal section if this agent's panel is open.
+      if (s && s.selectedAgentId === agentId && $('panel-agent-terminal-body')) {
+        refreshTerminalPanel(agentId);
+      }
+      if (!s || s.selectedAgentId !== agentId) return;
+      var box = $('panel-agent-transcript');
+      if (!box) return;
+      var chip = el('div', 'tx-tool');
+      var ico = el('span', 'tx-tool-ico', '⚙');
+      var lbl = el('span', 'tx-tool-name', String(name || 'tool'));
+      chip.appendChild(ico);
+      chip.appendChild(lbl);
+      if (brief) chip.appendChild(el('span', 'tx-tool-brief', truncate(String(brief), 120)));
+      box.appendChild(chip);
+      box.scrollTop = box.scrollHeight;
+    } catch (e) {}
   };
 
   // ----- panel mini-sprite preview (idle-bob) -----
@@ -9803,6 +13243,9 @@ window.App = window.App || {};
     var oaiI = $('set-openai-key'); if (oaiI) { oaiI.value = settings.openaiKey || ''; oaiI.type = 'password'; }
     // Inject (once) + load the local-companion toggle + URL.
     ensureCompanionField();
+    // Inject (once) the EN/KO language toggle.
+    ensureLangField();
+    highlightSegmented($('set-lang'), 'data-lang', currentLang());
     var ctog = $('set-companion-toggle'); if (ctog) ctog.checked = !!settings.useCompanion;
     var curl = $('set-companion-url'); if (curl) curl.value = settings.companionUrl || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var dm = $('set-default-model'); if (dm) dm.value = settings.defaultModel || CFG().DEFAULT_MODEL;
@@ -9902,6 +13345,73 @@ window.App = window.App || {};
 
     if (anchorField.nextSibling) anchorField.parentNode.insertBefore(field, anchorField.nextSibling);
     else anchorField.parentNode.appendChild(field);
+  }
+
+  // Inject (once) a LANGUAGE segmented EN/KO toggle into Settings. Switching it
+  // calls App.I18n.setLang + re-applies translations live (and persists via Store
+  // through I18n.setLang). Idempotent; no-ops gracefully if I18n is absent.
+  function ensureLangField() {
+    if ($('set-lang')) return;
+    var anchor = $('set-default-model');
+    if (!anchor || typeof document === 'undefined') return;
+    var anchorField = anchor;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    // climb once more past the .field-2col wrapper if present
+    var insertAfter = anchorField;
+    if (anchorField && anchorField.parentNode && anchorField.parentNode.classList &&
+        anchorField.parentNode.classList.contains('field-2col')) {
+      insertAfter = anchorField.parentNode;
+    }
+    if (!insertAfter || !insertAfter.parentNode) return;
+
+    var field = el('div', 'field field-inline');
+    var lbl = el('span', 'field-label');
+    lbl.setAttribute('data-i18n', 'set.language');
+    lbl.textContent = T('set.language', 'LANGUAGE');
+    field.appendChild(lbl);
+
+    var seg = el('div', 'segmented');
+    seg.id = 'set-lang';
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-label', 'Language');
+    var langs = [{ id: 'en', label: 'EN' }, { id: 'ko', label: '한' }];
+    var cur = currentLang();
+    langs.forEach(function (L) {
+      var b = el('button', 'seg' + (L.id === cur ? ' active' : ''), L.label);
+      b.type = 'button';
+      b.setAttribute('data-lang', L.id);
+      on(b, 'click', function () { setLanguage(L.id); });
+      seg.appendChild(b);
+    });
+    field.appendChild(seg);
+
+    if (insertAfter.nextSibling) insertAfter.parentNode.insertBefore(field, insertAfter.nextSibling);
+    else insertAfter.parentNode.appendChild(field);
+  }
+
+  function currentLang() {
+    try {
+      if (App.I18n && App.I18n.getLang) return App.I18n.getLang();
+    } catch (e) {}
+    var s = STATE();
+    return (s && s.settings && s.settings.lang) || 'en';
+  }
+
+  function setLanguage(lang) {
+    try {
+      if (App.I18n && App.I18n.setLang) App.I18n.setLang(lang);
+      else {
+        var s = STATE();
+        if (s) { s.settings = s.settings || {}; s.settings.lang = lang; }
+        if (App.Store && App.Store.save) App.Store.save();
+      }
+    } catch (e) {}
+    // reflect selection in the segmented control
+    highlightSegmented($('set-lang'), 'data-lang', lang);
+    // re-apply translations across the whole document + any open modals
+    applyI18n(document);
   }
 
   function saveSettings() {
@@ -10927,6 +14437,80 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // HUMAN APPROVAL GATE (Wave B/C)
+  // openApproval(payload) -> Promise<'approve' | 'revise:<text>' | 'reject'>
+  // payload: { title?, goal?, content?, agent? }. Reuses modal scaffolding.
+  // Resolves exactly once; closing via scrim/✕ resolves to 'reject'.
+  // ===========================================================================
+  UI.openApproval = function (payload) {
+    payload = payload || {};
+    return new Promise(function (resolve) {
+      var m = mountModal('modal-approval', T('approval.title', '✓ APPROVAL NEEDED'));
+      if (!m) { resolve('approve'); return; } // fail-open: don't block the pipeline
+      var settled = false;
+      var done = function (val) {
+        if (settled) return;
+        settled = true;
+        try { m.close(); } catch (e) {}
+        resolve(val);
+      };
+      // ✕ / scrim close => reject (override mountModal's plain close)
+      var scrim = m.modal.querySelector('.modal-scrim');
+      if (scrim) { scrim.onclick = null; on(scrim, 'click', function () { done('reject'); }); }
+      var xBtn = m.modal.querySelector('.panel-x');
+      if (xBtn) { xBtn.onclick = null; on(xBtn, 'click', function () { done('reject'); }); }
+
+      var body = m.body;
+      if (payload.goal) {
+        var gl = el('div', 'approval-goal');
+        gl.appendChild(el('div', 'pe-key', T('approval.goal', 'Goal')));
+        gl.appendChild(el('div', 'pe-val', String(payload.goal)));
+        body.appendChild(gl);
+      }
+      if (payload.agent) {
+        body.appendChild(el('div', 'approval-meta', T('approval.from', 'From') + ': ' + String(payload.agent)));
+      }
+      var contentWrap = el('div', 'approval-content');
+      var content = String(payload.content || payload.results || '');
+      try {
+        if (App.MD && App.MD.render) { contentWrap.innerHTML = App.MD.render(content); contentWrap.classList.add('md-body'); }
+        else contentWrap.textContent = content;
+      } catch (e) { contentWrap.textContent = content; }
+      body.appendChild(contentWrap);
+
+      var revLabel = el('label', 'field');
+      revLabel.appendChild(el('span', 'field-label', T('approval.reviseLabel', 'Revision notes (optional)')));
+      var rev = document.createElement('textarea');
+      rev.id = 'approval-revise';
+      rev.rows = 2;
+      rev.spellcheck = false;
+      rev.placeholder = T('approval.revisePlaceholder', 'What should change? Leave blank to just approve…');
+      revLabel.appendChild(rev);
+      body.appendChild(revLabel);
+
+      var rejectBtn = el('button', 'btn btn-danger', T('btn.reject', 'Reject'));
+      rejectBtn.type = 'button';
+      on(rejectBtn, 'click', function () { done('reject'); });
+      var reviseBtn = el('button', 'btn', T('btn.revise', 'Request changes'));
+      reviseBtn.type = 'button';
+      on(reviseBtn, 'click', function () {
+        var txt = (rev.value || '').trim();
+        if (!txt) { rev.focus(); UI.toast(T('approval.needNotes', 'Add revision notes, or Approve / Reject')); return; }
+        done('revise:' + txt);
+      });
+      var approveBtn = el('button', 'btn btn-primary', T('btn.approve', 'Approve'));
+      approveBtn.type = 'button';
+      on(approveBtn, 'click', function () { done('approve'); });
+      m.foot.appendChild(rejectBtn);
+      m.foot.appendChild(reviseBtn);
+      m.foot.appendChild(approveBtn);
+
+      applyI18n(m.modal);
+      try { approveBtn.focus(); } catch (e) {}
+    });
+  };
+
+  // ===========================================================================
   // WAVE A — PRESET PICKER ("New Company")
   // ===========================================================================
   UI.openPresets = function () {
@@ -11477,8 +15061,10 @@ window.App = window.App || {};
     // 4) agents (y-sorted; Agents.draw computes its own screen coords).
     try { if (App.Agents && App.Agents.draw) App.Agents.draw(ctx); } catch (e) {}
 
-    // 5) FX overlay LAST (scanlines + bloom + vignette).
-    try { if (art.drawFX) art.drawFX(ctx, cssW, cssH, s._time); } catch (e) {}
+    // 5) FX overlay LAST (scanlines + bloom + vignette + day/night ambiance tint).
+    //    drawFX reads the loop clock (s._time) for scanline drift and the real local
+    //    hour for the ambiance tint — passing _time keeps the FX pass in lockstep.
+    try { if (art.drawFX) art.drawFX(ctx, cssW, cssH, (typeof s._time === 'number') ? s._time : 0); } catch (e) {}
   };
 
   // ---------------------------------------------------------------------------

@@ -127,6 +127,8 @@ window.App = window.App || {};
       theme: 'neon',
       sound: true,            // v3: completion chime on/off
       liveChatter: false,     // v3: watercooler uses an LLM call when true; canned lines when false
+      lang: (c.DEFAULT_LANG || 'en'),  // Wave B: UI language (i18n) — 'en' | 'ko'
+      onboarded: false,       // Wave C: first-run guided tour completed flag
     };
   }
 
@@ -179,6 +181,43 @@ window.App = window.App || {};
     }
     if (out.length > 50) out = out.slice(out.length - 50);
     return out;
+  }
+
+  // Wave B/C: sanitize a persisted mood value -> number in [0,1].
+  // Falls back to CFG().MOOD_DEFAULT (or 0.7) when missing/invalid.
+  function normalizeMood(m) {
+    var def = cfg().MOOD_DEFAULT;
+    if (typeof def !== 'number') def = 0.7;
+    if (typeof m !== 'number' || !isFinite(m)) return def;
+    return clamp(m, 0, 1);
+  }
+
+  // Wave B/C: sanitize a persisted relationships map -> { otherId: affinity }
+  // where affinity is a finite number clamped to [-1,1]. Drops bad keys/values.
+  function normalizeRelationships(r) {
+    var out = {};
+    if (!r || typeof r !== 'object') return out;
+    for (var k in r) {
+      if (!Object.prototype.hasOwnProperty.call(r, k)) continue;
+      if (!k || typeof k !== 'string') continue;
+      var v = r[k];
+      if (typeof v !== 'number' || !isFinite(v)) continue;
+      out[k] = clamp(v, -1, 1);
+    }
+    return out;
+  }
+
+  // Wave B/C: sanitize a persisted sprite/customization blob.
+  // Returns a {hair, skin, accent} string-triple (empty strings -> renderer
+  // uses its own defaults). Returns null when nothing customized, so we don't
+  // bloat saves with empty objects for agents that were never customized.
+  function normalizeSprite(sp) {
+    if (!sp || typeof sp !== 'object') return null;
+    var hair = (sp.hair == null) ? '' : String(sp.hair);
+    var skin = (sp.skin == null) ? '' : String(sp.skin);
+    var accent = (sp.accent == null) ? '' : String(sp.accent);
+    if (!hair && !skin && !accent) return null;
+    return { hair: hair, skin: skin, accent: accent };
   }
 
   // v3: sanitize one Artifact for persistence/load.
@@ -344,9 +383,15 @@ window.App = window.App || {};
       // v3: persona + memories (default from ROLES if absent on disk)
       persona: normalizePersona(a.persona, role),
       memories: normalizeMemories(a.memories),
+      // Wave B/C: social/affect + sprite customization (default-safe; migrate
+      // older saves that lack these by supplying CFG defaults / empty maps).
+      mood: normalizeMood(a.mood),
+      relationships: normalizeRelationships(a.relationships),
+      sprite: normalizeSprite(a.sprite),
       _idleSince: 0,
       _onArrive: null,
       _attention: false,      // v3: runtime-only attention marker
+      _lastActivityTs: 0,     // Wave B/C: runtime-only activity-glow timestamp
     };
     return agent;
   }
@@ -381,7 +426,11 @@ window.App = window.App || {};
       // v3: persist persona + memories (so accumulated context survives reload)
       persona: normalizePersona(a.persona, a.role),
       memories: normalizeMemories(a.memories),
-      // STRIPPED: x,y,path,anim,bubble,busy,temp,_idleSince,_onArrive,_attention
+      // Wave B/C: persist mood, relationships, sprite customization.
+      mood: normalizeMood(a.mood),
+      relationships: normalizeRelationships(a.relationships),
+      sprite: normalizeSprite(a.sprite),   // null when never customized (omitted-ish)
+      // STRIPPED: x,y,path,anim,bubble,busy,temp,_idleSince,_onArrive,_attention,_lastActivityTs
     };
   }
 
@@ -610,6 +659,23 @@ window.App = window.App || {};
         blob.v = 2;
         v = 2;
       }
+      // v2 -> v3 (Wave B/C): settings.lang/onboarded + agent.mood/relationships/
+      // sprite. All agent fields are filled with safe defaults by rebuildAgent's
+      // normalizers on load, so this step only needs to ensure the settings keys
+      // exist; everything else is a forward no-op. Run whenever v<3 regardless of
+      // whether SCHEMA_VERSION was bumped to 3 (defensive).
+      if (v < 3) {
+        if (blob.settings && typeof blob.settings === 'object') {
+          if (typeof blob.settings.lang === 'undefined') {
+            blob.settings.lang = (cfg().DEFAULT_LANG || 'en');
+          }
+          if (typeof blob.settings.onboarded === 'undefined') {
+            blob.settings.onboarded = false;
+          }
+        }
+        // agent.mood/relationships/sprite left absent -> rebuildAgent defaults.
+        v = 3;
+      }
       // Always stamp to current after running known steps.
       blob.v = target;
       return blob;
@@ -679,9 +745,14 @@ window.App = window.App || {};
       // the inline fallback so store-only seeding still produces complete agents)
       persona: normalizePersona(spec.persona, role),
       memories: Array.isArray(spec.memories) ? normalizeMemories(spec.memories) : [],
+      // Wave B/C: mood / relationships / sprite (default-safe).
+      mood: normalizeMood(spec.mood),
+      relationships: normalizeRelationships(spec.relationships),
+      sprite: normalizeSprite(spec.sprite),
       _idleSince: 0,
       _onArrive: null,
       _attention: false,
+      _lastActivityTs: 0,
     };
     s.agents.push(agent);
     return agent;
@@ -1229,6 +1300,10 @@ window.App = window.App || {};
           color: a.color,
           systemPrompt: a.systemPrompt,
           persona: a.persona,
+          // Wave B/C: forward optional social/sprite fields if a preset defines them.
+          mood: a.mood,
+          relationships: a.relationships,
+          sprite: a.sprite,
         });
       }
 

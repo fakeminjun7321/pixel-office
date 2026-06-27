@@ -18,6 +18,21 @@ window.App = window.App || {};
 
   function CFG()    { return App.config || {}; }
   function STATE()  { return App.state; }
+  // i18n helper — returns translated string when App.I18n is present, else fallback.
+  function T(key, fallback, vars) {
+    try {
+      if (App.I18n && typeof App.I18n.t === 'function') {
+        var v = App.I18n.t(key, vars);
+        // App.I18n.t falls back to the key itself when missing; prefer our literal then.
+        if (v != null && v !== key) return v;
+      }
+    } catch (e) {}
+    return (fallback != null) ? fallback : key;
+  }
+  // Re-apply i18n to a (sub)tree if the module is available. Safe no-op otherwise.
+  function applyI18n(root) {
+    try { if (App.I18n && typeof App.I18n.apply === 'function') App.I18n.apply(root || document); } catch (e) {}
+  }
   function WORLD()  { return App.World; }
   function ROLES()  { return (App.config && App.config.ROLES) || {}; }
   function AGENTS() { return App.Agents; }
@@ -143,8 +158,15 @@ window.App = window.App || {};
       // Global "Coffee break" control (sends all idle non-boss agents on break).
       ensureCoffeeBreakButton();
 
+      // Mobile/responsive: wire the rail drawer toggles (shown <=820px via CSS).
+      on($('btn-rail-crew'), 'click', function () { toggleRailDrawer('agent-list', 'btn-rail-crew'); });
+      on($('btn-rail-log'),  'click', function () { toggleRailDrawer('log', 'btn-rail-log'); });
+
       // Logo glyph in the HUD.
       drawLogo();
+
+      // i18n: translate the static shell now that DOM + config are ready.
+      applyI18n(document);
 
       // (m5) Sync the web-search neon switch with persisted settings on first load,
       // so its .on/aria-checked state matches App.state before Settings is opened.
@@ -163,6 +185,45 @@ window.App = window.App || {};
     var scrim = modal.querySelector('.modal-scrim');
     on(scrim, 'click', function () { hide(modal); if (typeof after === 'function') after(); });
   }
+
+  // ===========================================================================
+  // MOBILE / RESPONSIVE — rail drawers
+  // On narrow screens the CREW + ACTIVITY rails collapse off-canvas; the two
+  // HUD toggle buttons slide them in as overlay drawers. The `.rail-open` class
+  // (styled in styles.css) does the showing; here we just flip it + aria + the
+  // shared scrim. Only one drawer is open at a time.
+  // ===========================================================================
+  function ensureRailScrim() {
+    var sc = $('rail-scrim');
+    if (sc) return sc;
+    var app = $('app');
+    if (!app) return null;
+    sc = el('div', 'rail-scrim');
+    sc.id = 'rail-scrim';
+    on(sc, 'click', closeRailDrawers);
+    app.appendChild(sc);
+    return sc;
+  }
+  function closeRailDrawers() {
+    ['agent-list', 'log'].forEach(function (id) { var n = $(id); if (n) n.classList.remove('rail-open'); });
+    ['btn-rail-crew', 'btn-rail-log'].forEach(function (id) {
+      var b = $(id); if (b) b.setAttribute('aria-pressed', 'false');
+    });
+    var sc = $('rail-scrim'); if (sc) sc.classList.remove('rail-scrim-on');
+  }
+  function toggleRailDrawer(railId, btnId) {
+    var rail = $(railId);
+    if (!rail) return;
+    var isOpen = rail.classList.contains('rail-open');
+    closeRailDrawers();
+    if (!isOpen) {
+      rail.classList.add('rail-open');
+      var b = $(btnId); if (b) b.setAttribute('aria-pressed', 'true');
+      var sc = ensureRailScrim(); if (sc) sc.classList.add('rail-scrim-on');
+    }
+  }
+  // Expose so other flows (e.g. opening a panel on mobile) can dismiss drawers.
+  UI.closeRailDrawers = closeRailDrawers;
 
   // ===========================================================================
   // SELECT / SEGMENTED POPULATION
@@ -521,12 +582,281 @@ window.App = window.App || {};
     var panel = $('panel-agent');
     show(panel);
     ensureBreakButton();
+    ensurePanelExtras();          // mood + customize + terminal/log sections (once)
     refreshSelectedPanel();
     refreshPersonaPanel(agentId);
     renderTranscript(agentId);
+    refreshPanelExtras(agentId);  // populate mood/customize/terminal for this agent
     startPanelPreview();
-    UI.refreshAgentList(); // highlight selected row
+    UI.refreshAgentList();        // highlight selected row
+    // On mobile, opening an agent panel should dismiss any open rail drawer.
+    if (typeof closeRailDrawers === 'function') closeRailDrawers();
   };
+
+  // -------------------------------------------------------------------------
+  // AGENT PANEL EXTRAS (Wave B/C): MOOD readout, CUSTOMIZE editor, TERMINAL log.
+  // Injected once into #panel-agent (after the persona box, before transcript).
+  // Reuses .persona-box / .field / .swatch styling for visual consistency.
+  // -------------------------------------------------------------------------
+  function ensurePanelExtras() {
+    if ($('panel-agent-extras')) return;
+    var personaBox = $('panel-agent-persona');
+    var transcript = $('panel-agent-transcript');
+    var panel = $('panel-agent');
+    if (!panel) return;
+
+    var wrap = el('div', 'panel-extras');
+    wrap.id = 'panel-agent-extras';
+
+    // --- MOOD + RELATIONSHIPS (read-only) ---
+    var moodBox = el('details', 'persona-box');
+    moodBox.id = 'panel-agent-mood';
+    var moodSum = el('summary', 'persona-summary');
+    moodSum.setAttribute('data-i18n', 'agent.mood');
+    moodSum.textContent = T('agent.mood', 'MOOD & RELATIONSHIPS');
+    moodBox.appendChild(moodSum);
+    var moodBody = el('div', 'persona-body');
+    moodBody.id = 'panel-agent-mood-body';
+    moodBox.appendChild(moodBody);
+    wrap.appendChild(moodBox);
+
+    // --- CUSTOMIZE (sprite hair/skin/accent) ---
+    var custBox = el('details', 'persona-box');
+    custBox.id = 'panel-agent-customize';
+    var custSum = el('summary', 'persona-summary');
+    custSum.setAttribute('data-i18n', 'agent.customize');
+    custSum.textContent = T('agent.customize', 'CUSTOMIZE');
+    custBox.appendChild(custSum);
+    var custBody = el('div', 'persona-body');
+    custBody.id = 'panel-agent-customize-body';
+    custBox.appendChild(custBody);
+    wrap.appendChild(custBox);
+
+    // --- TERMINAL / LOG (recent activity transcript) ---
+    var termBox = el('details', 'persona-box');
+    termBox.id = 'panel-agent-terminal';
+    var termSum = el('summary', 'persona-summary');
+    termSum.setAttribute('data-i18n', 'agent.terminal');
+    termSum.textContent = T('agent.terminal', 'TERMINAL / LOG');
+    termBox.appendChild(termSum);
+    var termBody = el('div', 'persona-body pe-terminal');
+    termBody.id = 'panel-agent-terminal-body';
+    termBox.appendChild(termBody);
+    wrap.appendChild(termBox);
+
+    // Insert after the persona box (or before transcript as a fallback).
+    if (personaBox && personaBox.parentNode) {
+      if (personaBox.nextSibling) personaBox.parentNode.insertBefore(wrap, personaBox.nextSibling);
+      else personaBox.parentNode.appendChild(wrap);
+    } else if (transcript && transcript.parentNode) {
+      transcript.parentNode.insertBefore(wrap, transcript);
+    } else {
+      panel.appendChild(wrap);
+    }
+  }
+
+  function refreshPanelExtras(agentId) {
+    refreshMoodPanel(agentId);
+    refreshCustomizePanel(agentId);
+    refreshTerminalPanel(agentId);
+  }
+
+  // Map a 0..1 mood to a label + accent color.
+  function moodLabel(m) {
+    m = Number(m); if (isNaN(m)) m = 0.7;
+    if (m >= 0.8) return { t: T('mood.great', 'Great'), c: 'var(--lime)' };
+    if (m >= 0.6) return { t: T('mood.good', 'Good'), c: 'var(--cyan)' };
+    if (m >= 0.4) return { t: T('mood.ok', 'OK'), c: 'var(--amber)' };
+    if (m >= 0.2) return { t: T('mood.low', 'Low'), c: 'var(--amber)' };
+    return { t: T('mood.down', 'Down'), c: 'var(--red)' };
+  }
+
+  function refreshMoodPanel(agentId) {
+    var body = $('panel-agent-mood-body');
+    if (!body) return;
+    clear(body);
+    var a = AGENTS() && AGENTS().byId ? AGENTS().byId(agentId) : null;
+    if (!a) return;
+
+    var mood = (typeof a.mood === 'number') ? a.mood : (CFG().MOOD_DEFAULT != null ? CFG().MOOD_DEFAULT : 0.7);
+    var ml = moodLabel(mood);
+    var moodField = el('div', 'pe-field');
+    moodField.appendChild(el('div', 'pe-key', T('panel.mood', 'Mood')));
+    var bar = el('div', 'mood-bar');
+    var fill = el('div', 'mood-fill');
+    fill.style.width = Math.round(clamp(mood, 0, 1) * 100) + '%';
+    fill.style.background = ml.c;
+    fill.style.boxShadow = '0 0 8px ' + ml.c;
+    bar.appendChild(fill);
+    moodField.appendChild(bar);
+    var moodTxt = el('div', 'mood-label', ml.t + ' · ' + Math.round(mood * 100) + '%');
+    moodTxt.style.color = ml.c;
+    moodField.appendChild(moodTxt);
+    body.appendChild(moodField);
+
+    // Top relationships (highest affinity first).
+    var relField = el('div', 'pe-field');
+    relField.appendChild(el('div', 'pe-key', T('panel.topRelationships', 'Top relationships')));
+    var rel = (a.relationships && typeof a.relationships === 'object') ? a.relationships : {};
+    var rows = [];
+    for (var oid in rel) {
+      if (!Object.prototype.hasOwnProperty.call(rel, oid)) continue;
+      var other = AGENTS() && AGENTS().byId ? AGENTS().byId(oid) : null;
+      if (!other) continue;
+      rows.push({ name: other.name, color: other.color, aff: Number(rel[oid]) || 0 });
+    }
+    rows.sort(function (x, y) { return y.aff - x.aff; });
+    rows = rows.slice(0, 4);
+    if (!rows.length) {
+      relField.appendChild(el('div', 'pe-empty', T('panel.noRelationships', 'No relationships yet.')));
+    } else {
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var line = el('div', 'rel-line');
+        var dot = el('span', 'rel-dot');
+        dot.style.background = r.color || 'var(--purple)';
+        dot.style.boxShadow = '0 0 6px ' + (r.color || 'var(--purple)');
+        line.appendChild(dot);
+        line.appendChild(el('span', 'rel-name', r.name));
+        var pct = el('span', 'rel-aff', Math.round(clamp(r.aff, 0, 1) * 100) + '%');
+        line.appendChild(pct);
+        relField.appendChild(line);
+      }
+    }
+    body.appendChild(relField);
+  }
+
+  // Sprite customization editor: hair / skin / accent swatches -> agent.sprite.
+  // Reads palette options from App.PixelArt (if exposed) or sensible defaults.
+  function spriteOptions() {
+    var pal = (CFG().palette) || {};
+    // Skin/hair palettes mirror pixelart.js defaults; accent reuses the neon swatch set.
+    return {
+      skin: ['#e8b48c', '#c98a63', '#f2c7a8', '#a86c4a'],
+      hair: ['#1a1d2e', '#3a2f4f', '#5a4a35', '#7a3b2b', '#cdd3e6'],
+      accent: [pal.cyan, pal.magenta, pal.purple, pal.blue, pal.lime, pal.amber, pal.red]
+        .filter(function (c) { return !!c; })
+    };
+  }
+
+  function refreshCustomizePanel(agentId) {
+    var body = $('panel-agent-customize-body');
+    if (!body) return;
+    clear(body);
+    var a = AGENTS() && AGENTS().byId ? AGENTS().byId(agentId) : null;
+    if (!a) return;
+    a.sprite = (a.sprite && typeof a.sprite === 'object') ? a.sprite : {};
+    var opts = spriteOptions();
+
+    var rowFor = function (label, key, colors, applyDefaultFrom) {
+      var f = el('div', 'pe-field');
+      f.appendChild(el('div', 'pe-key', label));
+      var rowEl = el('div', 'swatch-row');
+      var current = a.sprite[key];
+      for (var i = 0; i < colors.length; i++) {
+        (function (col) {
+          var sw = el('button', 'swatch swatch-sm');
+          sw.type = 'button';
+          sw.style.background = col;
+          sw.style.boxShadow = '0 0 6px ' + col;
+          sw.setAttribute('data-color', col);
+          if (current && String(current).toLowerCase() === String(col).toLowerCase()) sw.classList.add('active');
+          on(sw, 'click', function () {
+            a.sprite[key] = col;
+            highlightSegmented(rowEl, 'data-color', col);
+            persistCustomization();
+          });
+          rowEl.appendChild(sw);
+        })(colors[i]);
+      }
+      f.appendChild(rowEl);
+      return f;
+    };
+
+    body.appendChild(rowFor(T('customize.hair', 'Hair'), 'hair', opts.hair));
+    body.appendChild(rowFor(T('customize.skin', 'Skin'), 'skin', opts.skin));
+    body.appendChild(rowFor(T('customize.accent', 'Accent'), 'accent', opts.accent));
+
+    // Reset row
+    var resetField = el('div', 'pe-field');
+    var resetBtn = el('button', 'btn btn-sq', '↺');
+    resetBtn.type = 'button';
+    resetBtn.style.width = 'auto';
+    resetBtn.style.padding = '0 10px';
+    resetBtn.appendChild(document.createTextNode(' ' + T('customize.reset', 'Reset')));
+    on(resetBtn, 'click', function () {
+      a.sprite = {};
+      refreshCustomizePanel(agentId);
+      persistCustomization();
+    });
+    resetField.appendChild(resetBtn);
+    body.appendChild(resetField);
+  }
+
+  function persistCustomization() {
+    try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
+  }
+
+  // Terminal/log view: the agent's recent activity (conversation tail + memories
+  // + any logged tool calls), rendered monospace. Read-only, newest at bottom.
+  function refreshTerminalPanel(agentId) {
+    var body = $('panel-agent-terminal-body');
+    if (!body) return;
+    clear(body);
+    var a = AGENTS() && AGENTS().byId ? AGENTS().byId(agentId) : null;
+    if (!a) return;
+
+    var lines = collectAgentActivity(a);
+    if (!lines.length) {
+      body.appendChild(el('div', 'pe-empty', T('panel.noActivity', 'No activity yet.')));
+      return;
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i];
+      var row = el('div', 'term-line term-' + (ln.kind || 'sys'));
+      if (ln.tag) {
+        var tag = el('span', 'term-tag', ln.tag);
+        row.appendChild(tag);
+      }
+      row.appendChild(document.createTextNode(ln.text || ''));
+      body.appendChild(row);
+    }
+    body.scrollTop = body.scrollHeight;
+  }
+
+  // Gather a flat, time-ordered activity list for one agent from available state.
+  function collectAgentActivity(a) {
+    var out = [];
+    // Conversation turns (direct chat).
+    var conv = Array.isArray(a.conversation) ? a.conversation : [];
+    for (var i = Math.max(0, conv.length - 12); i < conv.length; i++) {
+      var t = conv[i] || {};
+      out.push({
+        kind: t.role === 'user' ? 'in' : 'out',
+        tag: t.role === 'user' ? '>' : a.name || 'agent',
+        text: truncate(String(t.content || ''), 400)
+      });
+    }
+    // Global log lines authored by this agent (tool calls / results live here).
+    try {
+      var glog = (STATE() && STATE().log) || [];
+      var mine = [];
+      for (var j = 0; j < glog.length; j++) {
+        var e = glog[j];
+        if (e && e.from === a.name) mine.push(e);
+      }
+      mine = mine.slice(-10);
+      for (var k = 0; k < mine.length; k++) {
+        var le = mine[k];
+        out.push({
+          kind: le.kind === 'error' ? 'err' : (le.kind === 'tool' ? 'tool' : 'sys'),
+          tag: le.kind === 'tool' ? '⚙' : '·',
+          text: truncate(String(le.text || ''), 400)
+        });
+      }
+    } catch (e) {}
+    return out;
+  }
 
   // Inject (once) a '☕ Break' button into the agent panel compose row; it sends
   // the open agent on a tea break via Orchestrator.sendOnBreak. Reuses .btn.
@@ -593,8 +923,10 @@ window.App = window.App || {};
     // accent
     var accent = $('panel-agent');
     if (accent) accent.style.setProperty('--accent', a.color || '#9b5cff');
-    // keep persona/memory in sync while the panel is open
+    // keep persona/memory + mood/terminal in sync while the panel is open
     refreshPersonaPanel(a.id);
+    if ($('panel-agent-mood-body')) refreshMoodPanel(a.id);
+    if ($('panel-agent-terminal-body')) refreshTerminalPanel(a.id);
   }
 
   // Read-only persona + recent memories for the open agent panel.
@@ -696,6 +1028,31 @@ window.App = window.App || {};
       appendTurnNode(box, 'user', String(text || ''));
     }
     box.scrollTop = box.scrollHeight;
+  };
+
+  // ----- tool-call display (Wave B/C) ------------------------------------
+  // Orchestrator calls this when a worker invokes a browser tool so the user
+  // sees it inline. Renders a compact chip in the open transcript and refreshes
+  // the agent's terminal/log section. Safe no-op if the panel isn't open.
+  UI.logToolCall = function (agentId, name, brief) {
+    try {
+      var s = STATE();
+      // Always refresh the terminal section if this agent's panel is open.
+      if (s && s.selectedAgentId === agentId && $('panel-agent-terminal-body')) {
+        refreshTerminalPanel(agentId);
+      }
+      if (!s || s.selectedAgentId !== agentId) return;
+      var box = $('panel-agent-transcript');
+      if (!box) return;
+      var chip = el('div', 'tx-tool');
+      var ico = el('span', 'tx-tool-ico', '⚙');
+      var lbl = el('span', 'tx-tool-name', String(name || 'tool'));
+      chip.appendChild(ico);
+      chip.appendChild(lbl);
+      if (brief) chip.appendChild(el('span', 'tx-tool-brief', truncate(String(brief), 120)));
+      box.appendChild(chip);
+      box.scrollTop = box.scrollHeight;
+    } catch (e) {}
   };
 
   // ----- panel mini-sprite preview (idle-bob) -----
@@ -829,6 +1186,9 @@ window.App = window.App || {};
     var oaiI = $('set-openai-key'); if (oaiI) { oaiI.value = settings.openaiKey || ''; oaiI.type = 'password'; }
     // Inject (once) + load the local-companion toggle + URL.
     ensureCompanionField();
+    // Inject (once) the EN/KO language toggle.
+    ensureLangField();
+    highlightSegmented($('set-lang'), 'data-lang', currentLang());
     var ctog = $('set-companion-toggle'); if (ctog) ctog.checked = !!settings.useCompanion;
     var curl = $('set-companion-url'); if (curl) curl.value = settings.companionUrl || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var dm = $('set-default-model'); if (dm) dm.value = settings.defaultModel || CFG().DEFAULT_MODEL;
@@ -928,6 +1288,73 @@ window.App = window.App || {};
 
     if (anchorField.nextSibling) anchorField.parentNode.insertBefore(field, anchorField.nextSibling);
     else anchorField.parentNode.appendChild(field);
+  }
+
+  // Inject (once) a LANGUAGE segmented EN/KO toggle into Settings. Switching it
+  // calls App.I18n.setLang + re-applies translations live (and persists via Store
+  // through I18n.setLang). Idempotent; no-ops gracefully if I18n is absent.
+  function ensureLangField() {
+    if ($('set-lang')) return;
+    var anchor = $('set-default-model');
+    if (!anchor || typeof document === 'undefined') return;
+    var anchorField = anchor;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    // climb once more past the .field-2col wrapper if present
+    var insertAfter = anchorField;
+    if (anchorField && anchorField.parentNode && anchorField.parentNode.classList &&
+        anchorField.parentNode.classList.contains('field-2col')) {
+      insertAfter = anchorField.parentNode;
+    }
+    if (!insertAfter || !insertAfter.parentNode) return;
+
+    var field = el('div', 'field field-inline');
+    var lbl = el('span', 'field-label');
+    lbl.setAttribute('data-i18n', 'set.language');
+    lbl.textContent = T('set.language', 'LANGUAGE');
+    field.appendChild(lbl);
+
+    var seg = el('div', 'segmented');
+    seg.id = 'set-lang';
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-label', 'Language');
+    var langs = [{ id: 'en', label: 'EN' }, { id: 'ko', label: '한' }];
+    var cur = currentLang();
+    langs.forEach(function (L) {
+      var b = el('button', 'seg' + (L.id === cur ? ' active' : ''), L.label);
+      b.type = 'button';
+      b.setAttribute('data-lang', L.id);
+      on(b, 'click', function () { setLanguage(L.id); });
+      seg.appendChild(b);
+    });
+    field.appendChild(seg);
+
+    if (insertAfter.nextSibling) insertAfter.parentNode.insertBefore(field, insertAfter.nextSibling);
+    else insertAfter.parentNode.appendChild(field);
+  }
+
+  function currentLang() {
+    try {
+      if (App.I18n && App.I18n.getLang) return App.I18n.getLang();
+    } catch (e) {}
+    var s = STATE();
+    return (s && s.settings && s.settings.lang) || 'en';
+  }
+
+  function setLanguage(lang) {
+    try {
+      if (App.I18n && App.I18n.setLang) App.I18n.setLang(lang);
+      else {
+        var s = STATE();
+        if (s) { s.settings = s.settings || {}; s.settings.lang = lang; }
+        if (App.Store && App.Store.save) App.Store.save();
+      }
+    } catch (e) {}
+    // reflect selection in the segmented control
+    highlightSegmented($('set-lang'), 'data-lang', lang);
+    // re-apply translations across the whole document + any open modals
+    applyI18n(document);
   }
 
   function saveSettings() {
@@ -1951,6 +2378,80 @@ window.App = window.App || {};
     root.appendChild(modal);
     return { modal: modal, body: body, foot: foot, close: close };
   }
+
+  // ===========================================================================
+  // HUMAN APPROVAL GATE (Wave B/C)
+  // openApproval(payload) -> Promise<'approve' | 'revise:<text>' | 'reject'>
+  // payload: { title?, goal?, content?, agent? }. Reuses modal scaffolding.
+  // Resolves exactly once; closing via scrim/✕ resolves to 'reject'.
+  // ===========================================================================
+  UI.openApproval = function (payload) {
+    payload = payload || {};
+    return new Promise(function (resolve) {
+      var m = mountModal('modal-approval', T('approval.title', '✓ APPROVAL NEEDED'));
+      if (!m) { resolve('approve'); return; } // fail-open: don't block the pipeline
+      var settled = false;
+      var done = function (val) {
+        if (settled) return;
+        settled = true;
+        try { m.close(); } catch (e) {}
+        resolve(val);
+      };
+      // ✕ / scrim close => reject (override mountModal's plain close)
+      var scrim = m.modal.querySelector('.modal-scrim');
+      if (scrim) { scrim.onclick = null; on(scrim, 'click', function () { done('reject'); }); }
+      var xBtn = m.modal.querySelector('.panel-x');
+      if (xBtn) { xBtn.onclick = null; on(xBtn, 'click', function () { done('reject'); }); }
+
+      var body = m.body;
+      if (payload.goal) {
+        var gl = el('div', 'approval-goal');
+        gl.appendChild(el('div', 'pe-key', T('approval.goal', 'Goal')));
+        gl.appendChild(el('div', 'pe-val', String(payload.goal)));
+        body.appendChild(gl);
+      }
+      if (payload.agent) {
+        body.appendChild(el('div', 'approval-meta', T('approval.from', 'From') + ': ' + String(payload.agent)));
+      }
+      var contentWrap = el('div', 'approval-content');
+      var content = String(payload.content || payload.results || '');
+      try {
+        if (App.MD && App.MD.render) { contentWrap.innerHTML = App.MD.render(content); contentWrap.classList.add('md-body'); }
+        else contentWrap.textContent = content;
+      } catch (e) { contentWrap.textContent = content; }
+      body.appendChild(contentWrap);
+
+      var revLabel = el('label', 'field');
+      revLabel.appendChild(el('span', 'field-label', T('approval.reviseLabel', 'Revision notes (optional)')));
+      var rev = document.createElement('textarea');
+      rev.id = 'approval-revise';
+      rev.rows = 2;
+      rev.spellcheck = false;
+      rev.placeholder = T('approval.revisePlaceholder', 'What should change? Leave blank to just approve…');
+      revLabel.appendChild(rev);
+      body.appendChild(revLabel);
+
+      var rejectBtn = el('button', 'btn btn-danger', T('btn.reject', 'Reject'));
+      rejectBtn.type = 'button';
+      on(rejectBtn, 'click', function () { done('reject'); });
+      var reviseBtn = el('button', 'btn', T('btn.revise', 'Request changes'));
+      reviseBtn.type = 'button';
+      on(reviseBtn, 'click', function () {
+        var txt = (rev.value || '').trim();
+        if (!txt) { rev.focus(); UI.toast(T('approval.needNotes', 'Add revision notes, or Approve / Reject')); return; }
+        done('revise:' + txt);
+      });
+      var approveBtn = el('button', 'btn btn-primary', T('btn.approve', 'Approve'));
+      approveBtn.type = 'button';
+      on(approveBtn, 'click', function () { done('approve'); });
+      m.foot.appendChild(rejectBtn);
+      m.foot.appendChild(reviseBtn);
+      m.foot.appendChild(approveBtn);
+
+      applyI18n(m.modal);
+      try { approveBtn.focus(); } catch (e) {}
+    });
+  };
 
   // ===========================================================================
   // WAVE A — PRESET PICKER ("New Company")

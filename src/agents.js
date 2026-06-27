@@ -46,6 +46,39 @@ window.App = window.App || {};
   }
   function nowMs() { return Date.now(); }
 
+  // Clamp a number into 0..1 (NaN-safe). Used for mood + affinity.
+  function clamp01n(v) {
+    v = Number(v);
+    if (!isFinite(v)) return 0.7;
+    if (v < 0) return 0;
+    if (v > 1) return 1;
+    return v;
+  }
+  // Normalize a relationships map → { otherId: affinity(0..1) }. Drops junk.
+  function normRelations(rel) {
+    var out = {};
+    if (!rel || typeof rel !== 'object') return out;
+    for (var k in rel) {
+      if (!rel.hasOwnProperty(k)) continue;
+      var a = Number(rel[k]);
+      if (!isFinite(a)) continue;
+      out[k] = (a < 0) ? 0 : (a > 1 ? 1 : a);
+    }
+    return out;
+  }
+  // Normalize a sprite-customization object. All fields optional; unknown → defaults
+  // resolved at draw time. We keep only string/number primitives we recognize.
+  function normSprite(sp) {
+    if (!sp || typeof sp !== 'object') return null;
+    var out = {};
+    if (typeof sp.hair === 'string') out.hair = sp.hair;
+    else if (typeof sp.hair === 'number') out.hair = sp.hair | 0;
+    if (typeof sp.skin === 'string') out.skin = sp.skin;
+    else if (typeof sp.skin === 'number') out.skin = sp.skin | 0;
+    if (typeof sp.accent === 'string') out.accent = sp.accent;
+    return out;
+  }
+
   // Pose classes — anim.frame resets when an agent crosses between these.
   // SPEC §6.5: setState resets anim.frame on "pose-class change".
   function poseClass(state) {
@@ -113,6 +146,12 @@ window.App = window.App || {};
       persona: resolvePersona(rdef, spec),
       memories: Array.isArray(spec.memories) ? spec.memories.slice() : [],
       _attention: false,
+      // Wave B/C: mood (0..1), relationships (otherId -> affinity 0..1),
+      // sprite customization, and an activity timestamp that drives the glow.
+      mood: (typeof spec.mood === 'number') ? clamp01n(spec.mood) : (CFG().MOOD_DEFAULT != null ? clamp01n(CFG().MOOD_DEFAULT) : 0.7),
+      relationships: (spec.relationships && typeof spec.relationships === 'object') ? normRelations(spec.relationships) : {},
+      sprite: normSprite(spec.sprite),
+      _lastActivityTs: 0,
     };
 
     if (s && Array.isArray(s.agents)) s.agents.push(agent);
@@ -316,6 +355,67 @@ window.App = window.App || {};
   Agents.setAttention = function (agent, on) {
     if (!agent) return;
     agent._attention = !!on;
+  };
+
+  // ===========================================================================
+  // Wave B/C: ACTIVITY GLOW + MOOD + RELATIONSHIPS
+  // ===========================================================================
+
+  // markActivity(agent) — stamp the agent as "recently active" so PixelArt draws a
+  // glow that decays over CFG().GLOW_DECAY_MS. Called on streamed text + by the
+  // orchestrator on collaboration. Cheap; never throws.
+  Agents.markActivity = function (agent) {
+    if (!agent) return;
+    agent._lastActivityTs = nowMs();
+  };
+
+  // activityGlow(agent) — 0..1 strength of the recent-activity glow (1 right after
+  // markActivity, decaying linearly to 0 after GLOW_DECAY_MS). Pure read; safe.
+  Agents.activityGlow = function (agent) {
+    if (!agent || !agent._lastActivityTs) return 0;
+    var decay = CFG().GLOW_DECAY_MS || 2500;
+    if (decay <= 0) return 0;
+    var age = nowMs() - agent._lastActivityTs;
+    if (age < 0) age = 0;
+    if (age >= decay) return 0;
+    return 1 - (age / decay);
+  };
+
+  // setMood(agent, value) — set mood, clamped to 0..1. Returns the clamped value.
+  Agents.setMood = function (agent, value) {
+    if (!agent) return 0;
+    agent.mood = clamp01n(value);
+    return agent.mood;
+  };
+
+  // adjustMood(agent, delta) — nudge mood by delta (clamped). Returns new mood.
+  Agents.adjustMood = function (agent, delta) {
+    if (!agent) return 0;
+    var base = (typeof agent.mood === 'number') ? agent.mood : (CFG().MOOD_DEFAULT != null ? CFG().MOOD_DEFAULT : 0.7);
+    agent.mood = clamp01n(base + (Number(delta) || 0));
+    return agent.mood;
+  };
+
+  // adjustAffinity(agent, otherId, delta) — nudge how much `agent` likes `otherId`
+  // by delta (clamped 0..1). Starts from the configured default affinity. Returns
+  // the new affinity, or 0 on bad input. Subtle by design (orchestrator passes
+  // small deltas after collaboration).
+  Agents.adjustAffinity = function (agent, otherId, delta) {
+    if (!agent || !otherId || otherId === agent.id) return 0;
+    if (!agent.relationships || typeof agent.relationships !== 'object') agent.relationships = {};
+    var def = (CFG().AFFINITY_DEFAULT != null) ? CFG().AFFINITY_DEFAULT : 0.5;
+    var cur = (typeof agent.relationships[otherId] === 'number') ? agent.relationships[otherId] : def;
+    var next = clamp01n(cur + (Number(delta) || 0));
+    agent.relationships[otherId] = next;
+    return next;
+  };
+
+  // affinity(agent, otherId) — current affinity (default if unset). Pure read.
+  Agents.affinity = function (agent, otherId) {
+    var def = (CFG().AFFINITY_DEFAULT != null) ? CFG().AFFINITY_DEFAULT : 0.5;
+    if (!agent || !agent.relationships || !otherId) return def;
+    var v = agent.relationships[otherId];
+    return (typeof v === 'number') ? v : def;
   };
 
   // ===========================================================================
@@ -595,11 +695,21 @@ window.App = window.App || {};
         // Selection ring UNDER the agent.
         if (selected && art.drawSelection) art.drawSelection(ctx, a, scr.x, scr.y, size);
 
+        // Wave B/C: activity glow UNDER the agent (a soft pool that fades with
+        // recent streaming activity). Drawn before the sprite so it reads as a halo.
+        if (art.drawAgentGlow) {
+          var glow = Agents.activityGlow(a);
+          if (glow > 0.01) {
+            try { art.drawAgentGlow(ctx, a, scr.x, scr.y, size, glow); } catch (e) {}
+          }
+        }
+
         // The sprite (feet anchor).
         if (art.drawAgent) {
           art.drawAgent(ctx, a, scr.x, scr.y, size, {
             seated: (a.state === 'coding' || a.state === 'searching'),
             selected: selected,
+            glow: art.drawAgentGlow ? 0 : Agents.activityGlow(a),
           });
         }
 
@@ -695,6 +805,8 @@ window.App = window.App || {};
       onText: function (delta) {
         assistantText += delta;
         bubbleAccum += delta;
+        // Wave B/C: mark activity so the agent glows while it streams.
+        agent._lastActivityTs = nowMs();
         // bubble shows the tail of the stream (truncated by say()).
         Agents.say(agent, bubbleAccum.slice(-60), 3000);
         try {
