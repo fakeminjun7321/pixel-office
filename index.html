@@ -20742,7 +20742,18 @@ window.App = window.App || {};
       var settings = s.settings || (s.settings = {});
       settings.defaultModel = HAIKU_MODEL_ID;
       settings.bossModel = HAIKU_MODEL_ID;
+      // Live agents carry an explicit agent.model that the orchestrator prefers
+      // over settings.* — so the overloaded roster must be rewritten too, or the
+      // boss/workers keep using Opus/Sonnet and the button does nothing. Downgrade
+      // only Anthropic agents (leave OpenAI/GPT agents on their provider — Haiku
+      // has no OpenAI creds path).
+      var ags = s.agents || [];
+      var providerOf = CFG().providerOf || function () { return 'anthropic'; };
+      for (var i = 0; i < ags.length; i++) {
+        if (ags[i] && providerOf(ags[i].model) !== 'openai') ags[i].model = HAIKU_MODEL_ID;
+      }
       try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
+      try { if (UI.refreshAgentList) UI.refreshAgentList(); } catch (e) {}
     }
     // Keep the Settings selects in sync (no-op if the form isn't built yet).
     var dm = $('set-default-model');
@@ -20830,6 +20841,7 @@ window.App = window.App || {};
     btn.id = 'btn-opinion';
     btn.type = 'button';
     btn.title = T('opinion.launch.hint', 'Collect, classify & summarize classmates opinions');
+    btn.setAttribute('data-i18n-title', 'opinion.launch.hint'); // retranslate tooltip on language switch
     btn.setAttribute('aria-label', T('opinion.launch', 'Opinion Warehouse'));
     var ico = el('span', 'btn-ico', '🗳️');
     ico.setAttribute('aria-hidden', 'true');
@@ -22196,8 +22208,25 @@ window.App = window.App || {};
     var oaiI = $('set-openai-key'); if (oaiI) settings.openaiKey = oaiI.value.trim();
     var ctog = $('set-companion-toggle'); if (ctog) settings.useCompanion = !!ctog.checked;
     var curl = $('set-companion-url'); if (curl) settings.companionUrl = curl.value.trim() || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
+    var prevDefault = settings.defaultModel, prevBoss = settings.bossModel;
     var dm = $('set-default-model'); if (dm) settings.defaultModel = dm.value;
     var bm = $('set-boss-model'); if (bm) settings.bossModel = bm.value;
+    // Propagate model changes to the LIVE roster (the orchestrator prefers an
+    // agent's own model over settings.*). Only touch agents that were following the
+    // global model (== previous setting or the role default), so per-agent custom
+    // models chosen in the +Agent modal are preserved.
+    (function () {
+      var st = STATE(); var ags = (st && st.agents) || [];
+      var BOSS_DEF = CFG().BOSS_MODEL, WORK_DEF = CFG().DEFAULT_MODEL;
+      for (var i = 0; i < ags.length; i++) {
+        var a = ags[i]; if (!a) continue;
+        if (a.role === 'boss') {
+          if (!a.model || a.model === prevBoss || a.model === BOSS_DEF) a.model = settings.bossModel;
+        } else if (!a.model || a.model === prevDefault || a.model === WORK_DEF) {
+          a.model = settings.defaultModel;
+        }
+      }
+    })();
     var sw = $('set-websearch');
     if (sw) settings.webSearch = (sw.getAttribute('aria-checked') === 'true');
     // GitHub push config (token stays local).
