@@ -58,6 +58,54 @@ window.App = window.App || {};
     try { if (App.UI && App.UI.refreshBoard) App.UI.refreshBoard(); } catch (e) {}
   }
 
+  // sfx(name) — WAVE 4a: fire a procedural blip via App.Audio (if loaded + sound on).
+  //   Fully guarded; a missing/failing Audio module is a silent no-op. Never throws.
+  //   Known tones: 'dispatch','done','qa_fail','coffee','approval','levelup','error','tool'.
+  function sfx(name) {
+    try {
+      if (App.Audio && typeof App.Audio.sfx === 'function') App.Audio.sfx(name);
+    } catch (e) {}
+  }
+
+  // creditsPerTask() — config-owned credit reward per successful task (default 10).
+  function creditsPerTask() {
+    var n = CFG().CREDITS_PER_TASK;
+    return (typeof n === 'number' && isFinite(n) && n >= 0) ? n : 10;
+  }
+  // xpPerTask() — config-owned XP reward per successful task (default 25).
+  function xpPerTask() {
+    var n = CFG().XP_PER_TASK;
+    return (typeof n === 'number' && isFinite(n) && n >= 0) ? n : 25;
+  }
+
+  // grantTaskRewards(agent, task) — WAVE 4a gamification. On a SUCCESSFUL task:
+  //   add credits to the shared pool + grant the agent XP (Agents.grantXp). On a
+  //   level-up: levelup sfx + celebratory bubble/log + UI refresh. Fully guarded
+  //   (Agents.grantXp may not be loaded during a partial build) — never throws.
+  function grantTaskRewards(agent, task) {
+    try {
+      var s = STATE();
+      if (!s) return;
+      // shared credit pool (default 0; coerced if a save migrated in a non-number).
+      if (typeof s.credits !== 'number' || !isFinite(s.credits)) s.credits = 0;
+      s.credits += creditsPerTask();
+      try { if (App.UI && App.UI.refreshCredits) App.UI.refreshCredits(); } catch (e) {}
+
+      if (!agent) return;
+      var ag = AGENTS();
+      if (ag && typeof ag.grantXp === 'function') {
+        var res = ag.grantXp(agent, xpPerTask());
+        if (res && res.leveledUp) {
+          sfx('levelup');
+          try { ag.say(agent, '⭐ Level ' + (res.level || agent.level || '?') + '!', 4000); } catch (e) {}
+          try { log(agent.name || agent.role, 'all', 'system', '⭐ ' + (agent.name || agent.role) + ' reached level ' + (res.level || agent.level || '?')); } catch (e) {}
+          try { nudgeMood(agent, 0.08); } catch (e) {}
+          try { if (App.UI && App.UI.refreshAgentList) App.UI.refreshAgentList(); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
+
   // ===========================================================================
   // TRACE (Wave 3) — additive run telemetry. Pushes small, timestamped events onto
   //   App.state.trace (capped) so the metrics dashboard can draw a timeline + replay.
@@ -391,6 +439,7 @@ window.App = window.App || {};
           r = r || {};
           var label = (agent && agent.name) || (agent && agent.role) || 'agent';
           try { log(label, 'tool', 'tool', '🔧 ' + (blk.name || 'tool') + (r.ok ? ' ✓' : ' ✗')); } catch (e) {}
+          sfx('tool');   // WAVE 4a: tool-call blip.
           try { traceEvt({ type: 'tool_call', name: blk.name || 'tool', role: agent && agent.role, agentId: agent && agent.id, status: r.ok ? 'ok' : 'error' }); } catch (e) {}
           // surface in the agent transcript if the UI supports it.
           try {
@@ -1006,6 +1055,7 @@ window.App = window.App || {};
 
     var roleLabel = (ROLES()[task.role] && ROLES()[task.role].label) || task.role;
     log('Boss', agent.name || roleLabel, 'msg', '@' + (agent.name || roleLabel) + ': ' + task.title);
+    sfx('dispatch');   // WAVE 4a: dispatch blip when a task is handed to a worker.
     refreshBoard();
 
     runWorker(task);
@@ -1359,6 +1409,7 @@ window.App = window.App || {};
             task._retries = (task._retries || 0) + 1;
             task._feedback = feedback;
             log('QA', (worker ? worker.name : task.role), 'msg', '✗ FAIL → revise (' + task._retries + '): ' + truncate(feedback, 60));
+            sfx('qa_fail');   // WAVE 4a: QA rejection blip.
             try { traceEvt({ type: 'retry', role: task.role, taskId: task.id, status: 'fail', text: truncate(feedback, 60) }); } catch (e) {}
             // release the worker and re-queue for another attempt.
             if (worker) {
@@ -1469,6 +1520,10 @@ window.App = window.App || {};
       ag.say(agent, '✓ done', 2500);
       clearAttention(agent);
       nudgeMood(agent, 0.06);   // satisfaction from finishing work
+      sfx('done');   // WAVE 4a: task-complete blip.
+      // GAMIFICATION (WAVE 4a): reward a completed WORKER subtask (esp. QA-passed) —
+      //   credits to the shared pool + agent XP (level-up celebrated inside).
+      try { if (task && task.parentId) grantTaskRewards(agent, task); } catch (e) {}
       // honor a deferred break request (set while the agent was busy), else maybe wander.
       if (agent._wantBreak) {
         agent._wantBreak = false;
@@ -1515,6 +1570,7 @@ window.App = window.App || {};
     }
     var label = agent ? agent.name : task.role;
     log(label, 'Boss', 'error', 'API error' + (status ? ' (' + status + ')' : '') + ': ' + (msg || ''));
+    sfx('error');   // WAVE 4a: error blip.
     refreshBoard();
     saveSoon();
   }
@@ -1534,6 +1590,7 @@ window.App = window.App || {};
       if (STATE() && STATE()._meetingActive) return;   // don't wander off during a sync meeting
       if (Math.random() > 0.4) return;
       var ag = AGENTS();
+      sfx('coffee');   // WAVE 4a: post-task coffee wander blip.
       ag.goToBreak(agent, function () {
         // relax in the lounge, then head home after a beat
         setTimeout(function () {
@@ -1572,6 +1629,7 @@ window.App = window.App || {};
       if (agent.state === 'coffee') return;
 
       log('user', agent.name || agent.role, 'msg', '☕ taking a break');
+      sfx('coffee');   // WAVE 4a: break/coffee blip.
       ag.goToBreak(agent, function () {
         // sparse banter while relaxing
         maybeBanter(agent, 'break');
@@ -1663,6 +1721,58 @@ window.App = window.App || {};
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
+  // recentMemorySnippet(agent) — WAVE 4a grounded chatter: a short phrase pulled from
+  //   the agent's MOST RECENT real memories (prefers Agents.scoreMemories ranking,
+  //   falls back to the memories tail). Strips low-signal 'watercooler:' chatter notes
+  //   so banter references actual work. Returns '' when nothing useful. Never throws.
+  function recentMemorySnippet(agent) {
+    try {
+      if (!agent || !Array.isArray(agent.memories) || !agent.memories.length) return '';
+      var ag = AGENTS();
+      var cands = [];
+      // prefer the freshest entries (tail), then fill from the rest.
+      for (var i = agent.memories.length - 1; i >= 0 && cands.length < 6; i--) {
+        var m = agent.memories[i];
+        if (m && m.text) cands.push(String(m.text));
+      }
+      // optional relevance bump: ask Agents to rank by a generic recent-work query.
+      try {
+        if (ag && typeof ag.scoreMemories === 'function') {
+          var top = ag.scoreMemories('recent work task built delivered', agent.memories) || [];
+          for (var j = 0; j < top.length; j++) {
+            if (top[j] && top[j].text) cands.unshift(String(top[j].text));
+          }
+        }
+      } catch (e) {}
+      for (var k = 0; k < cands.length; k++) {
+        var t = cands[k].replace(/^watercooler:\s*/i, '').trim();
+        if (!t) continue;
+        if (/^watercooler/i.test(cands[k])) continue;   // skip pure chatter notes
+        return truncate(t, 40);
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  // groundedChatterLine(agent) — sometimes reference a real recent memory ('still
+  //   thinking about <memory>' templates), else fall back to the canned pool. Keeps
+  //   banter feeling like it's about actual work without any extra API cost.
+  var _groundedTemplates = [
+    'still thinking about ',
+    'happy with how the ',
+    'that ',
+    'wrapped up ',
+  ];
+  function groundedChatterLine(agent) {
+    var snip = recentMemorySnippet(agent);
+    if (snip && Math.random() < 0.55) {
+      var tpl = _groundedTemplates[Math.floor(Math.random() * _groundedTemplates.length)];
+      var tail = (tpl === 'that ') ? (snip + ' was solid') : snip;
+      return truncate(tpl + tail, 60);
+    }
+    return chatterLineFor(agent.role);
+  }
+
   function maybeWatercooler() {
     try {
       var s = STATE();
@@ -1738,7 +1848,8 @@ window.App = window.App || {};
       try {
         if (i >= turns) { endWatercooler(a, b, topicLine); return; }
         var sp = pair[i % 2];
-        var line = chatterLineFor(sp.role);
+        // GROUNDED CHATTER (WAVE 4a): reference real recent work when available.
+        var line = groundedChatterLine(sp);
         if (!topicLine) topicLine = line;
         ag.say(sp, line, 3200);
         log(sp.name || sp.role, 'all', 'msg', line);
@@ -1757,7 +1868,14 @@ window.App = window.App || {};
     var sys = "You are scripting a SHORT, light office watercooler exchange between two coworkers at an AI software company. " +
       "Keep it casual and brief: 2-4 total lines, alternating speakers, <=12 words each. No work assignments. " +
       "Output ONLY lines in the form 'NAME: text', nothing else.";
-    var content = "Speaker A is " + (a.name || aLabel) + " (" + aLabel + "). Speaker B is " + (b.name || bLabel) + " (" + bLabel + "). Write their quick break-room chat.";
+    // GROUNDED CHATTER (WAVE 4a): inject each speaker's recent-work snippet so the
+    //   live exchange references real tasks (no extra API call — same single stream).
+    var aMem = recentMemorySnippet(a), bMem = recentMemorySnippet(b);
+    var memNote = '';
+    if (aMem) memNote += "\n" + (a.name || aLabel) + " recently worked on: " + aMem + ".";
+    if (bMem) memNote += "\n" + (b.name || bLabel) + " recently worked on: " + bMem + ".";
+    if (memNote) memNote = "\nThey can casually reference recent work:" + memNote;
+    var content = "Speaker A is " + (a.name || aLabel) + " (" + aLabel + "). Speaker B is " + (b.name || bLabel) + " (" + bLabel + "). Write their quick break-room chat." + memNote;
 
     var acc = '';
     var handle = App.API.stream({
@@ -2091,6 +2209,7 @@ window.App = window.App || {};
       results: gatherWorkerResults(root),
     };
     var p;
+    sfx('approval');   // WAVE 4a: needs-approval blip when the gate opens.
     try { p = App.UI.openApproval(payload); } catch (e) { cb(true); return; }
     if (!p || typeof p.then !== 'function') { cb(true); return; }
     p.then(function (decision) {

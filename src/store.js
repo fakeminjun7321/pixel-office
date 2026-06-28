@@ -126,6 +126,7 @@ window.App = window.App || {};
       webSearch: true,
       theme: 'neon',
       sound: true,            // v3: completion chime on/off
+      bgm: false,             // Wave 4a: ambient background music (procedural) on/off - default OFF
       liveChatter: false,     // v3: watercooler uses an LLM call when true; canned lines when false
       lang: (c.DEFAULT_LANG || 'en'),  // Wave B: UI language (i18n) — 'en' | 'ko'
       onboarded: false,       // Wave C: first-run guided tour completed flag
@@ -220,6 +221,76 @@ window.App = window.App || {};
       var v = r[k];
       if (typeof v !== 'number' || !isFinite(v)) continue;
       out[k] = clamp(v, -1, 1);
+    }
+    return out;
+  }
+
+  // Wave 4a: sanitize a persisted non-negative integer (xp/credits) -> finite
+  // integer >= 0. Missing/invalid -> the given default (0). Never throws.
+  function normalizeCount(n, def) {
+    var d = (typeof def === 'number' && isFinite(def)) ? def : 0;
+    if (typeof n !== 'number' || !isFinite(n)) return d;
+    n = Math.floor(n);
+    return n < 0 ? 0 : n;
+  }
+
+  // Wave 4a: recompute level from xp. Prefers a config formula/curve if present
+  // (CFG().LEVEL_FOR_XP function, or CFG().LEVEL_THRESHOLDS ascending array of xp
+  // cutoffs); otherwise the documented default: level = 1 + floor(sqrt(xp/100)).
+  // Always returns an integer >= 1. Never throws.
+  function levelForXp(xp) {
+    try {
+      var c = cfg();
+      // Single source of truth: config.levelForXp (LEVEL_XP_BASE curve + LEVEL_MAX clamp).
+      if (typeof c.levelForXp === 'function') {
+        var clv = c.levelForXp(xp);
+        if (typeof clv === 'number' && isFinite(clv) && clv >= 1) return Math.floor(clv);
+      }
+      if (typeof c.LEVEL_FOR_XP === 'function') {
+        var lv = c.LEVEL_FOR_XP(xp);
+        if (typeof lv === 'number' && isFinite(lv) && lv >= 1) return Math.floor(lv);
+      }
+      if (Array.isArray(c.LEVEL_THRESHOLDS)) {
+        var level = 1;
+        for (var i = 0; i < c.LEVEL_THRESHOLDS.length; i++) {
+          var cut = c.LEVEL_THRESHOLDS[i];
+          if (typeof cut === 'number' && isFinite(cut) && xp >= cut) level = i + 2;
+        }
+        return level;
+      }
+    } catch (e) { /* fall through to default curve */ }
+    var v = 1 + Math.floor(Math.sqrt((xp > 0 ? xp : 0) / 100));
+    return v < 1 ? 1 : v;
+  }
+
+  // Wave 4a: sanitize a persisted agent xp/level pair. xp -> integer >= 0; level
+  // is trusted only if it is a sane integer >= 1 that is consistent with xp,
+  // otherwise it is recomputed from xp so saves stay self-healing. Never throws.
+  function normalizeXpLevel(rawXp, rawLevel) {
+    var xp = normalizeCount(rawXp, 0);
+    var lvl = (typeof rawLevel === 'number' && isFinite(rawLevel)) ? Math.floor(rawLevel) : 0;
+    var derived = levelForXp(xp);
+    if (lvl < 1) lvl = derived;
+    // keep persisted level if it is at least the xp-derived level (allows manual
+    // grants/bonuses to survive), but never below the curve.
+    if (lvl < derived) lvl = derived;
+    return { xp: xp, level: lvl };
+  }
+
+  // Wave 4a: sanitize a persisted upgrades id list -> unique non-empty strings.
+  // Order preserved (first occurrence wins). Never throws.
+  function normalizeUpgrades(arr) {
+    var out = [];
+    if (!Array.isArray(arr)) return out;
+    var seen = {};
+    for (var i = 0; i < arr.length; i++) {
+      var v = arr[i];
+      if (v == null) continue;
+      var s = String(v).trim();
+      if (!s) continue;
+      if (Object.prototype.hasOwnProperty.call(seen, s)) continue;
+      seen[s] = 1;
+      out.push(s);
     }
     return out;
   }
@@ -475,6 +546,8 @@ window.App = window.App || {};
       artifacts: [],          // v3: Artifact[] (persisted, capped at ARTIFACT_MAX)
       trace: [],              // WAVE 3: structured run-event trace (persisted, capped at TRACE_CAP)
       files: {},              // v5: project workspace (path -> {content,lang,updatedBy,t}); persisted, capped at MAX_PROJECT_FILES
+      credits: 0,             // Wave 4a: shared credit pool (earned per task; spent in the office shop)
+      upgrades: [],           // Wave 4a: purchased OFFICE_UPGRADES ids (applied to layout on load)
       camera: defaultCamera(),
       layout: emptyLayout(),
       settings: defaultSettings(),
@@ -510,6 +583,8 @@ window.App = window.App || {};
     if (!Array.isArray(s.artifacts)) s.artifacts = [];
     if (!Array.isArray(s.trace)) s.trace = [];                   // WAVE 3: run-event trace
     if (!s.files || typeof s.files !== 'object') s.files = {};   // v5: project workspace map
+    if (typeof s.credits !== 'number' || !isFinite(s.credits)) s.credits = 0;   // Wave 4a
+    if (!Array.isArray(s.upgrades)) s.upgrades = [];                            // Wave 4a
     if (!s.camera || typeof s.camera !== 'object') s.camera = def.camera;
     if (!s.layout || typeof s.layout !== 'object') s.layout = def.layout;
     if (!s.settings || typeof s.settings !== 'object') s.settings = def.settings;
@@ -550,6 +625,7 @@ window.App = window.App || {};
     var gx = (typeof a.gx === 'number') ? a.gx : 0;
     var gy = (typeof a.gy === 'number') ? a.gy : 0;
     var center = cellCenterWorld(gx, gy);
+    var xl = normalizeXpLevel(a.xp, a.level);   // Wave 4a: xp/level (self-healing)
 
     var agent = {
       id: a.id || uid('a'),
@@ -585,6 +661,10 @@ window.App = window.App || {};
       // Wave B/C: social/affect + sprite customization (default-safe; migrate
       // older saves that lack these by supplying CFG defaults / empty maps).
       mood: normalizeMood(a.mood),
+      // Wave 4a: gamification - xp/level (migrate older saves: missing -> 0/1;
+      // level self-heals from xp via normalizeXpLevel above).
+      xp: xl.xp,
+      level: xl.level,
       relationships: normalizeRelationships(a.relationships),
       sprite: normalizeSprite(a.sprite),
       _idleSince: 0,
@@ -625,6 +705,9 @@ window.App = window.App || {};
       // v3: persist persona + memories (so accumulated context survives reload)
       persona: normalizePersona(a.persona, a.role),
       memories: normalizeMemories(a.memories),
+      // Wave 4a: persist gamification xp/level (level kept consistent with xp).
+      xp: normalizeCount(a.xp, 0),
+      level: normalizeXpLevel(a.xp, a.level).level,
       // Wave B/C: persist mood, relationships, sprite customization.
       mood: normalizeMood(a.mood),
       relationships: normalizeRelationships(a.relationships),
@@ -717,6 +800,10 @@ window.App = window.App || {};
     // WAVE 1: task ledger — small runtime working-memory; persist when meaningful.
     var ledger = normalizeLedger(s._ledger);
 
+    // Wave 4a: gamification economy - shared credits + purchased upgrade ids.
+    var credits = normalizeCount(s.credits, 0);
+    var upgrades = normalizeUpgrades(s.upgrades);
+
     var blob = {
       v: schemaVersion(),
       savedAt: nowMs(),
@@ -726,6 +813,8 @@ window.App = window.App || {};
       artifacts: artifacts,
       trace: trace,           // WAVE 3: structured run-event trace
       files: files,           // v5: project workspace
+      credits: credits,       // Wave 4a: shared credit pool
+      upgrades: upgrades,     // Wave 4a: purchased office-upgrade ids
       layout: layout,
       settings: settings,
       selectedAgentId: s.selectedAgentId || null,
@@ -840,6 +929,10 @@ window.App = window.App || {};
       if (Object.prototype.hasOwnProperty.call(rebuiltFiles, nfk)) s.files[nfk] = rebuiltFiles[nfk];
     }
 
+    // --- Wave 4a: gamification economy (credits + purchased upgrade ids) ---
+    s.credits = normalizeCount(blob.credits, 0);
+    s.upgrades = normalizeUpgrades(blob.upgrades);
+
     // --- WAVE 1: task ledger (restore if present; else leave unset/runtime-init) ---
     var lg = normalizeLedger(blob.ledger);
     if (lg) { s._ledger = lg; }
@@ -874,6 +967,15 @@ window.App = window.App || {};
     s._buildActive = false;   // v5: never restore a mid-build flag from disk
     s._lastRun = null;        // WAVE 1: self-repair capture is runtime-only; never restored
     // NOTE: s._ledger is set above from blob.ledger when present (it IS persisted).
+
+    // --- Wave 4a: re-apply purchased office upgrades onto the (now-ready) layout.
+    // World.reapplyUpgrades is idempotent + validates placement; guarded because
+    // World may be absent very early or when running headless. Never throws here.
+    try {
+      if (App.World && typeof App.World.reapplyUpgrades === 'function') {
+        App.World.reapplyUpgrades();
+      }
+    } catch (e) { logErr('applyBlob:reapplyUpgrades', e); }
 
     return s;
   }
@@ -970,6 +1072,28 @@ window.App = window.App || {};
         if (!Array.isArray(blob.trace)) blob.trace = [];
         v = 6;
       }
+      // v6 -> v7 (Wave 4a): gamification + economy. agent.xp/level, top-level
+      // credits + upgrades, settings.bgm. All are filled with safe defaults by the
+      // load-path normalizers (normalizeXpLevel / normalizeCount / normalizeUpgrades
+      // and defaultSettings merge), so this step only ensures the shapes exist on
+      // the blob; everything else is a forward no-op. Defensive: run whenever v<7
+      // regardless of whether SCHEMA_VERSION was bumped.
+      if (v < 7) {
+        if (typeof blob.credits !== 'number' || !isFinite(blob.credits)) blob.credits = 0;
+        if (!Array.isArray(blob.upgrades)) blob.upgrades = [];
+        if (blob.settings && typeof blob.settings === 'object') {
+          if (typeof blob.settings.bgm === 'undefined') blob.settings.bgm = false;
+        }
+        if (Array.isArray(blob.agents)) {
+          for (var gi = 0; gi < blob.agents.length; gi++) {
+            var ga = blob.agents[gi];
+            if (!ga || typeof ga !== 'object') continue;
+            if (typeof ga.xp !== 'number' || !isFinite(ga.xp)) ga.xp = 0;
+            // ga.level left absent -> rebuildAgent's normalizeXpLevel derives it.
+          }
+        }
+        v = 7;
+      }
       // Always stamp to current after running known steps.
       blob.v = target;
       return blob;
@@ -1039,6 +1163,11 @@ window.App = window.App || {};
       // the inline fallback so store-only seeding still produces complete agents)
       persona: normalizePersona(spec.persona, role),
       memories: Array.isArray(spec.memories) ? normalizeMemories(spec.memories) : [],
+      // Wave 4a: gamification - fresh agents start at xp 0 / level 1 (or a spec
+      // override; level self-heals from xp). Agents.create normally owns this;
+      // mirror here so store-only seeding still yields complete agents.
+      xp: normalizeXpLevel(spec.xp, spec.level).xp,
+      level: normalizeXpLevel(spec.xp, spec.level).level,
       // Wave B/C: mood / relationships / sprite (default-safe).
       mood: normalizeMood(spec.mood),
       relationships: normalizeRelationships(spec.relationships),
@@ -1089,6 +1218,8 @@ window.App = window.App || {};
       for (var fk in s.files) {
         if (Object.prototype.hasOwnProperty.call(s.files, fk)) delete s.files[fk];
       }
+      s.credits = 0;            // Wave 4a: fresh company starts with no credits
+      s.upgrades = [];          // Wave 4a: and no purchased upgrades
       s.settings = defaultSettings();
       s.camera = defaultCamera();
       s.selectedAgentId = null;
@@ -1279,7 +1410,7 @@ window.App = window.App || {};
     } catch (e) {
       logErr('exportJSON', e);
       // 빈 회사라도 유효한 JSON 반환
-      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], files: {}, layout: emptyLayout(), settings: defaultSettings() }, null, 2);
+      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], files: {}, credits: 0, upgrades: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
     }
   }
 

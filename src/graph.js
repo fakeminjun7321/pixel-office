@@ -165,7 +165,28 @@ window.App = window.App || {};
       '.graph-empty{padding:36px 16px;text-align:center;color:#8294c4;font-size:13px;letter-spacing:.04em}',
       '.graph-legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:11px;color:#8294c4;letter-spacing:.04em}',
       '.graph-legend .lg{display:inline-flex;align-items:center;gap:6px}',
-      '.graph-legend .sw{width:11px;height:11px;border-radius:2px;display:inline-block;box-shadow:0 0 6px currentColor}'
+      '.graph-legend .sw{width:11px;height:11px;border-radius:2px;display:inline-block;box-shadow:0 0 6px currentColor}',
+      // graph mode tabs (workflow / relationships)
+      '.graph-tabs{display:flex;gap:8px;margin:0 0 12px 0}',
+      '.graph-tab{cursor:pointer;font:inherit;font-size:11px;letter-spacing:.08em;text-transform:uppercase;',
+        'padding:5px 12px;border-radius:6px;border:1px solid rgba(57,215,255,.22);background:rgba(16,22,42,.6);',
+        'color:#8294c4}',
+      '.graph-tab.is-on{color:#dce6ff;border-color:rgba(57,215,255,.6);box-shadow:0 0 8px rgba(57,215,255,.25)}',
+      // whiteboard sticky-note cards
+      '.wb-wrap{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;padding:6px 2px}',
+      '.wb-card{position:relative;width:248px;max-height:340px;overflow:auto;border-radius:8px;padding:12px 13px;',
+        'background:rgba(16,22,42,.92);border:1px solid rgba(57,215,255,.22);box-shadow:0 6px 18px rgba(0,0,0,.35)}',
+      '.wb-card .wb-tape{position:absolute;top:-7px;left:50%;width:54px;height:14px;transform:translateX(-50%) rotate(-2deg);',
+        'background:rgba(57,215,255,.22);border:1px solid rgba(57,215,255,.35);border-radius:2px}',
+      '.wb-card .wb-head{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#39d7ff;',
+        'font-family:monospace;margin:2px 0 8px 0;border-bottom:1px solid rgba(57,215,255,.18);padding-bottom:6px}',
+      '.wb-card .wb-body{font-size:12px;line-height:1.5;color:#dce6ff}',
+      '.wb-card .wb-body .md-body{font-size:12px}',
+      '.wb-card.k-plan{border-color:rgba(155,92,255,.4)}',
+      '.wb-card.k-plan .wb-head,.wb-card.k-plan .wb-tape{color:#9b5cff;border-color:rgba(155,92,255,.35)}',
+      '.wb-card.k-debate{border-color:rgba(93,255,155,.38)}',
+      '.wb-card.k-debate .wb-head,.wb-card.k-debate .wb-tape{color:#5dff9b;border-color:rgba(93,255,155,.35)}',
+      '.wb-empty{padding:36px 16px;text-align:center;color:#8294c4;font-size:13px;letter-spacing:.04em}'
     ].join('');
     var st = elem('style');
     st.id = STYLE_ID;
@@ -339,6 +360,246 @@ window.App = window.App || {};
   }
 
   // ---------------------------------------------------------------------------
+  // RELATIONSHIP GRAPH — agents as nodes (role color); edges weighted by mutual
+  // affinity from agent.relationships. Read-only; circular layout. Reuses the
+  // same SVG plumbing as the workflow graph.
+  // ---------------------------------------------------------------------------
+  function agentsArr() {
+    var s = STATE();
+    return (s && Array.isArray(s.agents)) ? s.agents : [];
+  }
+
+  function agentColor(a) {
+    if (a && a.color) return a.color;
+    var roles = CFG().ROLES || {};
+    if (a && roles[a.role] && roles[a.role].color) return roles[a.role].color;
+    return FALLBACK_STATUS.boss;
+  }
+
+  // Symmetric affinity weight between two agents (average of both directions if
+  // present). Returns 0..1 or null when neither side has recorded a relation.
+  function pairAffinity(a, b) {
+    var ab = (a.relationships && typeof a.relationships[b.id] === 'number')
+      ? a.relationships[b.id] : null;
+    var ba = (b.relationships && typeof b.relationships[a.id] === 'number')
+      ? b.relationships[a.id] : null;
+    if (ab == null && ba == null) return null;
+    if (ab == null) return ba;
+    if (ba == null) return ab;
+    return (ab + ba) / 2;
+  }
+
+  function buildRelationshipGraph(container) {
+    container.innerHTML = '';
+    var agents = agentsArr();
+    var n = agents.length;
+    if (!n) {
+      container.appendChild(elem('div', 'graph-empty',
+        'No agents yet. Hire a team to see how they get along.'));
+      return;
+    }
+
+    var size = Math.max(320, Math.min(560, 90 + n * 42));
+    var cx = size / 2, cy = size / 2;
+    var R = size / 2 - 64;          // ring radius
+    var NR = 22;                    // node circle radius
+
+    var svg = svgEl('svg', {
+      'class': 'graph-canvas',
+      width: size, height: size,
+      viewBox: '0 0 ' + size + ' ' + size
+    });
+
+    // positions on a circle (single node -> center)
+    var pos = {};
+    for (var i = 0; i < n; i++) {
+      var a = agents[i];
+      if (n === 1) { pos[a.id] = { x: cx, y: cy }; continue; }
+      var ang = (-Math.PI / 2) + (i / n) * Math.PI * 2;
+      pos[a.id] = { x: cx + Math.cos(ang) * R, y: cy + Math.sin(ang) * R };
+    }
+
+    // EDGES (under nodes): one per unordered pair that has a recorded affinity.
+    var edgeLayer = svgEl('g', {});
+    svg.appendChild(edgeLayer);
+    for (var u = 0; u < n; u++) {
+      for (var v = u + 1; v < n; v++) {
+        var aw = pairAffinity(agents[u], agents[v]);
+        if (aw == null) continue;
+        var pu = pos[agents[u].id], pv = pos[agents[v].id];
+        if (!pu || !pv) continue;
+        // affinity 0..1 -> width 1..5, opacity .12..0.85
+        var w = 1 + aw * 4;
+        var op = 0.12 + aw * 0.73;
+        edgeLayer.appendChild(svgEl('line', {
+          x1: pu.x, y1: pu.y, x2: pv.x, y2: pv.y,
+          stroke: aw >= 0.5 ? '#5dff9b' : '#8294c4',
+          'stroke-width': w.toFixed(2),
+          'stroke-opacity': op.toFixed(2),
+          'stroke-linecap': 'round'
+        }));
+      }
+    }
+
+    // NODES
+    for (var m = 0; m < n; m++) {
+      var ag2 = agents[m];
+      var p = pos[ag2.id];
+      if (!p) continue;
+      var col = agentColor(ag2);
+      var g = svgEl('g', {});
+      g.appendChild(svgEl('circle', {
+        cx: p.x, cy: p.y, r: NR,
+        fill: 'rgba(16,22,42,.95)', stroke: col, 'stroke-width': '2.2'
+      }));
+      // inner glow dot
+      g.appendChild(svgEl('circle', { cx: p.x, cy: p.y, r: 5, fill: col }));
+      // name below node
+      var nm = svgEl('text', {
+        x: p.x, y: p.y + NR + 14,
+        fill: '#dce6ff', 'font-size': '11', 'font-family': 'sans-serif',
+        'text-anchor': 'middle'
+      });
+      nm.textContent = truncate(ag2.name || roleText(ag2.role), 14);
+      g.appendChild(nm);
+      // role above node
+      var rl = svgEl('text', {
+        x: p.x, y: p.y - NR - 6,
+        fill: col, 'font-size': '8.5', 'font-family': 'monospace',
+        'letter-spacing': '0.08em', 'text-anchor': 'middle'
+      });
+      rl.textContent = String(roleText(ag2.role)).toUpperCase();
+      g.appendChild(rl);
+      svg.appendChild(g);
+    }
+
+    container.appendChild(svg);
+  }
+
+  function relationshipLegend() {
+    var wrap = elem('div', 'graph-legend');
+    var items = [
+      ['Close (>=0.5)', '#5dff9b'],
+      ['Distant (<0.5)', '#8294c4']
+    ];
+    for (var i = 0; i < items.length; i++) {
+      var lg = elem('span', 'lg');
+      var sw = elem('span', 'sw');
+      sw.style.color = items[i][1];
+      sw.style.background = items[i][1];
+      lg.appendChild(sw);
+      lg.appendChild(document.createTextNode(items[i][0]));
+      wrap.appendChild(lg);
+    }
+    var note = elem('span', 'lg');
+    note.appendChild(document.createTextNode('Thicker / brighter = closer'));
+    wrap.appendChild(note);
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHITEBOARD — render the current Boss plan + latest debate/ledger as sticky
+  // cards. Uses App.MD.render for the card bodies when available.
+  // ---------------------------------------------------------------------------
+  function mdRender(text) {
+    try {
+      if (App.MD && typeof App.MD.render === 'function') return App.MD.render(text);
+    } catch (e) {}
+    // fallback: escaped plain text with line breaks
+    var esc = String(text == null ? '' : text)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return '<p>' + esc.replace(/\n/g, '<br>') + '</p>';
+  }
+
+  function stickyCard(kind, heading, mdText) {
+    var card = elem('div', 'wb-card' + (kind ? (' k-' + kind) : ''));
+    card.appendChild(elem('div', 'wb-tape'));
+    card.appendChild(elem('div', 'wb-head', heading));
+    var bodyWrap = elem('div', 'wb-body');
+    var md = elem('div', 'md-body');
+    md.innerHTML = mdRender(mdText);
+    bodyWrap.appendChild(md);
+    card.appendChild(bodyWrap);
+    return card;
+  }
+
+  // Collect whiteboard cards from current state. Sources (best-effort, guarded):
+  //   - root.desc (goal), root._plan.plan[] (planned subtasks), root._plan.final
+  //   - root._debateNotes (team critique)
+  //   - state._ledger (facts / plan / progress)
+  function collectWhiteboardCards() {
+    var cards = [];
+    var s = STATE();
+    var root = latestRoot();
+
+    if (root && (root.desc || root.title)) {
+      cards.push(stickyCard('plan', 'Goal',
+        truncate(root.desc || root.title, 600)));
+    }
+
+    if (root && root._plan && Array.isArray(root._plan.plan) && root._plan.plan.length) {
+      var lines = [];
+      for (var i = 0; i < root._plan.plan.length; i++) {
+        var it = root._plan.plan[i] || {};
+        var who = it.role ? (' _(' + roleText(it.role) + ')_') : '';
+        lines.push((i + 1) + '. **' + truncate(it.title || firstWordsLocal(it.instruction, 6), 60) + '**' + who);
+        if (it.instruction) lines.push('   ' + truncate(it.instruction, 160));
+      }
+      cards.push(stickyCard('plan', 'Boss Plan', lines.join('\n')));
+    }
+
+    // Ledger (Boss's working notes) if present and populated.
+    if (s && s._ledger) {
+      var lg = s._ledger;
+      var lparts = [];
+      if (Array.isArray(lg.plan) && lg.plan.length) {
+        lparts.push('**Next steps**');
+        for (var j = 0; j < lg.plan.length && j < 6; j++) lparts.push('- ' + truncate(lg.plan[j], 120));
+      }
+      if (Array.isArray(lg.facts) && lg.facts.length) {
+        lparts.push('**Facts**');
+        for (var f = 0; f < lg.facts.length && f < 6; f++) lparts.push('- ' + truncate(lg.facts[f], 120));
+      }
+      if (lparts.length) {
+        if (lg.progress) lparts.unshift('_status: ' + lg.progress + '_');
+        cards.push(stickyCard('', 'Ledger', lparts.join('\n')));
+      }
+    }
+
+    if (root && root._debateNotes) {
+      cards.push(stickyCard('debate', 'Team Critique',
+        truncate(String(root._debateNotes), 800)));
+    }
+
+    if (root && root._plan && root._plan.final) {
+      cards.push(stickyCard('debate', 'Synthesis',
+        truncate(String(root._plan.final), 800)));
+    }
+
+    return cards;
+  }
+
+  function firstWordsLocal(str, n) {
+    str = String(str == null ? '' : str).trim();
+    if (!str) return '(task)';
+    var parts = str.split(/\s+/);
+    return parts.slice(0, n).join(' ') + (parts.length > n ? '…' : '');
+  }
+
+  function buildWhiteboard(container) {
+    container.innerHTML = '';
+    var cards = collectWhiteboardCards();
+    if (!cards.length) {
+      container.appendChild(elem('div', 'wb-empty',
+        'The whiteboard is blank. Dispatch a goal so the Boss can sketch a plan.'));
+      return;
+    }
+    var wrap = elem('div', 'wb-wrap');
+    for (var i = 0; i < cards.length; i++) wrap.appendChild(cards[i]);
+    container.appendChild(wrap);
+  }
+
+  // ---------------------------------------------------------------------------
   // MODAL: mount into #modal-root reusing the shared modal/panel classes.
   // ---------------------------------------------------------------------------
   var MODAL_ID = 'modal-graph';
@@ -369,8 +630,54 @@ window.App = window.App || {};
     return wrap;
   }
 
-  function open() {
+  // Modes: 'workflow' (default, original DAG), 'relationships', 'whiteboard'.
+  var MODE_META = {
+    workflow:      { title: '◇ WORKFLOW FLOW',  tab: 'Workflow' },
+    relationships: { title: '◇ RELATIONSHIPS',  tab: 'Relationships' },
+    whiteboard:    { title: '◇ WHITEBOARD',     tab: 'Whiteboard' }
+  };
+
+  // Fill the modal body for a given mode. Pure render into `body` (cleared first).
+  function renderBody(body, mode) {
+    body.innerHTML = '';
+    if (mode === 'relationships') {
+      var rwrap = elem('div', 'graph-wrap');
+      buildRelationshipGraph(rwrap);
+      body.appendChild(rwrap);
+      body.appendChild(relationshipLegend());
+      return;
+    }
+    if (mode === 'whiteboard') {
+      buildWhiteboard(body);
+      return;
+    }
+    // default: workflow DAG (original behavior, unchanged)
+    var theRoot = latestRoot();
+    if (!theRoot) {
+      body.appendChild(elem('div', 'graph-empty',
+        'No workflow yet. Dispatch a goal to the Boss to see the task graph.'));
+      return;
+    }
+    body.appendChild(elem('div', 'result-goal',
+      'GOAL: ' + truncate(theRoot.desc || theRoot.title, 160)));
+    var wrap = elem('div', 'graph-wrap');
+    var layout = computeLayout(theRoot);
+    if (!layout.kids.length) {
+      wrap.appendChild(buildSoloRoot(theRoot));
+      wrap.appendChild(elem('div', 'graph-empty',
+        'Boss is planning… subtasks will appear here.'));
+    } else {
+      buildGraph(wrap, layout);
+    }
+    body.appendChild(wrap);
+    body.appendChild(legend());
+  }
+
+  // open(mode) — opens (or re-renders) the graph modal in the given mode.
+  // Default mode 'workflow' preserves the original App.Graph.open() behavior.
+  function open(mode) {
     try {
+      if (!MODE_META[mode]) mode = 'workflow';
       ensureStyles();
       var root = document.getElementById('modal-root');
       if (!root) return;
@@ -387,7 +694,7 @@ window.App = window.App || {};
       card.appendChild(accent);
 
       var head = elem('header', 'modal-head');
-      var title = elem('h2', 'modal-title', '◇ WORKFLOW FLOW');
+      var title = elem('h2', 'modal-title', MODE_META[mode].title);
       var x = elem('button', 'panel-x', '✕');
       x.type = 'button';
       on(x, 'click', closeModal);
@@ -396,36 +703,40 @@ window.App = window.App || {};
 
       var body = elem('div', 'modal-body');
 
-      var theRoot = latestRoot();
-      if (!theRoot) {
-        var empty = elem('div', 'graph-empty',
-          'No workflow yet. Dispatch a goal to the Boss to see the task graph.');
-        body.appendChild(empty);
-      } else {
-        var goal = elem('div', 'result-goal',
-          'GOAL: ' + truncate(theRoot.desc || theRoot.title, 160));
-        body.appendChild(goal);
+      // content wrapper — renderBody clears ONLY this, so the tabs row survives.
+      var content = elem('div');
 
-        var wrap = elem('div', 'graph-wrap');
-        var layout = computeLayout(theRoot);
-        if (!layout.kids.length) {
-          // root exists but no children planned yet: draw root alone.
-          var solo = elem('div', 'graph-empty',
-            'Boss is planning… subtasks will appear here.');
-          // still show the single root node above the message
-          wrap.appendChild(buildSoloRoot(theRoot));
-          wrap.appendChild(solo);
-        } else {
-          buildGraph(wrap, layout);
-        }
-        body.appendChild(wrap);
-        body.appendChild(legend());
+      // mode tabs (switch in place, no reopen flicker)
+      var tabs = elem('div', 'graph-tabs');
+      function makeTab(m) {
+        var tb = elem('button', 'graph-tab' + (m === mode ? ' is-on' : ''),
+          MODE_META[m].tab);
+        tb.type = 'button';
+        on(tb, 'click', function () {
+          if (m === mode) return;
+          mode = m;
+          title.textContent = MODE_META[m].title;
+          var btns = tabs.querySelectorAll('.graph-tab');
+          for (var bi = 0; bi < btns.length; bi++) {
+            btns[bi].className = 'graph-tab';
+          }
+          tb.className = 'graph-tab is-on';
+          renderBody(content, m);
+        });
+        return tb;
       }
+      tabs.appendChild(makeTab('workflow'));
+      tabs.appendChild(makeTab('relationships'));
+      tabs.appendChild(makeTab('whiteboard'));
+      body.appendChild(tabs);
+
+      body.appendChild(content);
+      renderBody(content, mode);
 
       var foot = elem('footer', 'modal-foot');
       var refresh = elem('button', 'btn', 'Refresh');
       refresh.type = 'button';
-      on(refresh, 'click', function () { open(); });
+      on(refresh, 'click', function () { renderBody(content, mode); });
       var close = elem('button', 'btn btn-primary', 'Close');
       close.type = 'button';
       on(close, 'click', closeModal);
@@ -441,6 +752,32 @@ window.App = window.App || {};
     } catch (e) {
       // never throw out of a UI action
       try { if (App.UI && App.UI.toast) App.UI.toast('Flow view unavailable'); } catch (e2) {}
+    }
+  }
+
+  // Public entry points for the alternate views.
+  function openRelationships() { open('relationships'); }
+  function openWhiteboard()   { open('whiteboard'); }
+
+  // renderWhiteboard(root?) — render the sticky-note whiteboard into an arbitrary
+  // host element (e.g. a UI-provided overlay). When `root` is omitted, opens the
+  // graph modal in whiteboard mode instead. Never throws.
+  // (The legacy first-arg `ctx` from the contract is accepted but ignored; this
+  //  whiteboard is DOM/SVG-based, not canvas-based.)
+  function renderWhiteboard(rootOrCtx, maybeRoot) {
+    try {
+      ensureStyles();
+      var host = maybeRoot || rootOrCtx;
+      // If we got a real DOM element to render into, use it; otherwise open modal.
+      if (host && host.nodeType === 1) {
+        buildWhiteboard(host);
+        return host;
+      }
+      openWhiteboard();
+      return null;
+    } catch (e) {
+      try { if (App.UI && App.UI.toast) App.UI.toast('Whiteboard unavailable'); } catch (e2) {}
+      return null;
     }
   }
 
@@ -504,6 +841,9 @@ window.App = window.App || {};
   // public API
   App.Graph = {
     open: open,
+    openRelationships: openRelationships,
+    openWhiteboard: openWhiteboard,
+    renderWhiteboard: renderWhiteboard,
     _installButton: installButton,
     _latestRoot: latestRoot,
     _computeLayout: computeLayout

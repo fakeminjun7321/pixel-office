@@ -47,6 +47,47 @@ window.App = window.App || {};
     return v < lo ? lo : (v > hi ? hi : v);
   }
 
+  // ---------------------------------------------------------------------------
+  // WAVE 4a — gamification helpers (level / XP bar / credits).
+  // Mirror config.levelForXp so badges agree everywhere; never throw.
+  // ---------------------------------------------------------------------------
+  function levelForXp(xp) {
+    var c = CFG();
+    if (c && typeof c.levelForXp === 'function') { try { return c.levelForXp(xp); } catch (e) {} }
+    var base = (c && c.LEVEL_XP_BASE > 0) ? c.LEVEL_XP_BASE : 100;
+    var max = (c && typeof c.LEVEL_MAX === 'number') ? c.LEVEL_MAX : 99;
+    var n = Number(xp); if (!isFinite(n) || n < 0) n = 0;
+    var lvl = 1 + Math.floor(Math.sqrt(n / base));
+    return clamp(lvl, 1, max);
+  }
+  // XP threshold (cumulative) required to first reach a given level.
+  function xpForLevel(level) {
+    var c = CFG();
+    var base = (c && c.LEVEL_XP_BASE > 0) ? c.LEVEL_XP_BASE : 100;
+    var n = Math.max(1, Number(level) || 1) - 1;
+    return base * n * n;
+  }
+  // Agent's level (honoring a stored .level when present, else derived).
+  function agentLevel(a) {
+    if (!a) return 1;
+    if (typeof a.level === 'number' && a.level >= 1) return a.level;
+    return levelForXp(a.xp || 0);
+  }
+  // Progress 0..1 through the CURRENT level toward the next.
+  function levelProgress(a) {
+    var xp = Number(a && a.xp) || 0;
+    var lvl = agentLevel(a);
+    var cur = xpForLevel(lvl);
+    var next = xpForLevel(lvl + 1);
+    if (next <= cur) return 1;
+    return clamp((xp - cur) / (next - cur), 0, 1);
+  }
+  function creditsNow() {
+    var s = STATE();
+    var c = Number(s && s.credits);
+    return isFinite(c) ? c : 0;
+  }
+
   // -- DOM helpers (defensive) --------------------------------------------------
   function $(id) { return (typeof document !== 'undefined') ? document.getElementById(id) : null; }
   function on(node, ev, fn) { if (node && node.addEventListener) node.addEventListener(ev, fn); }
@@ -93,6 +134,11 @@ window.App = window.App || {};
       on($('btn-sessions'), 'click', function () { UI.openSessions(); });
       on($('btn-cost-meter'), 'click', function () { UI.openCostBreakdown(); });
       on($('btn-metrics'), 'click', function () { UI.openMetrics(); });
+      // WAVE 4a — graph / whiteboard / office shop / credits.
+      on($('btn-graph'), 'click', function () { openGraphView(); });
+      on($('btn-whiteboard'), 'click', function () { openWhiteboardView(); });
+      on($('btn-shop'), 'click', function () { UI.openShop(); });
+      on($('btn-credits'), 'click', function () { UI.openShop(); });
       on($('btn-layout'), 'click', function () { UI.toggleLayoutEdit(); });
       on($('btn-zoom-in'), 'click', function () { UI.zoomIn(); });
       on($('btn-zoom-out'), 'click', function () { UI.zoomOut(); });
@@ -379,7 +425,14 @@ window.App = window.App || {};
     }
     var layoutBtn = $('btn-layout');
     if (layoutBtn && s) layoutBtn.setAttribute('aria-pressed', s.layoutEdit ? 'true' : 'false');
+    // WAVE 4a — shared credits readout in the HUD.
+    var credEl = $('credits-amount');
+    if (credEl) credEl.textContent = String(Math.round(creditsNow()));
   }
+
+  // WAVE 4a — public hook the orchestrator calls after granting per-task credits,
+  // so the HUD counter ticks up live (not only on the next full refreshHud()).
+  UI.refreshCredits = function () { try { refreshHud(); } catch (e) {} };
 
   UI.refreshAgentList = function () {
     var s = STATE();
@@ -400,14 +453,29 @@ window.App = window.App || {};
         dot.style.background = sc[a.state] || (CFG().palette ? CFG().palette.uiTextDim : '#8294c4');
 
         var nameWrap = el('div', 'ar-main');
+        var nameLine = el('div', 'ar-name-line');
         var nm = el('span', 'ar-name', a.name);
         nm.style.color = a.color || undefined;
+        // Level badge rides at the end of the name line (WAVE 4a).
+        var lvl = agentLevel(a);
+        var lvlBadge = el('span', 'ar-lvl', 'Lv ' + lvl);
+        lvlBadge.style.setProperty('--accent', a.color || '#9b5cff');
+        lvlBadge.title = 'Level ' + lvl + ' · ' + (Math.round(Number(a.xp) || 0)) + ' XP';
+        nameLine.appendChild(nm);
+        nameLine.appendChild(lvlBadge);
         var role = el('span', 'ar-role',
           ((ROLES()[a.role] && ROLES()[a.role].label) || a.role) + (a.temp ? ' · temp' : ''));
         var stateLbl = el('span', 'ar-state st-' + (a.state || 'idle'), a.state);
-        nameWrap.appendChild(nm);
+        nameWrap.appendChild(nameLine);
         nameWrap.appendChild(role);
         nameWrap.appendChild(stateLbl);
+        // XP bar (subtle) under the role/state line.
+        var xpBar = el('div', 'ar-xp');
+        var xpFill = el('div', 'ar-xp-fill');
+        xpFill.style.width = Math.round(levelProgress(a) * 100) + '%';
+        xpFill.style.background = a.color || 'var(--cyan)';
+        xpBar.appendChild(xpFill);
+        nameWrap.appendChild(xpBar);
 
         row.appendChild(dot);
         row.appendChild(nameWrap);
@@ -957,10 +1025,52 @@ window.App = window.App || {};
     // accent
     var accent = $('panel-agent');
     if (accent) accent.style.setProperty('--accent', a.color || '#9b5cff');
+    // Level + XP bar in the panel head (WAVE 4a). Injected once, refreshed here.
+    refreshPanelLevel(a);
     // keep persona/memory + mood/terminal in sync while the panel is open
     refreshPersonaPanel(a.id);
     if ($('panel-agent-mood-body')) refreshMoodPanel(a.id);
     if ($('panel-agent-terminal-body')) refreshTerminalPanel(a.id);
+  }
+
+  // Level + XP bar shown in the agent panel head (under the meta line).
+  // Injected once after #panel-agent-meta; refreshed for the open agent.
+  function refreshPanelLevel(a) {
+    if (!a) return;
+    var meta = $('panel-agent-meta');
+    if (!meta || !meta.parentNode) return;
+    var box = $('panel-agent-level');
+    if (!box) {
+      box = el('div', 'panel-level');
+      box.id = 'panel-agent-level';
+      var head = el('div', 'pl-head');
+      var lvlTag = el('span', 'pl-lvl');
+      lvlTag.id = 'panel-agent-level-tag';
+      var xpTxt = el('span', 'pl-xp');
+      xpTxt.id = 'panel-agent-level-xp';
+      head.appendChild(lvlTag);
+      head.appendChild(xpTxt);
+      var bar = el('div', 'pl-bar');
+      var fill = el('div', 'pl-fill');
+      fill.id = 'panel-agent-level-fill';
+      bar.appendChild(fill);
+      box.appendChild(head);
+      box.appendChild(bar);
+      if (meta.nextSibling) meta.parentNode.insertBefore(box, meta.nextSibling);
+      else meta.parentNode.appendChild(box);
+    }
+    var lvl = agentLevel(a);
+    var xp = Math.round(Number(a.xp) || 0);
+    var next = xpForLevel(lvl + 1);
+    var tag = $('panel-agent-level-tag'); if (tag) tag.textContent = T('panel.level', 'LV ') + lvl;
+    var xpEl = $('panel-agent-level-xp');
+    if (xpEl) xpEl.textContent = xp + ' / ' + next + ' XP';
+    var fillEl = $('panel-agent-level-fill');
+    if (fillEl) {
+      fillEl.style.width = Math.round(levelProgress(a) * 100) + '%';
+      fillEl.style.background = a.color || 'var(--cyan)';
+      fillEl.style.boxShadow = '0 0 8px ' + (a.color || 'var(--cyan)');
+    }
   }
 
   // Read-only persona + recent memories for the open agent panel.
@@ -1295,8 +1405,98 @@ window.App = window.App || {};
     var cpx = $('set-cors-proxy'); if (cpx) cpx.value = settings.corsProxy || '';
     var hal = $('set-http-allowlist'); if (hal) hal.value = settings.httpAllowlist || '';
     var atg = $('set-tool-gh-push'); if (atg) atg.checked = (settings.allowToolGithubPush === true);
+    // (WAVE 4a) Inject + load the AUDIO toggles: sound effects (default ON) and
+    // ambient music (default OFF). Music toggle drives App.Audio.startBgm/stopBgm.
+    ensureAudioFields();
+    var sfxSw = $('set-sound'); if (sfxSw) sfxSw.checked = (settings.sound !== false);
+    var bgmSw = $('set-bgm'); if (bgmSw) bgmSw.checked = (settings.bgm === true);
     show($('modal-settings'));
   };
+
+  // Inject (once) the AUDIO settings group at the end of the Settings body. Adds:
+  //   - 'Sound effects' switch -> settings.sound (default ON)
+  //   - 'Ambient music' switch -> settings.bgm   (default OFF; toggles Audio bgm live)
+  // Reuses .field / .field-inline / .switch styling. Idempotent; degrades safely.
+  function ensureAudioFields() {
+    if ($('set-sound')) return; // already injected
+    var anchor = $('set-tool-gh-push') || $('set-default-model') || $('set-apikey');
+    if (!anchor || typeof document === 'undefined') return;
+    var anchorField = anchor;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    if (!anchorField || !anchorField.parentNode) return;
+
+    var group = el('div', 'field');
+    var groupLabel = el('span', 'field-label');
+    groupLabel.setAttribute('data-i18n', 'set.audio');
+    groupLabel.textContent = T('set.audio', 'AUDIO');
+    group.appendChild(groupLabel);
+
+    // --- Sound effects switch (default ON) ---
+    var sfxRow = el('div', 'field field-inline');
+    var sfxLbl = el('span', 'field-label');
+    sfxLbl.setAttribute('data-i18n', 'set.sound');
+    sfxLbl.textContent = T('set.sound', 'SOUND EFFECTS');
+    var sfxSw = makeSwitch('set-sound', true,
+      'Procedural blips on dispatch, done, level-up, etc.');
+    var sfxHint = el('span', 'field-hint inline-hint',
+      T('set.sound.hint', 'Short procedural blips on dispatch, task done, level-up, errors.'));
+    sfxRow.appendChild(sfxLbl);
+    sfxRow.appendChild(sfxSw);
+    sfxRow.appendChild(sfxHint);
+    group.appendChild(sfxRow);
+
+    // --- Ambient music switch (default OFF). Live-toggles the BGM pad. ---
+    var bgmRow = el('div', 'field field-inline');
+    var bgmLbl = el('span', 'field-label');
+    bgmLbl.setAttribute('data-i18n', 'set.bgm');
+    bgmLbl.textContent = T('set.bgm', 'AMBIENT MUSIC');
+    var bgmSw = makeSwitch('set-bgm', false,
+      'A gentle procedural ambient pad. Off by default.');
+    // Live toggle: starting BGM here happens inside this user gesture (click).
+    on(bgmSw, 'click', function () {
+      try {
+        var on_ = (bgmSw.getAttribute('aria-checked') === 'true');
+        // Set live state FIRST so App.Audio.bgmEnabled() agrees within this same
+        // user gesture — otherwise startBgm() reads the stale (old) settings.bgm
+        // and no-ops until Save. (Save still rewrites settings.bgm at #1807.)
+        var s_ = STATE();
+        if (s_ && s_.settings) s_.settings.bgm = on_;
+        if (App.Audio) {
+          if (on_ && App.Audio.startBgm) App.Audio.startBgm();
+          else if (!on_ && App.Audio.stopBgm) App.Audio.stopBgm();
+        }
+      } catch (e) {}
+    });
+    var bgmHint = el('span', 'field-hint inline-hint',
+      T('set.bgm.hint', 'A gentle procedural ambient pad that shifts with the hour.'));
+    bgmRow.appendChild(bgmLbl);
+    bgmRow.appendChild(bgmSw);
+    bgmRow.appendChild(bgmHint);
+    group.appendChild(bgmRow);
+
+    anchorField.parentNode.appendChild(group);
+  }
+
+  // Build a neon switch button with a .checked accessor mapped to aria-checked,
+  // matching the existing injected switches (tools/push). on==initial state.
+  function makeSwitch(id, on_, title) {
+    var sw = el('button', 'switch' + (on_ ? ' on' : ''));
+    sw.id = id;
+    sw.type = 'button';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('aria-checked', on_ ? 'true' : 'false');
+    if (title) sw.title = title;
+    sw.appendChild(el('span', 'switch-knob'));
+    Object.defineProperty(sw, 'checked', {
+      configurable: true,
+      get: function () { return this.getAttribute('aria-checked') === 'true'; },
+      set: function (v) { setSwitch(this, !!v); }
+    });
+    on(sw, 'click', function () { setSwitch(sw, sw.getAttribute('aria-checked') !== 'true'); });
+    return sw;
+  }
 
   // Inject (once) the AGENT TOOLS settings group after the GitHub field, reusing
   // the existing .field / .field-row / .switch styling. Adds:
@@ -1608,6 +1808,21 @@ window.App = window.App || {};
     var cpx = $('set-cors-proxy'); if (cpx) settings.corsProxy = cpx.value.trim();
     var hal = $('set-http-allowlist'); if (hal) settings.httpAllowlist = hal.value.trim();
     var atg = $('set-tool-gh-push'); if (atg) settings.allowToolGithubPush = (atg.getAttribute('aria-checked') === 'true');
+    // (WAVE 4a) Audio toggles. Sound default ON, BGM default OFF. Reconcile the
+    // live BGM pad with the saved value (start/stop happens within this gesture).
+    var sfxSw = $('set-sound'); if (sfxSw) settings.sound = (sfxSw.getAttribute('aria-checked') === 'true');
+    var bgmSw = $('set-bgm');
+    if (bgmSw) {
+      settings.bgm = (bgmSw.getAttribute('aria-checked') === 'true');
+      try {
+        if (App.Audio) {
+          var bgmOn = false;
+          try { bgmOn = App.Audio.bgmOn ? !!App.Audio.bgmOn() : false; } catch (e) {}
+          if (settings.bgm && !bgmOn && App.Audio.startBgm) App.Audio.startBgm();
+          else if (!settings.bgm && bgmOn && App.Audio.stopBgm) App.Audio.stopBgm();
+        }
+      } catch (e) {}
+    }
     if (App.Store && App.Store.save) App.Store.save();
     hide($('modal-settings'));
     requestNotifyPermission(); // polite, one-time, on this user gesture
@@ -2088,6 +2303,207 @@ window.App = window.App || {};
       setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 400);
     }, 3200);
   };
+
+  // ===========================================================================
+  // WAVE 4a — GRAPH / WHITEBOARD launchers (App.Graph owns the rendering).
+  // Prefer the relationship/whiteboard entry points; fall back gracefully to the
+  // existing workflow graph or a toast if the module/method is unavailable.
+  // ===========================================================================
+  function openGraphView() {
+    var G = App.Graph;
+    if (!G) { UI.toast(T('graph.unavailable', 'Graph view unavailable')); return; }
+    try {
+      if (typeof G.openRelationships === 'function') { G.openRelationships(); return; }
+      if (typeof G.open === 'function') { G.open(); return; }
+    } catch (e) {}
+    UI.toast(T('graph.unavailable', 'Graph view unavailable'));
+  }
+
+  function openWhiteboardView() {
+    var G = App.Graph;
+    if (!G) { UI.toast(T('whiteboard.unavailable', 'Whiteboard unavailable')); return; }
+    try {
+      if (typeof G.openWhiteboard === 'function') { G.openWhiteboard(); return; }
+      if (typeof G.renderWhiteboard === 'function') {
+        // No dedicated opener — mount a lightweight modal canvas and let Graph paint.
+        mountWhiteboardModal(G);
+        return;
+      }
+      if (typeof G.open === 'function') { G.open(); return; }
+    } catch (e) {}
+    UI.toast(T('whiteboard.unavailable', 'Whiteboard unavailable'));
+  }
+
+  // Fallback host modal for App.Graph.renderWhiteboard(ctx?, root?) when the
+  // module exposes only the renderer (no opener). Reuses standard modal chrome.
+  function mountWhiteboardModal(G) {
+    var root = $('modal-root');
+    if (!root) { UI.toast(T('whiteboard.unavailable', 'Whiteboard unavailable')); return; }
+    var prev = $('modal-whiteboard');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-whiteboard';
+    var scrim = el('div', 'modal-scrim');
+    var closeIt = function () { if (modal.parentNode) modal.parentNode.removeChild(modal); };
+    on(scrim, 'click', closeIt);
+
+    var card = el('div', 'modal-card modal-whiteboard-card');
+    card.appendChild(el('div', 'panel-accent'));
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', T('whiteboard.title', '▥ WHITEBOARD')));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', closeIt);
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    var host = el('div', 'whiteboard-host');
+    host.id = 'whiteboard-host';
+    body.appendChild(host);
+
+    card.appendChild(head); card.appendChild(body);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+
+    try { G.renderWhiteboard(null, host); }
+    catch (e) {
+      try { G.renderWhiteboard(host); } catch (e2) {
+        host.appendChild(el('div', 'pe-empty', T('whiteboard.empty', 'Nothing on the board yet.')));
+      }
+    }
+  }
+
+  // ===========================================================================
+  // WAVE 4a — OFFICE SHOP (spend App.state.credits on config.OFFICE_UPGRADES)
+  // Buying deducts credits, records the id in App.state.upgrades, installs via
+  // App.World.applyUpgrade(id) (idempotent), persists, and refreshes. Never throws.
+  // ===========================================================================
+  UI.openShop = function () {
+    var root = $('modal-root');
+    if (!root) { UI.toast(T('shop.unavailable', 'Shop unavailable')); return; }
+    var prev = $('modal-shop');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-shop';
+    var scrim = el('div', 'modal-scrim');
+    on(scrim, 'click', function () { closeShop(); });
+
+    var card = el('div', 'modal-card');
+    card.appendChild(el('div', 'panel-accent'));
+
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', T('shop.title', '🛒 OFFICE SHOP')));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', function () { closeShop(); });
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    var bal = el('div', 'shop-balance');
+    bal.id = 'shop-balance';
+    body.appendChild(bal);
+    var list = el('div', 'shop-list');
+    list.id = 'shop-list';
+    body.appendChild(list);
+
+    var foot = el('footer', 'modal-foot');
+    var close = el('button', 'btn btn-primary', T('shop.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', function () { closeShop(); });
+    foot.appendChild(close);
+
+    card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+
+    renderShop();
+    applyI18n(modal);
+  };
+
+  function closeShop() {
+    var m = $('modal-shop');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
+  function ownedUpgrades() {
+    var s = STATE();
+    return (s && Array.isArray(s.upgrades)) ? s.upgrades : [];
+  }
+
+  function renderShop() {
+    var bal = $('shop-balance');
+    var list = $('shop-list');
+    if (!list) return;
+    if (bal) {
+      clear(bal);
+      bal.appendChild(el('span', 'shop-bal-key', T('shop.balance', 'Credits')));
+      var v = el('span', 'shop-bal-val', String(Math.round(creditsNow())));
+      bal.appendChild(v);
+    }
+    clear(list);
+    var catalog = (CFG().OFFICE_UPGRADES) || [];
+    if (!catalog.length) {
+      list.appendChild(el('div', 'pe-empty', T('shop.empty', 'No upgrades available.')));
+      return;
+    }
+    var owned = ownedUpgrades();
+    var credits = creditsNow();
+    for (var i = 0; i < catalog.length; i++) {
+      (function (up) {
+        if (!up || !up.id) return;
+        var isOwned = owned.indexOf(up.id) !== -1;
+        var canAfford = credits >= (Number(up.cost) || 0);
+        var item = el('div', 'shop-item' + (isOwned ? ' owned' : ''));
+
+        var ico = el('span', 'shop-ico', up.kind === 'flair' ? '✦' : '🪑');
+        item.appendChild(ico);
+
+        var text = el('div', 'shop-text');
+        text.appendChild(el('div', 'shop-name', up.name || up.id));
+        if (up.desc) text.appendChild(el('div', 'shop-desc', up.desc));
+        item.appendChild(text);
+
+        var right = el('div', 'shop-right');
+        var cost = el('div', 'shop-cost', '◈ ' + (Number(up.cost) || 0));
+        right.appendChild(cost);
+        if (isOwned) {
+          right.appendChild(el('span', 'shop-owned', T('shop.owned', 'OWNED')));
+        } else {
+          var buy = el('button', 'btn btn-primary shop-buy', T('shop.buy', 'Buy'));
+          buy.type = 'button';
+          if (!canAfford) { buy.disabled = true; buy.classList.add('is-disabled'); }
+          on(buy, 'click', function () { buyUpgrade(up); });
+          right.appendChild(buy);
+        }
+        item.appendChild(right);
+        list.appendChild(item);
+      })(catalog[i]);
+    }
+  }
+
+  function buyUpgrade(up) {
+    var s = STATE();
+    if (!s || !up || !up.id) return;
+    var cost = Number(up.cost) || 0;
+    var owned = (s.upgrades && Array.isArray(s.upgrades)) ? s.upgrades : (s.upgrades = []);
+    if (owned.indexOf(up.id) !== -1) { renderShop(); return; }
+    if (creditsNow() < cost) {
+      UI.toast(T('shop.cantAfford', 'Not enough credits'), 'error');
+      return;
+    }
+    s.credits = creditsNow() - cost;
+    owned.push(up.id);
+    try {
+      if (App.World && typeof App.World.applyUpgrade === 'function') App.World.applyUpgrade(up.id);
+    } catch (e) {}
+    try {
+      if (App.Audio && App.Audio.sfx) App.Audio.sfx('approval');
+    } catch (e) {}
+    try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
+    UI.toast(T('shop.bought', 'Installed: ') + (up.name || up.id), 'ok');
+    renderShop();
+    refreshHud();
+  }
 
   // ===========================================================================
   // MISC

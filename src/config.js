@@ -601,6 +601,27 @@ window.App = window.App || {};
     // v3: watercooler chatter cooldown (ms between idle banter events).
     CHATTER_COOLDOWN_MS: 25000,
 
+    // ---------------------------------------------------------------------------
+    // WAVE 4a section GAMIFICATION — XP / level / credits economy.
+    //   XP_PER_TASK     : XP granted per successfully completed (esp. QA-passed)
+    //                     task. Orchestrator.finishTask -> Agents.grantXp(agent, n).
+    //   CREDITS_PER_TASK: credits added to the shared App.state.credits pool per
+    //                     completed task (spendable in the Office shop).
+    //   XP_MAX          : sane clamp on per-agent cumulative XP.
+    //   LEVEL_CURVE     : level = 1 + floor(sqrt(xp / LEVEL_XP_BASE)) — gentle
+    //                     square-root curve so early levels come quick and later
+    //                     ones slow down. LEVEL_MAX clamps the displayed level.
+    //   App.config.levelForXp(xp) mirrors the curve so every module agrees.
+    // ---------------------------------------------------------------------------
+    XP_PER_TASK: 25,
+    CREDITS_PER_TASK: 10,
+    XP_MAX: 1000000,
+    LEVEL_XP_BASE: 100,   // XP needed (×n^2) to reach successive levels
+    LEVEL_MAX: 99,
+    // credits default 0 (the live value lives on App.state.credits; this is the
+    // documented starting balance for fresh/migrated saves — Store seeds it).
+    CREDITS_DEFAULT: 0,
+
     // API
     API_URL: 'https://api.anthropic.com/v1/messages',
     OPENAI_URL: 'https://api.openai.com/v1/chat/completions',   // v2: OpenAI chat-completions endpoint
@@ -631,14 +652,14 @@ window.App = window.App || {};
       return /^(gpt|o1|o3|o4|chatgpt)/i.test(String(modelId || '')) ? 'openai' : 'anthropic';
     },
 
-    // boss orchestration prompts (§6.3). BOSS_SYNTH_SYSTEM is read by
+    // boss orchestration prompts (section 6.3). BOSS_SYNTH_SYSTEM is read by
     // Orchestrator.synthesize (CFG().BOSS_SYNTH_SYSTEM). The decompose prompt
     // is the canonical ROLES.boss.system; exposed here too for symmetry.
     BOSS_DECOMPOSE_SYSTEM: BOSS_DECOMPOSE_SYSTEM,
     BOSS_SYNTH_SYSTEM: BOSS_SYNTH_SYSTEM,
 
     // ---------------------------------------------------------------------------
-    // v5 §PROJECT BUILD MODE — file-oriented pipeline prompts + caps. Consumed by
+    // v5 section PROJECT BUILD MODE — file-oriented pipeline prompts + caps. Consumed by
     // App.Orchestrator.runBuild + App.Workspace. BUILD_DECOMPOSE_SYSTEM -> Boss
     // file manifest (strict JSON); BUILD_WORKER_PREAMBLE -> per-file worker output
     // as ```file:<path>``` blocks; BUILD_INTEGRATOR_SYSTEM -> one coherence pass.
@@ -666,7 +687,7 @@ window.App = window.App || {};
     ENABLE_APPROVAL: false,
 
     // ---------------------------------------------------------------------------
-    // Wave B/C §BROWSER TOOLS — master toggle read by App.Tools.enabled(). When
+    // Wave B/C section BROWSER TOOLS — master toggle read by App.Tools.enabled(). When
     // true (and settings allow + provider supports it), the Orchestrator exposes
     // App.Tools.specs() to tool-capable workers. Tool implementations live in
     // tools.js; this is only the on/off switch.
@@ -682,7 +703,7 @@ window.App = window.App || {};
     DEFAULT_LANG: 'en',
 
     // ---------------------------------------------------------------------------
-    // WAVE 2 §IMAGE GEN + RECURSIVE SUBTASKS — keyless Pollinations image endpoint
+    // WAVE 2 section IMAGE GEN + RECURSIVE SUBTASKS — keyless Pollinations image endpoint
     // (tools.generate_image prepends this and appends the encoded prompt) and the
     // recursion bounds for App.Orchestrator.spawnSubtask / tools.spawn_subtask.
     //   SUBTASK_MAX_DEPTH      : how deep recursive subtasks may nest (1 = a worker
@@ -696,7 +717,7 @@ window.App = window.App || {};
     SUBTASK_MAX_CONCURRENT: 3,
 
     // ---------------------------------------------------------------------------
-    // Wave B/C §MOOD & RELATIONSHIPS — defaults for agent.mood (0..1) and the
+    // Wave B/C section MOOD & RELATIONSHIPS — defaults for agent.mood (0..1) and the
     // affinity model (agent.relationships[otherId] in roughly -1..1, 0 = neutral).
     //   MOOD_DEFAULT      : starting/neutral mood for a new agent.
     //   MOOD_MIN/MAX      : clamp range for mood.
@@ -719,7 +740,7 @@ window.App = window.App || {};
     MOOD_DECAY: 0.01,
 
     // ---------------------------------------------------------------------------
-    // Wave B/C §AMBIANCE — day/night tint overlay drawn in PixelArt.drawFX, keyed
+    // Wave B/C section AMBIANCE — day/night tint overlay drawn in PixelArt.drawFX, keyed
     // by the hour of day. AMBIANCE_ENABLED gates it. AMBIANCE_TINTS maps a coarse
     // phase -> {color, alpha} (alpha is the overlay opacity, kept low). Phase is
     // chosen from the hour: night/dawn/day/dusk. Pure rendering; no state writes.
@@ -741,7 +762,7 @@ window.App = window.App || {};
     },
 
     // ---------------------------------------------------------------------------
-    // Wave B/C §ACTIVITY GLOW — a soft halo PixelArt draws around an agent that
+    // Wave B/C section ACTIVITY GLOW — a soft halo PixelArt draws around an agent that
     // produced output recently (agent._lastActivityTs). GLOW_ACTIVE_MS: how long
     // after the last activity the glow stays at full strength before fading out
     // over GLOW_FADE_MS. GLOW_RADIUS: halo radius in world px; GLOW_MAX_ALPHA: peak
@@ -758,7 +779,7 @@ window.App = window.App || {};
     QA_REVIEW_SYSTEM: QA_REVIEW_SYSTEM,
 
     // ---------------------------------------------------------------------------
-    // WAVE 1 §RELIABILITY CORE — version history, self-repair, rubric QA, ledger.
+    // WAVE 1 section RELIABILITY CORE — version history, self-repair, rubric QA, ledger.
     //   FILE_HISTORY_CAP   : max prior versions kept per file (Workspace.history).
     //   ENABLE_SELF_REPAIR : master toggle for Orchestrator.runAndFix loop.
     //   REPAIR_MAX_ROUNDS  : hard cap on self-repair rounds per run (terminal).
@@ -842,7 +863,7 @@ window.App = window.App || {};
     // sprite metrics
     SPR_W: 16, SPR_H: 24,
 
-    // role -> default neon color & state -> badge color (mirror palette; §5)
+    // role -> default neon color & state -> badge color (mirror palette; section 5)
     roleColor: roleColor,
     stateColor: stateColor,
 
@@ -851,7 +872,7 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
-  // WAVE A §PRESETS — starter company rosters (App.config.PRESETS).
+  // WAVE A section PRESETS — starter company rosters (App.config.PRESETS).
   // Preset = { id, name, desc, icon(emoji), agents:[{name, role, model?, color?,
   //   systemPrompt?}], sampleGoals:[String] }. role must be an existing ROLES key.
   // Presets mainly define the roster + sample goals; Store.applyPreset consumes them.
@@ -916,7 +937,7 @@ window.App = window.App || {};
   ];
 
   // ---------------------------------------------------------------------------
-  // WAVE A §PRICES — approximate public USD prices per 1M tokens for the cost
+  // WAVE A section PRICES — approximate public USD prices per 1M tokens for the cost
   // meter. APPROXIMATE / EDITABLE — update as provider pricing changes. Every
   // model in MODELS has an entry. priceFor() falls back to {in:0,out:0}.
   // ---------------------------------------------------------------------------
@@ -931,6 +952,23 @@ window.App = window.App || {};
     'gpt-4.1':                   { in: 2.00,  out: 8.00  }
   };
 
+  // ---------------------------------------------------------------------------
+  // WAVE 4a section LEVEL CURVE — single source of truth for XP -> level. Mirrored by
+  // Agents.grantXp + the UI badges + pixelart so the level shown everywhere
+  // agrees. level = 1 + floor(sqrt(xp / LEVEL_XP_BASE)), clamped to [1, LEVEL_MAX].
+  // ---------------------------------------------------------------------------
+  App.config.levelForXp = function (xp) {
+    var base = (typeof App.config.LEVEL_XP_BASE === 'number' && App.config.LEVEL_XP_BASE > 0)
+      ? App.config.LEVEL_XP_BASE : 100;
+    var max = (typeof App.config.LEVEL_MAX === 'number') ? App.config.LEVEL_MAX : 99;
+    var n = Number(xp);
+    if (!isFinite(n) || n < 0) n = 0;
+    var lvl = 1 + Math.floor(Math.sqrt(n / base));
+    if (lvl < 1) lvl = 1;
+    if (lvl > max) lvl = max;
+    return lvl;
+  };
+
   // priceFor(modelId) -> {in, out} USD per 1M tokens (fallback {in:0,out:0}).
   App.config.priceFor = function (modelId) {
     var p = App.config.PRICES && App.config.PRICES[modelId];
@@ -941,7 +979,87 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
-  // §2 App.util — small, pure helpers. Date.now()/Math.random() live ONLY inside
+  // WAVE 4a section OFFICE_UPGRADES — catalog the Office shop (ui.js) lists and the
+  // World.applyUpgrade installer consumes. Each entry:
+  //   { id, name, cost, desc, kind:'furniture'|'flair', spec }
+  // For kind:'furniture' the spec is { type, count?, lounge?, dir? } describing
+  // decorative pieces to push onto layout.furniture (World places them on valid
+  // walkable spots without breaking connectivity; placement is best-effort and
+  // SKIPS if no room). For kind:'flair' the spec is { flag, value } — a boolean
+  // (or value) set on App.state.layout.flair[flag] that renderers may read.
+  // applyUpgrade is idempotent (guarded by App.state.upgrades), so each id
+  // installs at most once. credits default 0 (CREDITS_DEFAULT).
+  // ---------------------------------------------------------------------------
+  App.config.OFFICE_UPGRADES = [
+    {
+      id: 'green_thumb',
+      name: 'Green Thumb',
+      cost: 40,
+      desc: 'Scatter a few extra potted plants around the office for some life.',
+      kind: 'furniture',
+      spec: { type: 'plant', count: 4 }
+    },
+    {
+      id: 'neon_district',
+      name: 'Neon District',
+      cost: 80,
+      desc: 'Mount extra neon signs on the walls — pure cyberpunk ambiance.',
+      kind: 'furniture',
+      spec: { type: 'neonSign', count: 3 }
+    },
+    {
+      id: 'server_wall',
+      name: 'Bigger Server Wall',
+      cost: 120,
+      desc: 'Expand the datacenter with a wall of humming server racks.',
+      kind: 'furniture',
+      spec: { type: 'server', count: 5 }
+    },
+    {
+      id: 'brainstorm_boards',
+      name: 'Brainstorm Boards',
+      cost: 100,
+      desc: 'Add whiteboards so the team can sketch out ideas anywhere.',
+      kind: 'furniture',
+      spec: { type: 'whiteboard', count: 2 }
+    },
+    {
+      id: 'lounge_upgrade',
+      name: 'Cozy Lounge',
+      cost: 90,
+      desc: 'A second coffee machine and lounge chairs for the break room.',
+      kind: 'furniture',
+      spec: { type: 'coffee', count: 1, lounge: true, extras: [ { type: 'chair', count: 3, lounge: true } ] }
+    },
+    {
+      id: 'gold_carpet',
+      name: 'Executive Carpet',
+      cost: 150,
+      desc: 'Lay a premium glowing carpet — a subtle flex on visitors.',
+      kind: 'flair',
+      spec: { flag: 'goldCarpet', value: true }
+    },
+    {
+      id: 'party_mode',
+      name: 'Party Lights',
+      cost: 200,
+      desc: 'Disco-grade neon lighting flair for the whole floor.',
+      kind: 'flair',
+      spec: { flag: 'partyMode', value: true }
+    }
+  ];
+
+  // upgradeById(id) -> the OFFICE_UPGRADES entry or null. Convenience for World/UI.
+  App.config.upgradeById = function (id) {
+    var arr = App.config.OFFICE_UPGRADES || [];
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i] && arr[i].id === id) return arr[i];
+    }
+    return null;
+  };
+
+  // ---------------------------------------------------------------------------
+  // section 2 App.util — small, pure helpers. Date.now()/Math.random() live ONLY inside
   // these functions (this is real browser code; deterministic restriction does
   // not apply here).
   // ---------------------------------------------------------------------------

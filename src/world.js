@@ -743,6 +743,268 @@ window.App = window.App || {};
     return { cols: cols, rows: rows, tiles: tiles, furniture: furniture };
   };
 
+  /* ===========================================================================
+   * WAVE 4a section OFFICE UPGRADES — applyUpgrade / reapplyUpgrades.
+   *   Consume App.config.OFFICE_UPGRADES entries and install their furniture or
+   *   flair onto App.state.layout. Idempotent (guarded by App.state.upgrades) and
+   *   connectivity-safe: blocking furniture is only placed on a cell whose removal
+   *   does NOT disconnect any reachable walkable cell from the rest of the floor.
+   *   Best-effort: if no valid spot exists for a piece, it is silently skipped.
+   *   Never throws (callers wrap, but we are defensive anyway).
+   * ========================================================================= */
+
+  // Count walkable cells reachable from `start` (4-connected) given an extra set
+  // of cells to treat as BLOCKED (passed as a {key:true} map). Pure flood fill.
+  function reachableCount(start, cols, rows, blockedSet) {
+    if (!start) return 0;
+    var seen = {};
+    var stack = [start];
+    var count = 0;
+    function k(x, y) { return y * cols + x; }
+    var sk = k(start.gx, start.gy);
+    seen[sk] = true;
+    var guard = 0, guardMax = cols * rows + 8;
+    while (stack.length) {
+      if (++guard > guardMax) break;     // paranoid bound
+      var cur = stack.pop();
+      count++;
+      for (var i = 0; i < 4; i++) {
+        var nx = cur.gx + DIRS[i].dx, ny = cur.gy + DIRS[i].dy;
+        var nk = k(nx, ny);
+        if (seen[nk]) continue;
+        if (blockedSet && blockedSet[nk]) continue;   // treated as blocked
+        if (!World.isWalkable(nx, ny)) continue;
+        seen[nk] = true;
+        stack.push({ gx: nx, gy: ny });
+      }
+    }
+    return count;
+  }
+
+  // Find an interior walkable+empty cell satisfying `pred` whose blocking would
+  // NOT disconnect the floor (only checked when `blocking` is true). Scans the
+  // interior deterministically. Returns {gx,gy} or null. `taken` is a {key:true}
+  // map of cells already claimed within THIS apply pass (so multiple pieces in one
+  // upgrade don't stack or collectively wall off a region).
+  function findPlacementCell(cols, rows, blocking, taken) {
+    function k(x, y) { return y * cols + x; }
+    // Reference anchor for connectivity: any walkable cell (use first found).
+    var anchor = null;
+    for (var ay = 1; ay < rows - 1 && !anchor; ay++) {
+      for (var ax = 1; ax < cols - 1; ax++) {
+        if (World.isWalkable(ax, ay)) { anchor = { gx: ax, gy: ay }; break; }
+      }
+    }
+    if (!anchor) return null;
+    // Baseline reachable count WITH the cells already taken this pass blocked.
+    var baseBlocked = {};
+    for (var tk in taken) if (taken.hasOwnProperty(tk)) baseBlocked[tk] = true;
+    var baseReach = reachableCount(anchor, cols, rows, baseBlocked);
+
+    for (var gy = 1; gy < rows - 1; gy++) {
+      for (var gx = 1; gx < cols - 1; gx++) {
+        var ck = k(gx, gy);
+        if (taken[ck]) continue;
+        if (!World.isWalkable(gx, gy)) continue;       // must be open floor now
+        if (World.furnitureAt(gx, gy)) continue;       // don't stack on furniture
+        if (gx === anchor.gx && gy === anchor.gy) continue; // keep an anchor open
+        if (!blocking) return { gx: gx, gy: gy };      // non-blocking: any open cell
+        // Blocking: ensure removing this cell keeps everything reachable.
+        var test = {};
+        for (var bk in baseBlocked) if (baseBlocked.hasOwnProperty(bk)) test[bk] = true;
+        test[ck] = true;
+        // After blocking this cell the reachable set must shrink by exactly 1
+        // (the cell itself) — i.e. it didn't cut anything else off.
+        var newReach = reachableCount(anchor, cols, rows, test);
+        if (newReach === baseReach - 1) return { gx: gx, gy: gy };
+      }
+    }
+    return null;
+  }
+
+  // Push ONE furniture piece of `type` onto the layout at a safe spot. Returns the
+  // placed furniture object or null if no room. `taken` tracks cells claimed in
+  // this pass. `extra` merges onto the piece (e.g. {lounge:true}).
+  function placeUpgradeFurniture(L, type, taken, extra) {
+    var FD = FURN();
+    var def = FD[type] || { w: 1, h: 1, blocks: true, hasSeat: false };
+    // Only support 1x1 decorative pieces for upgrades (plant/server/neonSign/
+    // coffee/chair/whiteboard). For multi-cell types we still place the anchor
+    // cell + require its full footprint to be free & connectivity-safe.
+    var w = def.w || 1, h = def.h || 1;
+    var blocking = (def.blocks !== false);
+    var cols = L.cols || CFG().GRID_COLS;
+    var rows = L.rows || CFG().GRID_ROWS;
+
+    // For 1x1 the generic finder is enough; for >1 footprint, fall back to 1x1
+    // search of the anchor and verify the whole footprint is open + safe.
+    function k(x, y) { return y * cols + x; }
+    var spot = null;
+
+    if (w === 1 && h === 1) {
+      spot = findPlacementCell(cols, rows, blocking, taken);
+    } else {
+      // multi-cell: scan for an anchor whose entire footprint is open, then
+      // verify connectivity by blocking the whole footprint at once.
+      var anchor = null;
+      for (var ay = 1; ay < rows - 1 && !anchor; ay++) {
+        for (var ax = 1; ax < cols - 1; ax++) {
+          if (World.isWalkable(ax, ay)) { anchor = { gx: ax, gy: ay }; break; }
+        }
+      }
+      if (anchor) {
+        var baseBlocked = {};
+        for (var tkk in taken) if (taken.hasOwnProperty(tkk)) baseBlocked[tkk] = true;
+        var baseReach = reachableCount(anchor, cols, rows, baseBlocked);
+        outer:
+        for (var fy = 1; fy < rows - 1 - (h - 1); fy++) {
+          for (var fx = 1; fx < cols - 1 - (w - 1); fx++) {
+            var foot = [];
+            var ok = true;
+            for (var ddy = 0; ddy < h && ok; ddy++) {
+              for (var ddx = 0; ddx < w; ddx++) {
+                var cx = fx + ddx, cy = fy + ddy, kk = k(cx, cy);
+                if (taken[kk] || !World.isWalkable(cx, cy) || World.furnitureAt(cx, cy)) { ok = false; break; }
+                foot.push(kk);
+              }
+            }
+            if (!ok) continue;
+            if (!blocking) { spot = { gx: fx, gy: fy }; break outer; }
+            var test = {};
+            for (var bk2 in baseBlocked) if (baseBlocked.hasOwnProperty(bk2)) test[bk2] = true;
+            for (var fi = 0; fi < foot.length; fi++) test[foot[fi]] = true;
+            var newReach = reachableCount(anchor, cols, rows, test);
+            if (newReach === baseReach - foot.length) { spot = { gx: fx, gy: fy }; break outer; }
+          }
+        }
+      }
+    }
+
+    if (!spot) return null;
+
+    var f = {
+      id: 'f_upg_' + (L._upgFid = (L._upgFid || 0) + 1),
+      type: type,
+      gx: spot.gx, gy: spot.gy,
+      dir: (extra && extra.dir) || 'down',
+      w: w, h: h,
+      walkable: (def.blocks === false),
+      seatGx: null, seatGy: null,
+      upgrade: true
+    };
+    if (extra) {
+      for (var ek in extra) {
+        if (extra.hasOwnProperty(ek) && ek !== 'dir' && ek !== 'count' && ek !== 'extras') f[ek] = extra[ek];
+      }
+    }
+    L.furniture.push(f);
+    // Mark every footprint cell as taken for this pass.
+    for (var oy = 0; oy < h; oy++) {
+      for (var ox = 0; ox < w; ox++) taken[k(spot.gx + ox, spot.gy + oy)] = true;
+    }
+    return f;
+  }
+
+  /* ---------------------------------------------------------------------------
+   * applyUpgrade(id) -> Boolean (true if newly applied)
+   *   Looks up the OFFICE_UPGRADES entry and installs its furniture/flair onto
+   *   App.state.layout. IDEMPOTENT: no-op (returns false) if `id` is already in
+   *   App.state.upgrades. Does NOT itself push to state.upgrades — the caller
+   *   (UI buy flow / reapplyUpgrades) owns that list — EXCEPT reapply, which sets
+   *   it before calling. We guard on membership so double-calls are harmless.
+   * ------------------------------------------------------------------------- */
+  World.applyUpgrade = function (id) {
+    try {
+      if (!id) return false;
+      var s = STATE();
+      if (!s) return false;
+      var L = s.layout;
+      if (!L || !L.tiles) return false;
+      if (!Array.isArray(L.furniture)) L.furniture = [];
+
+      var def = (CFG().upgradeById ? CFG().upgradeById(id) : null);
+      if (!def) return false;
+
+      // Idempotency: skip if this id is already recorded AND already installed.
+      // We detect prior install via a per-layout applied set so reapply on a
+      // fresh layout (after load) re-installs correctly.
+      if (!L._appliedUpgrades) L._appliedUpgrades = {};
+      if (L._appliedUpgrades[id]) return false;
+
+      var spec = def.spec || {};
+
+      if (def.kind === 'flair') {
+        if (!L.flair) L.flair = {};
+        if (spec.flag) L.flair[spec.flag] = (typeof spec.value === 'undefined') ? true : spec.value;
+        L._appliedUpgrades[id] = true;
+        return true;
+      }
+
+      // kind === 'furniture' (default): place `count` pieces + any `extras`.
+      var taken = {};
+      // Seed `taken` with all currently-blocking furniture footprints so we never
+      // try to drop a piece onto an existing prop and so connectivity baseline is
+      // measured against the live floor.
+      var cols = L.cols || CFG().GRID_COLS;
+      var arr = L.furniture;
+      for (var i = 0; i < arr.length; i++) {
+        var ef = arr[i];
+        if (!ef || ef.walkable) continue;
+        var ew = ef.w || 1, eh = ef.h || 1;
+        for (var ey = 0; ey < eh; ey++) {
+          for (var ex = 0; ex < ew; ex++) taken[(ef.gy + ey) * cols + (ef.gx + ex)] = true;
+        }
+      }
+
+      var count = (typeof spec.count === 'number' && spec.count > 0) ? spec.count : 1;
+      var placed = 0;
+      var carry = {};
+      if (spec.lounge) carry.lounge = true;
+      if (spec.dir) carry.dir = spec.dir;
+      for (var p = 0; p < count; p++) {
+        if (placeUpgradeFurniture(L, spec.type, taken, carry)) placed++;
+      }
+      // Optional bundled extras (e.g. lounge chairs with a coffee machine).
+      if (Array.isArray(spec.extras)) {
+        for (var x = 0; x < spec.extras.length; x++) {
+          var ex2 = spec.extras[x] || {};
+          var ec = (typeof ex2.count === 'number' && ex2.count > 0) ? ex2.count : 1;
+          var ecarry = {};
+          if (ex2.lounge) ecarry.lounge = true;
+          if (ex2.dir) ecarry.dir = ex2.dir;
+          for (var q = 0; q < ec; q++) {
+            if (placeUpgradeFurniture(L, ex2.type, taken, ecarry)) placed++;
+          }
+        }
+      }
+
+      // Mark applied even if 0 pieces fit (the office is full) so we don't retry
+      // forever; the purchase still "counts" and re-runs won't duplicate.
+      L._appliedUpgrades[id] = true;
+      return placed > 0;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  /* ---------------------------------------------------------------------------
+   * reapplyUpgrades() — install every id in App.state.upgrades onto the current
+   *   layout. Called on load (Store) after the layout is rebuilt, since upgrades
+   *   are not baked into the persisted layout (only the id list is persisted).
+   *   Idempotent via applyUpgrade's per-layout applied set. Never throws.
+   * ------------------------------------------------------------------------- */
+  World.reapplyUpgrades = function () {
+    try {
+      var s = STATE();
+      if (!s) return;
+      var ids = s.upgrades;
+      if (!Array.isArray(ids) || !ids.length) return;
+      for (var i = 0; i < ids.length; i++) {
+        World.applyUpgrade(ids[i]);
+      }
+    } catch (e) { /* never throw into callers / rAF */ }
+  };
+
   // Publish.
   App.World = World;
 })();

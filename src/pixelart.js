@@ -1445,9 +1445,50 @@ window.App = window.App || {};
       ctx.fillStyle = pal.uiText;
       ctx.fillText(name, px0 + padX + dotSz + gap, py0 + padY);
 
+      // Wave 4a: subtle LEVEL badge — a tiny "Lv N" tag riding just above the
+      // pill's right shoulder. Readable but unobtrusive; uses the agent accent.
+      // Levels <= 1 are hidden to keep new/level-1 agents clean.
+      try {
+        var lvl = (typeof agent.level === 'number' && isFinite(agent.level)) ? Math.floor(agent.level) : 1;
+        if (lvl > 1) {
+          drawLevelBadge(ctx, agent, lvl, px0 + pillW, py0, s, color, pal);
+        }
+      } catch (e) {}
+
       ctx.restore();
     } catch (e) { /* never throw */ }
   };
+
+  // drawLevelBadge(ctx, agent, lvl, anchorRightX, pillTopY, s, color, pal) — a tiny
+  // accent-tinted "L<n>" chip whose right edge sits at anchorRightX, hovering just
+  // above the nameplate pill. For higher levels (>=5) we add a couple of glow pips
+  // for a sense of progression. Pure draw; caller already has ctx.save()'d.
+  function drawLevelBadge(ctx, agent, lvl, anchorRightX, pillTopY, s, color, pal) {
+    var bFont = Math.max(6, Math.round(5 * s));
+    var label = 'L' + lvl;
+    ctx.font = bFont + 'px "DejaVu Sans Mono", ui-monospace, Menlo, Consolas, monospace';
+    ctx.textBaseline = 'top';
+    var tw = ctx.measureText(label).width;
+    var bpx = Math.round(2 * s), bpy = Math.max(1, Math.round(1 * s));
+    var bw = Math.ceil(tw) + bpx * 2;
+    var bh = bFont + bpy * 2;
+    // Sit the chip so its right edge meets the pill's right edge, lifted above it.
+    var bx0 = Math.round(anchorRightX - bw);
+    var by0 = Math.round(pillTopY - bh - Math.round(1 * s));
+    if (by0 < 1) by0 = 1;
+    // Chip body + accent border (small radius).
+    var r = Math.max(1, Math.round(s));
+    ctx.fillStyle = rgba(pal.uiPanel, 0.92);
+    roundRectFill(ctx, bx0, by0, bw, bh, r);
+    withGlow(ctx, color, 4, function () {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1, Math.round(s));
+      roundRectStroke(ctx, bx0 + 0.5, by0 + 0.5, bw - 1, bh - 1, r);
+    });
+    // Label.
+    ctx.fillStyle = color;
+    ctx.fillText(label, bx0 + bpx, by0 + bpy);
+  }
 
   // ===========================================================================
   // drawSelection(ctx, agent, sx, sy, size)   — SPEC §7.1, visual.md §5.4

@@ -152,7 +152,14 @@ window.App = window.App || {};
       relationships: (spec.relationships && typeof spec.relationships === 'object') ? normRelations(spec.relationships) : {},
       sprite: normSprite(spec.sprite),
       _lastActivityTs: 0,
+      // Wave 4a: gamification. XP accrues per completed task; level is derived
+      // from xp via levelForXp(). Preserve any caller-supplied values (e.g. a
+      // restored save rebuilding through create()).
+      xp: (typeof spec.xp === 'number' && isFinite(spec.xp) && spec.xp >= 0) ? Math.floor(spec.xp) : 0,
+      level: (typeof spec.level === 'number' && isFinite(spec.level) && spec.level >= 1) ? Math.floor(spec.level) : 1,
     };
+    // Keep level coherent with xp when only xp was supplied.
+    if (typeof spec.level !== 'number') agent.level = levelForXp(agent.xp);
 
     if (s && Array.isArray(s.agents)) s.agents.push(agent);
     return agent;
@@ -408,6 +415,57 @@ window.App = window.App || {};
     var next = clamp01n(cur + (Number(delta) || 0));
     agent.relationships[otherId] = next;
     return next;
+  };
+
+  // ===========================================================================
+  // Wave 4a: XP + LEVELING
+  // ===========================================================================
+
+  // levelForXp(xp) — derive level from total XP. Prefers a config thresholds table
+  // (CFG().LEVEL_THRESHOLDS = ascending cumulative-XP array; index+1 = level) or a
+  // configured curve denominator; falls back to level = 1 + floor(sqrt(xp/100)).
+  // Pure, NaN-safe, always returns an integer >= 1.
+  function levelForXp(xp) {
+    xp = Number(xp);
+    if (!isFinite(xp) || xp < 0) xp = 0;
+    var cfg = CFG();
+    // Single source of truth: config.levelForXp mirrors the LEVEL_XP_BASE curve AND
+    // applies the LEVEL_MAX clamp. Delegate so every module agrees (SPEC hygiene).
+    if (typeof cfg.levelForXp === 'function') {
+      var clv = cfg.levelForXp(xp);
+      if (isFinite(clv) && clv >= 1) return Math.floor(clv);
+    }
+    var th = cfg.LEVEL_THRESHOLDS;
+    if (Array.isArray(th) && th.length) {
+      var lvl = 1;
+      for (var i = 0; i < th.length; i++) {
+        var need = Number(th[i]);
+        if (isFinite(need) && xp >= need) lvl = i + 1; else break;
+      }
+      return lvl < 1 ? 1 : lvl;
+    }
+    var denom = Number(cfg.LEVEL_CURVE_DENOM);
+    if (!isFinite(denom) || denom <= 0) denom = 100;
+    return 1 + Math.floor(Math.sqrt(xp / denom));
+  }
+  // Expose for store/UI (XP-bar progress) without forcing a recompute path.
+  Agents.levelForXp = levelForXp;
+
+  // grantXp(agent, n) — add clamped XP, recompute level, return {leveledUp, level}.
+  // n is clamped to a non-negative integer. Never throws; bad agent -> no-op result.
+  Agents.grantXp = function (agent, n) {
+    if (!agent) return { leveledUp: false, level: 1 };
+    var add = Number(n);
+    if (!isFinite(add) || add < 0) add = 0;
+    add = Math.floor(add);
+    var prevXp = (typeof agent.xp === 'number' && isFinite(agent.xp) && agent.xp >= 0) ? agent.xp : 0;
+    var prevLevel = (typeof agent.level === 'number' && isFinite(agent.level) && agent.level >= 1)
+      ? agent.level : levelForXp(prevXp);
+    agent.xp = prevXp + add;
+    var newLevel = levelForXp(agent.xp);
+    if (newLevel < prevLevel) newLevel = prevLevel; // levels never regress
+    agent.level = newLevel;
+    return { leveledUp: newLevel > prevLevel, level: newLevel };
   };
 
   // affinity(agent, otherId) — current affinity (default if unset). Pure read.

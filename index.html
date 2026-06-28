@@ -1324,10 +1324,96 @@ select option{ background:var(--panel); color:var(--text); }
   .metrics-summary{ grid-template-columns:repeat(2,1fr); }
 }
 
+/* ===========================================================================
+   WAVE 4a — GAMIFICATION: roster level badge + XP bar, panel level, HUD
+   credits readout, Office shop modal, whiteboard host.
+   =========================================================================== */
+
+/* roster: name line carries the level badge; XP bar sits under role/state */
+.agent-row .ar-name-line{ display:flex; align-items:center; gap:6px; min-width:0; }
+.agent-row .ar-name-line .ar-name{ flex:1 1 auto; }
+.agent-row .ar-lvl{
+  flex:0 0 auto;
+  font-size:8.5px; font-weight:800; letter-spacing:.3px;
+  padding:1px 6px; border-radius:8px;
+  color:var(--accent, var(--cyan));
+  border:1px solid color-mix(in srgb, var(--accent, #39d7ff) 45%, transparent);
+  background:color-mix(in srgb, var(--accent, #39d7ff) 12%, transparent);
+  white-space:nowrap;
+}
+.agent-row .ar-xp{
+  height:3px; margin-top:5px; border-radius:3px; overflow:hidden;
+  background:var(--void); border:1px solid var(--divider);
+}
+.agent-row .ar-xp-fill{
+  height:100%; border-radius:3px 0 0 3px; min-width:0;
+  background:var(--cyan); transition:width .3s ease;
+}
+
+/* agent panel: level tag + XP bar under the meta line */
+.panel-level{ margin:6px 12px 0; }
+.panel-level .pl-head{
+  display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;
+}
+.panel-level .pl-lvl{
+  font-size:10px; font-weight:800; letter-spacing:.6px; color:var(--cyan);
+  text-shadow:0 0 8px rgba(57,215,255,.3);
+}
+.panel-level .pl-xp{ font-size:9.5px; color:var(--text-faint); font-variant-numeric:tabular-nums; }
+.panel-level .pl-bar{
+  height:6px; border-radius:5px; overflow:hidden;
+  background:var(--void); border:1px solid var(--divider);
+}
+.panel-level .pl-fill{ height:100%; border-radius:5px 0 0 5px; background:var(--cyan); transition:width .3s ease; }
+
+/* HUD credits readout (mirrors .cost-meter styling, amber accent) */
+.credits-meter{ font-variant-numeric:tabular-nums; }
+.credits-meter .btn-ico{ color:var(--amber); font-weight:900; }
+.credits-amount{ font-weight:800; letter-spacing:.3px; color:var(--amber); }
+.credits-meter:hover{ border-color:var(--amber); box-shadow:var(--glow-amber); }
+
+/* Office shop modal */
+.shop-balance{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 12px; margin-bottom:12px;
+  background:var(--field); border:1px solid var(--panel-edge); border-radius:6px;
+}
+.shop-bal-key{ font-size:10px; font-weight:800; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); }
+.shop-bal-val{ font-size:18px; font-weight:800; color:var(--amber); font-variant-numeric:tabular-nums; text-shadow:0 0 10px rgba(255,194,77,.3); }
+.shop-list{ display:flex; flex-direction:column; gap:9px; }
+.shop-item{
+  display:flex; align-items:center; gap:11px;
+  padding:11px 12px;
+  background:var(--btn); border:1px solid var(--panel-edge); border-radius:6px;
+  border-left:3px solid var(--purple);
+  transition:border-color .12s, box-shadow .12s;
+}
+.shop-item:hover{ border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); }
+.shop-item.owned{ border-left-color:var(--lime); opacity:.92; }
+.shop-ico{ font-size:22px; line-height:1; flex:0 0 auto; filter:drop-shadow(0 0 6px rgba(57,215,255,.35)); }
+.shop-text{ flex:1 1 auto; min-width:0; }
+.shop-name{ font-size:13px; font-weight:800; color:var(--text); letter-spacing:.3px; }
+.shop-desc{ font-size:10.5px; color:var(--text-dim); margin-top:3px; line-height:1.45; }
+.shop-right{ flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
+.shop-cost{ font-size:12px; font-weight:800; color:var(--amber); font-variant-numeric:tabular-nums; }
+.shop-buy{ height:26px; padding:0 14px; font-size:11px; }
+.shop-buy.is-disabled, .shop-buy:disabled{ opacity:.4; cursor:not-allowed; pointer-events:none; }
+.shop-owned{
+  font-size:9px; font-weight:800; letter-spacing:1px; text-transform:uppercase;
+  color:var(--lime); padding:2px 8px; border-radius:8px;
+  border:1px solid rgba(93,255,155,.4); background:rgba(93,255,155,.08);
+}
+
+/* whiteboard fallback host */
+.modal-whiteboard-card{ width:min(900px, 96vw); }
+.whiteboard-host{ min-height:40vh; max-height:64vh; overflow:auto; }
+.whiteboard-host canvas{ display:block; max-width:100%; image-rendering:auto; }
+
 /* reduced motion: calm all the loops */
 @media (prefers-reduced-motion:reduce){
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,
   .toast-item, .modal-card, .modal-scrim{ animation:none !important; }
+  .agent-row .ar-xp-fill, .panel-level .pl-fill{ transition:none !important; }
 }
 </style>
 </head>
@@ -1421,6 +1507,18 @@ select option{ background:var(--panel); color:var(--text); }
       </button>
       <button id="btn-metrics"     class="btn"        type="button" title="Observability: tokens/cost charts, timeline + replay">
         <span class="btn-ico">📊</span><span class="btn-lbl" data-i18n="hud.metrics">Metrics</span>
+      </button>
+      <button id="btn-graph"       class="btn"        type="button" title="Workflow + relationship graphs">
+        <span class="btn-ico">🕸</span><span class="btn-lbl" data-i18n="hud.graph">Graph</span>
+      </button>
+      <button id="btn-whiteboard"  class="btn"        type="button" title="Whiteboard: Boss plan + latest debate">
+        <span class="btn-ico">▥</span><span class="btn-lbl" data-i18n="hud.whiteboard">Board</span>
+      </button>
+      <button id="btn-shop"        class="btn"        type="button" title="Office shop — spend credits on upgrades">
+        <span class="btn-ico">🛒</span><span class="btn-lbl" data-i18n="hud.shop">Shop</span>
+      </button>
+      <button id="btn-credits"     class="btn credits-meter" type="button" title="Credits — earned from completed tasks; spend in the Office shop">
+        <span class="btn-ico">◈</span><span id="credits-amount" class="credits-amount">0</span>
       </button>
 
       <span class="hud-sep" aria-hidden="true"></span>
@@ -2324,6 +2422,27 @@ window.App = window.App || {};
     // v3: watercooler chatter cooldown (ms between idle banter events).
     CHATTER_COOLDOWN_MS: 25000,
 
+    // ---------------------------------------------------------------------------
+    // WAVE 4a section GAMIFICATION — XP / level / credits economy.
+    //   XP_PER_TASK     : XP granted per successfully completed (esp. QA-passed)
+    //                     task. Orchestrator.finishTask -> Agents.grantXp(agent, n).
+    //   CREDITS_PER_TASK: credits added to the shared App.state.credits pool per
+    //                     completed task (spendable in the Office shop).
+    //   XP_MAX          : sane clamp on per-agent cumulative XP.
+    //   LEVEL_CURVE     : level = 1 + floor(sqrt(xp / LEVEL_XP_BASE)) — gentle
+    //                     square-root curve so early levels come quick and later
+    //                     ones slow down. LEVEL_MAX clamps the displayed level.
+    //   App.config.levelForXp(xp) mirrors the curve so every module agrees.
+    // ---------------------------------------------------------------------------
+    XP_PER_TASK: 25,
+    CREDITS_PER_TASK: 10,
+    XP_MAX: 1000000,
+    LEVEL_XP_BASE: 100,   // XP needed (×n^2) to reach successive levels
+    LEVEL_MAX: 99,
+    // credits default 0 (the live value lives on App.state.credits; this is the
+    // documented starting balance for fresh/migrated saves — Store seeds it).
+    CREDITS_DEFAULT: 0,
+
     // API
     API_URL: 'https://api.anthropic.com/v1/messages',
     OPENAI_URL: 'https://api.openai.com/v1/chat/completions',   // v2: OpenAI chat-completions endpoint
@@ -2354,14 +2473,14 @@ window.App = window.App || {};
       return /^(gpt|o1|o3|o4|chatgpt)/i.test(String(modelId || '')) ? 'openai' : 'anthropic';
     },
 
-    // boss orchestration prompts (§6.3). BOSS_SYNTH_SYSTEM is read by
+    // boss orchestration prompts (section 6.3). BOSS_SYNTH_SYSTEM is read by
     // Orchestrator.synthesize (CFG().BOSS_SYNTH_SYSTEM). The decompose prompt
     // is the canonical ROLES.boss.system; exposed here too for symmetry.
     BOSS_DECOMPOSE_SYSTEM: BOSS_DECOMPOSE_SYSTEM,
     BOSS_SYNTH_SYSTEM: BOSS_SYNTH_SYSTEM,
 
     // ---------------------------------------------------------------------------
-    // v5 §PROJECT BUILD MODE — file-oriented pipeline prompts + caps. Consumed by
+    // v5 section PROJECT BUILD MODE — file-oriented pipeline prompts + caps. Consumed by
     // App.Orchestrator.runBuild + App.Workspace. BUILD_DECOMPOSE_SYSTEM -> Boss
     // file manifest (strict JSON); BUILD_WORKER_PREAMBLE -> per-file worker output
     // as ```file:<path>``` blocks; BUILD_INTEGRATOR_SYSTEM -> one coherence pass.
@@ -2389,7 +2508,7 @@ window.App = window.App || {};
     ENABLE_APPROVAL: false,
 
     // ---------------------------------------------------------------------------
-    // Wave B/C §BROWSER TOOLS — master toggle read by App.Tools.enabled(). When
+    // Wave B/C section BROWSER TOOLS — master toggle read by App.Tools.enabled(). When
     // true (and settings allow + provider supports it), the Orchestrator exposes
     // App.Tools.specs() to tool-capable workers. Tool implementations live in
     // tools.js; this is only the on/off switch.
@@ -2405,7 +2524,7 @@ window.App = window.App || {};
     DEFAULT_LANG: 'en',
 
     // ---------------------------------------------------------------------------
-    // WAVE 2 §IMAGE GEN + RECURSIVE SUBTASKS — keyless Pollinations image endpoint
+    // WAVE 2 section IMAGE GEN + RECURSIVE SUBTASKS — keyless Pollinations image endpoint
     // (tools.generate_image prepends this and appends the encoded prompt) and the
     // recursion bounds for App.Orchestrator.spawnSubtask / tools.spawn_subtask.
     //   SUBTASK_MAX_DEPTH      : how deep recursive subtasks may nest (1 = a worker
@@ -2419,7 +2538,7 @@ window.App = window.App || {};
     SUBTASK_MAX_CONCURRENT: 3,
 
     // ---------------------------------------------------------------------------
-    // Wave B/C §MOOD & RELATIONSHIPS — defaults for agent.mood (0..1) and the
+    // Wave B/C section MOOD & RELATIONSHIPS — defaults for agent.mood (0..1) and the
     // affinity model (agent.relationships[otherId] in roughly -1..1, 0 = neutral).
     //   MOOD_DEFAULT      : starting/neutral mood for a new agent.
     //   MOOD_MIN/MAX      : clamp range for mood.
@@ -2442,7 +2561,7 @@ window.App = window.App || {};
     MOOD_DECAY: 0.01,
 
     // ---------------------------------------------------------------------------
-    // Wave B/C §AMBIANCE — day/night tint overlay drawn in PixelArt.drawFX, keyed
+    // Wave B/C section AMBIANCE — day/night tint overlay drawn in PixelArt.drawFX, keyed
     // by the hour of day. AMBIANCE_ENABLED gates it. AMBIANCE_TINTS maps a coarse
     // phase -> {color, alpha} (alpha is the overlay opacity, kept low). Phase is
     // chosen from the hour: night/dawn/day/dusk. Pure rendering; no state writes.
@@ -2464,7 +2583,7 @@ window.App = window.App || {};
     },
 
     // ---------------------------------------------------------------------------
-    // Wave B/C §ACTIVITY GLOW — a soft halo PixelArt draws around an agent that
+    // Wave B/C section ACTIVITY GLOW — a soft halo PixelArt draws around an agent that
     // produced output recently (agent._lastActivityTs). GLOW_ACTIVE_MS: how long
     // after the last activity the glow stays at full strength before fading out
     // over GLOW_FADE_MS. GLOW_RADIUS: halo radius in world px; GLOW_MAX_ALPHA: peak
@@ -2481,7 +2600,7 @@ window.App = window.App || {};
     QA_REVIEW_SYSTEM: QA_REVIEW_SYSTEM,
 
     // ---------------------------------------------------------------------------
-    // WAVE 1 §RELIABILITY CORE — version history, self-repair, rubric QA, ledger.
+    // WAVE 1 section RELIABILITY CORE — version history, self-repair, rubric QA, ledger.
     //   FILE_HISTORY_CAP   : max prior versions kept per file (Workspace.history).
     //   ENABLE_SELF_REPAIR : master toggle for Orchestrator.runAndFix loop.
     //   REPAIR_MAX_ROUNDS  : hard cap on self-repair rounds per run (terminal).
@@ -2565,7 +2684,7 @@ window.App = window.App || {};
     // sprite metrics
     SPR_W: 16, SPR_H: 24,
 
-    // role -> default neon color & state -> badge color (mirror palette; §5)
+    // role -> default neon color & state -> badge color (mirror palette; section 5)
     roleColor: roleColor,
     stateColor: stateColor,
 
@@ -2574,7 +2693,7 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
-  // WAVE A §PRESETS — starter company rosters (App.config.PRESETS).
+  // WAVE A section PRESETS — starter company rosters (App.config.PRESETS).
   // Preset = { id, name, desc, icon(emoji), agents:[{name, role, model?, color?,
   //   systemPrompt?}], sampleGoals:[String] }. role must be an existing ROLES key.
   // Presets mainly define the roster + sample goals; Store.applyPreset consumes them.
@@ -2639,7 +2758,7 @@ window.App = window.App || {};
   ];
 
   // ---------------------------------------------------------------------------
-  // WAVE A §PRICES — approximate public USD prices per 1M tokens for the cost
+  // WAVE A section PRICES — approximate public USD prices per 1M tokens for the cost
   // meter. APPROXIMATE / EDITABLE — update as provider pricing changes. Every
   // model in MODELS has an entry. priceFor() falls back to {in:0,out:0}.
   // ---------------------------------------------------------------------------
@@ -2654,6 +2773,23 @@ window.App = window.App || {};
     'gpt-4.1':                   { in: 2.00,  out: 8.00  }
   };
 
+  // ---------------------------------------------------------------------------
+  // WAVE 4a section LEVEL CURVE — single source of truth for XP -> level. Mirrored by
+  // Agents.grantXp + the UI badges + pixelart so the level shown everywhere
+  // agrees. level = 1 + floor(sqrt(xp / LEVEL_XP_BASE)), clamped to [1, LEVEL_MAX].
+  // ---------------------------------------------------------------------------
+  App.config.levelForXp = function (xp) {
+    var base = (typeof App.config.LEVEL_XP_BASE === 'number' && App.config.LEVEL_XP_BASE > 0)
+      ? App.config.LEVEL_XP_BASE : 100;
+    var max = (typeof App.config.LEVEL_MAX === 'number') ? App.config.LEVEL_MAX : 99;
+    var n = Number(xp);
+    if (!isFinite(n) || n < 0) n = 0;
+    var lvl = 1 + Math.floor(Math.sqrt(n / base));
+    if (lvl < 1) lvl = 1;
+    if (lvl > max) lvl = max;
+    return lvl;
+  };
+
   // priceFor(modelId) -> {in, out} USD per 1M tokens (fallback {in:0,out:0}).
   App.config.priceFor = function (modelId) {
     var p = App.config.PRICES && App.config.PRICES[modelId];
@@ -2664,7 +2800,87 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
-  // §2 App.util — small, pure helpers. Date.now()/Math.random() live ONLY inside
+  // WAVE 4a section OFFICE_UPGRADES — catalog the Office shop (ui.js) lists and the
+  // World.applyUpgrade installer consumes. Each entry:
+  //   { id, name, cost, desc, kind:'furniture'|'flair', spec }
+  // For kind:'furniture' the spec is { type, count?, lounge?, dir? } describing
+  // decorative pieces to push onto layout.furniture (World places them on valid
+  // walkable spots without breaking connectivity; placement is best-effort and
+  // SKIPS if no room). For kind:'flair' the spec is { flag, value } — a boolean
+  // (or value) set on App.state.layout.flair[flag] that renderers may read.
+  // applyUpgrade is idempotent (guarded by App.state.upgrades), so each id
+  // installs at most once. credits default 0 (CREDITS_DEFAULT).
+  // ---------------------------------------------------------------------------
+  App.config.OFFICE_UPGRADES = [
+    {
+      id: 'green_thumb',
+      name: 'Green Thumb',
+      cost: 40,
+      desc: 'Scatter a few extra potted plants around the office for some life.',
+      kind: 'furniture',
+      spec: { type: 'plant', count: 4 }
+    },
+    {
+      id: 'neon_district',
+      name: 'Neon District',
+      cost: 80,
+      desc: 'Mount extra neon signs on the walls — pure cyberpunk ambiance.',
+      kind: 'furniture',
+      spec: { type: 'neonSign', count: 3 }
+    },
+    {
+      id: 'server_wall',
+      name: 'Bigger Server Wall',
+      cost: 120,
+      desc: 'Expand the datacenter with a wall of humming server racks.',
+      kind: 'furniture',
+      spec: { type: 'server', count: 5 }
+    },
+    {
+      id: 'brainstorm_boards',
+      name: 'Brainstorm Boards',
+      cost: 100,
+      desc: 'Add whiteboards so the team can sketch out ideas anywhere.',
+      kind: 'furniture',
+      spec: { type: 'whiteboard', count: 2 }
+    },
+    {
+      id: 'lounge_upgrade',
+      name: 'Cozy Lounge',
+      cost: 90,
+      desc: 'A second coffee machine and lounge chairs for the break room.',
+      kind: 'furniture',
+      spec: { type: 'coffee', count: 1, lounge: true, extras: [ { type: 'chair', count: 3, lounge: true } ] }
+    },
+    {
+      id: 'gold_carpet',
+      name: 'Executive Carpet',
+      cost: 150,
+      desc: 'Lay a premium glowing carpet — a subtle flex on visitors.',
+      kind: 'flair',
+      spec: { flag: 'goldCarpet', value: true }
+    },
+    {
+      id: 'party_mode',
+      name: 'Party Lights',
+      cost: 200,
+      desc: 'Disco-grade neon lighting flair for the whole floor.',
+      kind: 'flair',
+      spec: { flag: 'partyMode', value: true }
+    }
+  ];
+
+  // upgradeById(id) -> the OFFICE_UPGRADES entry or null. Convenience for World/UI.
+  App.config.upgradeById = function (id) {
+    var arr = App.config.OFFICE_UPGRADES || [];
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i] && arr[i].id === id) return arr[i];
+    }
+    return null;
+  };
+
+  // ---------------------------------------------------------------------------
+  // section 2 App.util — small, pure helpers. Date.now()/Math.random() live ONLY inside
   // these functions (this is real browser code; deterministic restriction does
   // not apply here).
   // ---------------------------------------------------------------------------
@@ -7472,9 +7688,50 @@ window.App = window.App || {};
       ctx.fillStyle = pal.uiText;
       ctx.fillText(name, px0 + padX + dotSz + gap, py0 + padY);
 
+      // Wave 4a: subtle LEVEL badge — a tiny "Lv N" tag riding just above the
+      // pill's right shoulder. Readable but unobtrusive; uses the agent accent.
+      // Levels <= 1 are hidden to keep new/level-1 agents clean.
+      try {
+        var lvl = (typeof agent.level === 'number' && isFinite(agent.level)) ? Math.floor(agent.level) : 1;
+        if (lvl > 1) {
+          drawLevelBadge(ctx, agent, lvl, px0 + pillW, py0, s, color, pal);
+        }
+      } catch (e) {}
+
       ctx.restore();
     } catch (e) { /* never throw */ }
   };
+
+  // drawLevelBadge(ctx, agent, lvl, anchorRightX, pillTopY, s, color, pal) — a tiny
+  // accent-tinted "L<n>" chip whose right edge sits at anchorRightX, hovering just
+  // above the nameplate pill. For higher levels (>=5) we add a couple of glow pips
+  // for a sense of progression. Pure draw; caller already has ctx.save()'d.
+  function drawLevelBadge(ctx, agent, lvl, anchorRightX, pillTopY, s, color, pal) {
+    var bFont = Math.max(6, Math.round(5 * s));
+    var label = 'L' + lvl;
+    ctx.font = bFont + 'px "DejaVu Sans Mono", ui-monospace, Menlo, Consolas, monospace';
+    ctx.textBaseline = 'top';
+    var tw = ctx.measureText(label).width;
+    var bpx = Math.round(2 * s), bpy = Math.max(1, Math.round(1 * s));
+    var bw = Math.ceil(tw) + bpx * 2;
+    var bh = bFont + bpy * 2;
+    // Sit the chip so its right edge meets the pill's right edge, lifted above it.
+    var bx0 = Math.round(anchorRightX - bw);
+    var by0 = Math.round(pillTopY - bh - Math.round(1 * s));
+    if (by0 < 1) by0 = 1;
+    // Chip body + accent border (small radius).
+    var r = Math.max(1, Math.round(s));
+    ctx.fillStyle = rgba(pal.uiPanel, 0.92);
+    roundRectFill(ctx, bx0, by0, bw, bh, r);
+    withGlow(ctx, color, 4, function () {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1, Math.round(s));
+      roundRectStroke(ctx, bx0 + 0.5, by0 + 0.5, bw - 1, bh - 1, r);
+    });
+    // Label.
+    ctx.fillStyle = color;
+    ctx.fillText(label, bx0 + bpx, by0 + bpy);
+  }
 
   // ===========================================================================
   // drawSelection(ctx, agent, sx, sy, size)   — SPEC §7.1, visual.md §5.4
@@ -8491,6 +8748,268 @@ window.App = window.App || {};
     });
 
     return { cols: cols, rows: rows, tiles: tiles, furniture: furniture };
+  };
+
+  /* ===========================================================================
+   * WAVE 4a section OFFICE UPGRADES — applyUpgrade / reapplyUpgrades.
+   *   Consume App.config.OFFICE_UPGRADES entries and install their furniture or
+   *   flair onto App.state.layout. Idempotent (guarded by App.state.upgrades) and
+   *   connectivity-safe: blocking furniture is only placed on a cell whose removal
+   *   does NOT disconnect any reachable walkable cell from the rest of the floor.
+   *   Best-effort: if no valid spot exists for a piece, it is silently skipped.
+   *   Never throws (callers wrap, but we are defensive anyway).
+   * ========================================================================= */
+
+  // Count walkable cells reachable from `start` (4-connected) given an extra set
+  // of cells to treat as BLOCKED (passed as a {key:true} map). Pure flood fill.
+  function reachableCount(start, cols, rows, blockedSet) {
+    if (!start) return 0;
+    var seen = {};
+    var stack = [start];
+    var count = 0;
+    function k(x, y) { return y * cols + x; }
+    var sk = k(start.gx, start.gy);
+    seen[sk] = true;
+    var guard = 0, guardMax = cols * rows + 8;
+    while (stack.length) {
+      if (++guard > guardMax) break;     // paranoid bound
+      var cur = stack.pop();
+      count++;
+      for (var i = 0; i < 4; i++) {
+        var nx = cur.gx + DIRS[i].dx, ny = cur.gy + DIRS[i].dy;
+        var nk = k(nx, ny);
+        if (seen[nk]) continue;
+        if (blockedSet && blockedSet[nk]) continue;   // treated as blocked
+        if (!World.isWalkable(nx, ny)) continue;
+        seen[nk] = true;
+        stack.push({ gx: nx, gy: ny });
+      }
+    }
+    return count;
+  }
+
+  // Find an interior walkable+empty cell satisfying `pred` whose blocking would
+  // NOT disconnect the floor (only checked when `blocking` is true). Scans the
+  // interior deterministically. Returns {gx,gy} or null. `taken` is a {key:true}
+  // map of cells already claimed within THIS apply pass (so multiple pieces in one
+  // upgrade don't stack or collectively wall off a region).
+  function findPlacementCell(cols, rows, blocking, taken) {
+    function k(x, y) { return y * cols + x; }
+    // Reference anchor for connectivity: any walkable cell (use first found).
+    var anchor = null;
+    for (var ay = 1; ay < rows - 1 && !anchor; ay++) {
+      for (var ax = 1; ax < cols - 1; ax++) {
+        if (World.isWalkable(ax, ay)) { anchor = { gx: ax, gy: ay }; break; }
+      }
+    }
+    if (!anchor) return null;
+    // Baseline reachable count WITH the cells already taken this pass blocked.
+    var baseBlocked = {};
+    for (var tk in taken) if (taken.hasOwnProperty(tk)) baseBlocked[tk] = true;
+    var baseReach = reachableCount(anchor, cols, rows, baseBlocked);
+
+    for (var gy = 1; gy < rows - 1; gy++) {
+      for (var gx = 1; gx < cols - 1; gx++) {
+        var ck = k(gx, gy);
+        if (taken[ck]) continue;
+        if (!World.isWalkable(gx, gy)) continue;       // must be open floor now
+        if (World.furnitureAt(gx, gy)) continue;       // don't stack on furniture
+        if (gx === anchor.gx && gy === anchor.gy) continue; // keep an anchor open
+        if (!blocking) return { gx: gx, gy: gy };      // non-blocking: any open cell
+        // Blocking: ensure removing this cell keeps everything reachable.
+        var test = {};
+        for (var bk in baseBlocked) if (baseBlocked.hasOwnProperty(bk)) test[bk] = true;
+        test[ck] = true;
+        // After blocking this cell the reachable set must shrink by exactly 1
+        // (the cell itself) — i.e. it didn't cut anything else off.
+        var newReach = reachableCount(anchor, cols, rows, test);
+        if (newReach === baseReach - 1) return { gx: gx, gy: gy };
+      }
+    }
+    return null;
+  }
+
+  // Push ONE furniture piece of `type` onto the layout at a safe spot. Returns the
+  // placed furniture object or null if no room. `taken` tracks cells claimed in
+  // this pass. `extra` merges onto the piece (e.g. {lounge:true}).
+  function placeUpgradeFurniture(L, type, taken, extra) {
+    var FD = FURN();
+    var def = FD[type] || { w: 1, h: 1, blocks: true, hasSeat: false };
+    // Only support 1x1 decorative pieces for upgrades (plant/server/neonSign/
+    // coffee/chair/whiteboard). For multi-cell types we still place the anchor
+    // cell + require its full footprint to be free & connectivity-safe.
+    var w = def.w || 1, h = def.h || 1;
+    var blocking = (def.blocks !== false);
+    var cols = L.cols || CFG().GRID_COLS;
+    var rows = L.rows || CFG().GRID_ROWS;
+
+    // For 1x1 the generic finder is enough; for >1 footprint, fall back to 1x1
+    // search of the anchor and verify the whole footprint is open + safe.
+    function k(x, y) { return y * cols + x; }
+    var spot = null;
+
+    if (w === 1 && h === 1) {
+      spot = findPlacementCell(cols, rows, blocking, taken);
+    } else {
+      // multi-cell: scan for an anchor whose entire footprint is open, then
+      // verify connectivity by blocking the whole footprint at once.
+      var anchor = null;
+      for (var ay = 1; ay < rows - 1 && !anchor; ay++) {
+        for (var ax = 1; ax < cols - 1; ax++) {
+          if (World.isWalkable(ax, ay)) { anchor = { gx: ax, gy: ay }; break; }
+        }
+      }
+      if (anchor) {
+        var baseBlocked = {};
+        for (var tkk in taken) if (taken.hasOwnProperty(tkk)) baseBlocked[tkk] = true;
+        var baseReach = reachableCount(anchor, cols, rows, baseBlocked);
+        outer:
+        for (var fy = 1; fy < rows - 1 - (h - 1); fy++) {
+          for (var fx = 1; fx < cols - 1 - (w - 1); fx++) {
+            var foot = [];
+            var ok = true;
+            for (var ddy = 0; ddy < h && ok; ddy++) {
+              for (var ddx = 0; ddx < w; ddx++) {
+                var cx = fx + ddx, cy = fy + ddy, kk = k(cx, cy);
+                if (taken[kk] || !World.isWalkable(cx, cy) || World.furnitureAt(cx, cy)) { ok = false; break; }
+                foot.push(kk);
+              }
+            }
+            if (!ok) continue;
+            if (!blocking) { spot = { gx: fx, gy: fy }; break outer; }
+            var test = {};
+            for (var bk2 in baseBlocked) if (baseBlocked.hasOwnProperty(bk2)) test[bk2] = true;
+            for (var fi = 0; fi < foot.length; fi++) test[foot[fi]] = true;
+            var newReach = reachableCount(anchor, cols, rows, test);
+            if (newReach === baseReach - foot.length) { spot = { gx: fx, gy: fy }; break outer; }
+          }
+        }
+      }
+    }
+
+    if (!spot) return null;
+
+    var f = {
+      id: 'f_upg_' + (L._upgFid = (L._upgFid || 0) + 1),
+      type: type,
+      gx: spot.gx, gy: spot.gy,
+      dir: (extra && extra.dir) || 'down',
+      w: w, h: h,
+      walkable: (def.blocks === false),
+      seatGx: null, seatGy: null,
+      upgrade: true
+    };
+    if (extra) {
+      for (var ek in extra) {
+        if (extra.hasOwnProperty(ek) && ek !== 'dir' && ek !== 'count' && ek !== 'extras') f[ek] = extra[ek];
+      }
+    }
+    L.furniture.push(f);
+    // Mark every footprint cell as taken for this pass.
+    for (var oy = 0; oy < h; oy++) {
+      for (var ox = 0; ox < w; ox++) taken[k(spot.gx + ox, spot.gy + oy)] = true;
+    }
+    return f;
+  }
+
+  /* ---------------------------------------------------------------------------
+   * applyUpgrade(id) -> Boolean (true if newly applied)
+   *   Looks up the OFFICE_UPGRADES entry and installs its furniture/flair onto
+   *   App.state.layout. IDEMPOTENT: no-op (returns false) if `id` is already in
+   *   App.state.upgrades. Does NOT itself push to state.upgrades — the caller
+   *   (UI buy flow / reapplyUpgrades) owns that list — EXCEPT reapply, which sets
+   *   it before calling. We guard on membership so double-calls are harmless.
+   * ------------------------------------------------------------------------- */
+  World.applyUpgrade = function (id) {
+    try {
+      if (!id) return false;
+      var s = STATE();
+      if (!s) return false;
+      var L = s.layout;
+      if (!L || !L.tiles) return false;
+      if (!Array.isArray(L.furniture)) L.furniture = [];
+
+      var def = (CFG().upgradeById ? CFG().upgradeById(id) : null);
+      if (!def) return false;
+
+      // Idempotency: skip if this id is already recorded AND already installed.
+      // We detect prior install via a per-layout applied set so reapply on a
+      // fresh layout (after load) re-installs correctly.
+      if (!L._appliedUpgrades) L._appliedUpgrades = {};
+      if (L._appliedUpgrades[id]) return false;
+
+      var spec = def.spec || {};
+
+      if (def.kind === 'flair') {
+        if (!L.flair) L.flair = {};
+        if (spec.flag) L.flair[spec.flag] = (typeof spec.value === 'undefined') ? true : spec.value;
+        L._appliedUpgrades[id] = true;
+        return true;
+      }
+
+      // kind === 'furniture' (default): place `count` pieces + any `extras`.
+      var taken = {};
+      // Seed `taken` with all currently-blocking furniture footprints so we never
+      // try to drop a piece onto an existing prop and so connectivity baseline is
+      // measured against the live floor.
+      var cols = L.cols || CFG().GRID_COLS;
+      var arr = L.furniture;
+      for (var i = 0; i < arr.length; i++) {
+        var ef = arr[i];
+        if (!ef || ef.walkable) continue;
+        var ew = ef.w || 1, eh = ef.h || 1;
+        for (var ey = 0; ey < eh; ey++) {
+          for (var ex = 0; ex < ew; ex++) taken[(ef.gy + ey) * cols + (ef.gx + ex)] = true;
+        }
+      }
+
+      var count = (typeof spec.count === 'number' && spec.count > 0) ? spec.count : 1;
+      var placed = 0;
+      var carry = {};
+      if (spec.lounge) carry.lounge = true;
+      if (spec.dir) carry.dir = spec.dir;
+      for (var p = 0; p < count; p++) {
+        if (placeUpgradeFurniture(L, spec.type, taken, carry)) placed++;
+      }
+      // Optional bundled extras (e.g. lounge chairs with a coffee machine).
+      if (Array.isArray(spec.extras)) {
+        for (var x = 0; x < spec.extras.length; x++) {
+          var ex2 = spec.extras[x] || {};
+          var ec = (typeof ex2.count === 'number' && ex2.count > 0) ? ex2.count : 1;
+          var ecarry = {};
+          if (ex2.lounge) ecarry.lounge = true;
+          if (ex2.dir) ecarry.dir = ex2.dir;
+          for (var q = 0; q < ec; q++) {
+            if (placeUpgradeFurniture(L, ex2.type, taken, ecarry)) placed++;
+          }
+        }
+      }
+
+      // Mark applied even if 0 pieces fit (the office is full) so we don't retry
+      // forever; the purchase still "counts" and re-runs won't duplicate.
+      L._appliedUpgrades[id] = true;
+      return placed > 0;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  /* ---------------------------------------------------------------------------
+   * reapplyUpgrades() — install every id in App.state.upgrades onto the current
+   *   layout. Called on load (Store) after the layout is rebuilt, since upgrades
+   *   are not baked into the persisted layout (only the id list is persisted).
+   *   Idempotent via applyUpgrade's per-layout applied set. Never throws.
+   * ------------------------------------------------------------------------- */
+  World.reapplyUpgrades = function () {
+    try {
+      var s = STATE();
+      if (!s) return;
+      var ids = s.upgrades;
+      if (!Array.isArray(ids) || !ids.length) return;
+      for (var i = 0; i < ids.length; i++) {
+        World.applyUpgrade(ids[i]);
+      }
+    } catch (e) { /* never throw into callers / rAF */ }
   };
 
   // Publish.
@@ -9690,6 +10209,7 @@ window.App = window.App || {};
       webSearch: true,
       theme: 'neon',
       sound: true,            // v3: completion chime on/off
+      bgm: false,             // Wave 4a: ambient background music (procedural) on/off - default OFF
       liveChatter: false,     // v3: watercooler uses an LLM call when true; canned lines when false
       lang: (c.DEFAULT_LANG || 'en'),  // Wave B: UI language (i18n) — 'en' | 'ko'
       onboarded: false,       // Wave C: first-run guided tour completed flag
@@ -9784,6 +10304,76 @@ window.App = window.App || {};
       var v = r[k];
       if (typeof v !== 'number' || !isFinite(v)) continue;
       out[k] = clamp(v, -1, 1);
+    }
+    return out;
+  }
+
+  // Wave 4a: sanitize a persisted non-negative integer (xp/credits) -> finite
+  // integer >= 0. Missing/invalid -> the given default (0). Never throws.
+  function normalizeCount(n, def) {
+    var d = (typeof def === 'number' && isFinite(def)) ? def : 0;
+    if (typeof n !== 'number' || !isFinite(n)) return d;
+    n = Math.floor(n);
+    return n < 0 ? 0 : n;
+  }
+
+  // Wave 4a: recompute level from xp. Prefers a config formula/curve if present
+  // (CFG().LEVEL_FOR_XP function, or CFG().LEVEL_THRESHOLDS ascending array of xp
+  // cutoffs); otherwise the documented default: level = 1 + floor(sqrt(xp/100)).
+  // Always returns an integer >= 1. Never throws.
+  function levelForXp(xp) {
+    try {
+      var c = cfg();
+      // Single source of truth: config.levelForXp (LEVEL_XP_BASE curve + LEVEL_MAX clamp).
+      if (typeof c.levelForXp === 'function') {
+        var clv = c.levelForXp(xp);
+        if (typeof clv === 'number' && isFinite(clv) && clv >= 1) return Math.floor(clv);
+      }
+      if (typeof c.LEVEL_FOR_XP === 'function') {
+        var lv = c.LEVEL_FOR_XP(xp);
+        if (typeof lv === 'number' && isFinite(lv) && lv >= 1) return Math.floor(lv);
+      }
+      if (Array.isArray(c.LEVEL_THRESHOLDS)) {
+        var level = 1;
+        for (var i = 0; i < c.LEVEL_THRESHOLDS.length; i++) {
+          var cut = c.LEVEL_THRESHOLDS[i];
+          if (typeof cut === 'number' && isFinite(cut) && xp >= cut) level = i + 2;
+        }
+        return level;
+      }
+    } catch (e) { /* fall through to default curve */ }
+    var v = 1 + Math.floor(Math.sqrt((xp > 0 ? xp : 0) / 100));
+    return v < 1 ? 1 : v;
+  }
+
+  // Wave 4a: sanitize a persisted agent xp/level pair. xp -> integer >= 0; level
+  // is trusted only if it is a sane integer >= 1 that is consistent with xp,
+  // otherwise it is recomputed from xp so saves stay self-healing. Never throws.
+  function normalizeXpLevel(rawXp, rawLevel) {
+    var xp = normalizeCount(rawXp, 0);
+    var lvl = (typeof rawLevel === 'number' && isFinite(rawLevel)) ? Math.floor(rawLevel) : 0;
+    var derived = levelForXp(xp);
+    if (lvl < 1) lvl = derived;
+    // keep persisted level if it is at least the xp-derived level (allows manual
+    // grants/bonuses to survive), but never below the curve.
+    if (lvl < derived) lvl = derived;
+    return { xp: xp, level: lvl };
+  }
+
+  // Wave 4a: sanitize a persisted upgrades id list -> unique non-empty strings.
+  // Order preserved (first occurrence wins). Never throws.
+  function normalizeUpgrades(arr) {
+    var out = [];
+    if (!Array.isArray(arr)) return out;
+    var seen = {};
+    for (var i = 0; i < arr.length; i++) {
+      var v = arr[i];
+      if (v == null) continue;
+      var s = String(v).trim();
+      if (!s) continue;
+      if (Object.prototype.hasOwnProperty.call(seen, s)) continue;
+      seen[s] = 1;
+      out.push(s);
     }
     return out;
   }
@@ -10039,6 +10629,8 @@ window.App = window.App || {};
       artifacts: [],          // v3: Artifact[] (persisted, capped at ARTIFACT_MAX)
       trace: [],              // WAVE 3: structured run-event trace (persisted, capped at TRACE_CAP)
       files: {},              // v5: project workspace (path -> {content,lang,updatedBy,t}); persisted, capped at MAX_PROJECT_FILES
+      credits: 0,             // Wave 4a: shared credit pool (earned per task; spent in the office shop)
+      upgrades: [],           // Wave 4a: purchased OFFICE_UPGRADES ids (applied to layout on load)
       camera: defaultCamera(),
       layout: emptyLayout(),
       settings: defaultSettings(),
@@ -10074,6 +10666,8 @@ window.App = window.App || {};
     if (!Array.isArray(s.artifacts)) s.artifacts = [];
     if (!Array.isArray(s.trace)) s.trace = [];                   // WAVE 3: run-event trace
     if (!s.files || typeof s.files !== 'object') s.files = {};   // v5: project workspace map
+    if (typeof s.credits !== 'number' || !isFinite(s.credits)) s.credits = 0;   // Wave 4a
+    if (!Array.isArray(s.upgrades)) s.upgrades = [];                            // Wave 4a
     if (!s.camera || typeof s.camera !== 'object') s.camera = def.camera;
     if (!s.layout || typeof s.layout !== 'object') s.layout = def.layout;
     if (!s.settings || typeof s.settings !== 'object') s.settings = def.settings;
@@ -10114,6 +10708,7 @@ window.App = window.App || {};
     var gx = (typeof a.gx === 'number') ? a.gx : 0;
     var gy = (typeof a.gy === 'number') ? a.gy : 0;
     var center = cellCenterWorld(gx, gy);
+    var xl = normalizeXpLevel(a.xp, a.level);   // Wave 4a: xp/level (self-healing)
 
     var agent = {
       id: a.id || uid('a'),
@@ -10149,6 +10744,10 @@ window.App = window.App || {};
       // Wave B/C: social/affect + sprite customization (default-safe; migrate
       // older saves that lack these by supplying CFG defaults / empty maps).
       mood: normalizeMood(a.mood),
+      // Wave 4a: gamification - xp/level (migrate older saves: missing -> 0/1;
+      // level self-heals from xp via normalizeXpLevel above).
+      xp: xl.xp,
+      level: xl.level,
       relationships: normalizeRelationships(a.relationships),
       sprite: normalizeSprite(a.sprite),
       _idleSince: 0,
@@ -10189,6 +10788,9 @@ window.App = window.App || {};
       // v3: persist persona + memories (so accumulated context survives reload)
       persona: normalizePersona(a.persona, a.role),
       memories: normalizeMemories(a.memories),
+      // Wave 4a: persist gamification xp/level (level kept consistent with xp).
+      xp: normalizeCount(a.xp, 0),
+      level: normalizeXpLevel(a.xp, a.level).level,
       // Wave B/C: persist mood, relationships, sprite customization.
       mood: normalizeMood(a.mood),
       relationships: normalizeRelationships(a.relationships),
@@ -10281,6 +10883,10 @@ window.App = window.App || {};
     // WAVE 1: task ledger — small runtime working-memory; persist when meaningful.
     var ledger = normalizeLedger(s._ledger);
 
+    // Wave 4a: gamification economy - shared credits + purchased upgrade ids.
+    var credits = normalizeCount(s.credits, 0);
+    var upgrades = normalizeUpgrades(s.upgrades);
+
     var blob = {
       v: schemaVersion(),
       savedAt: nowMs(),
@@ -10290,6 +10896,8 @@ window.App = window.App || {};
       artifacts: artifacts,
       trace: trace,           // WAVE 3: structured run-event trace
       files: files,           // v5: project workspace
+      credits: credits,       // Wave 4a: shared credit pool
+      upgrades: upgrades,     // Wave 4a: purchased office-upgrade ids
       layout: layout,
       settings: settings,
       selectedAgentId: s.selectedAgentId || null,
@@ -10404,6 +11012,10 @@ window.App = window.App || {};
       if (Object.prototype.hasOwnProperty.call(rebuiltFiles, nfk)) s.files[nfk] = rebuiltFiles[nfk];
     }
 
+    // --- Wave 4a: gamification economy (credits + purchased upgrade ids) ---
+    s.credits = normalizeCount(blob.credits, 0);
+    s.upgrades = normalizeUpgrades(blob.upgrades);
+
     // --- WAVE 1: task ledger (restore if present; else leave unset/runtime-init) ---
     var lg = normalizeLedger(blob.ledger);
     if (lg) { s._ledger = lg; }
@@ -10438,6 +11050,15 @@ window.App = window.App || {};
     s._buildActive = false;   // v5: never restore a mid-build flag from disk
     s._lastRun = null;        // WAVE 1: self-repair capture is runtime-only; never restored
     // NOTE: s._ledger is set above from blob.ledger when present (it IS persisted).
+
+    // --- Wave 4a: re-apply purchased office upgrades onto the (now-ready) layout.
+    // World.reapplyUpgrades is idempotent + validates placement; guarded because
+    // World may be absent very early or when running headless. Never throws here.
+    try {
+      if (App.World && typeof App.World.reapplyUpgrades === 'function') {
+        App.World.reapplyUpgrades();
+      }
+    } catch (e) { logErr('applyBlob:reapplyUpgrades', e); }
 
     return s;
   }
@@ -10534,6 +11155,28 @@ window.App = window.App || {};
         if (!Array.isArray(blob.trace)) blob.trace = [];
         v = 6;
       }
+      // v6 -> v7 (Wave 4a): gamification + economy. agent.xp/level, top-level
+      // credits + upgrades, settings.bgm. All are filled with safe defaults by the
+      // load-path normalizers (normalizeXpLevel / normalizeCount / normalizeUpgrades
+      // and defaultSettings merge), so this step only ensures the shapes exist on
+      // the blob; everything else is a forward no-op. Defensive: run whenever v<7
+      // regardless of whether SCHEMA_VERSION was bumped.
+      if (v < 7) {
+        if (typeof blob.credits !== 'number' || !isFinite(blob.credits)) blob.credits = 0;
+        if (!Array.isArray(blob.upgrades)) blob.upgrades = [];
+        if (blob.settings && typeof blob.settings === 'object') {
+          if (typeof blob.settings.bgm === 'undefined') blob.settings.bgm = false;
+        }
+        if (Array.isArray(blob.agents)) {
+          for (var gi = 0; gi < blob.agents.length; gi++) {
+            var ga = blob.agents[gi];
+            if (!ga || typeof ga !== 'object') continue;
+            if (typeof ga.xp !== 'number' || !isFinite(ga.xp)) ga.xp = 0;
+            // ga.level left absent -> rebuildAgent's normalizeXpLevel derives it.
+          }
+        }
+        v = 7;
+      }
       // Always stamp to current after running known steps.
       blob.v = target;
       return blob;
@@ -10603,6 +11246,11 @@ window.App = window.App || {};
       // the inline fallback so store-only seeding still produces complete agents)
       persona: normalizePersona(spec.persona, role),
       memories: Array.isArray(spec.memories) ? normalizeMemories(spec.memories) : [],
+      // Wave 4a: gamification - fresh agents start at xp 0 / level 1 (or a spec
+      // override; level self-heals from xp). Agents.create normally owns this;
+      // mirror here so store-only seeding still yields complete agents.
+      xp: normalizeXpLevel(spec.xp, spec.level).xp,
+      level: normalizeXpLevel(spec.xp, spec.level).level,
       // Wave B/C: mood / relationships / sprite (default-safe).
       mood: normalizeMood(spec.mood),
       relationships: normalizeRelationships(spec.relationships),
@@ -10653,6 +11301,8 @@ window.App = window.App || {};
       for (var fk in s.files) {
         if (Object.prototype.hasOwnProperty.call(s.files, fk)) delete s.files[fk];
       }
+      s.credits = 0;            // Wave 4a: fresh company starts with no credits
+      s.upgrades = [];          // Wave 4a: and no purchased upgrades
       s.settings = defaultSettings();
       s.camera = defaultCamera();
       s.selectedAgentId = null;
@@ -10843,7 +11493,7 @@ window.App = window.App || {};
     } catch (e) {
       logErr('exportJSON', e);
       // 빈 회사라도 유효한 JSON 반환
-      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], files: {}, layout: emptyLayout(), settings: defaultSettings() }, null, 2);
+      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], files: {}, credits: 0, upgrades: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
     }
   }
 
@@ -11371,7 +12021,14 @@ window.App = window.App || {};
       relationships: (spec.relationships && typeof spec.relationships === 'object') ? normRelations(spec.relationships) : {},
       sprite: normSprite(spec.sprite),
       _lastActivityTs: 0,
+      // Wave 4a: gamification. XP accrues per completed task; level is derived
+      // from xp via levelForXp(). Preserve any caller-supplied values (e.g. a
+      // restored save rebuilding through create()).
+      xp: (typeof spec.xp === 'number' && isFinite(spec.xp) && spec.xp >= 0) ? Math.floor(spec.xp) : 0,
+      level: (typeof spec.level === 'number' && isFinite(spec.level) && spec.level >= 1) ? Math.floor(spec.level) : 1,
     };
+    // Keep level coherent with xp when only xp was supplied.
+    if (typeof spec.level !== 'number') agent.level = levelForXp(agent.xp);
 
     if (s && Array.isArray(s.agents)) s.agents.push(agent);
     return agent;
@@ -11627,6 +12284,57 @@ window.App = window.App || {};
     var next = clamp01n(cur + (Number(delta) || 0));
     agent.relationships[otherId] = next;
     return next;
+  };
+
+  // ===========================================================================
+  // Wave 4a: XP + LEVELING
+  // ===========================================================================
+
+  // levelForXp(xp) — derive level from total XP. Prefers a config thresholds table
+  // (CFG().LEVEL_THRESHOLDS = ascending cumulative-XP array; index+1 = level) or a
+  // configured curve denominator; falls back to level = 1 + floor(sqrt(xp/100)).
+  // Pure, NaN-safe, always returns an integer >= 1.
+  function levelForXp(xp) {
+    xp = Number(xp);
+    if (!isFinite(xp) || xp < 0) xp = 0;
+    var cfg = CFG();
+    // Single source of truth: config.levelForXp mirrors the LEVEL_XP_BASE curve AND
+    // applies the LEVEL_MAX clamp. Delegate so every module agrees (SPEC hygiene).
+    if (typeof cfg.levelForXp === 'function') {
+      var clv = cfg.levelForXp(xp);
+      if (isFinite(clv) && clv >= 1) return Math.floor(clv);
+    }
+    var th = cfg.LEVEL_THRESHOLDS;
+    if (Array.isArray(th) && th.length) {
+      var lvl = 1;
+      for (var i = 0; i < th.length; i++) {
+        var need = Number(th[i]);
+        if (isFinite(need) && xp >= need) lvl = i + 1; else break;
+      }
+      return lvl < 1 ? 1 : lvl;
+    }
+    var denom = Number(cfg.LEVEL_CURVE_DENOM);
+    if (!isFinite(denom) || denom <= 0) denom = 100;
+    return 1 + Math.floor(Math.sqrt(xp / denom));
+  }
+  // Expose for store/UI (XP-bar progress) without forcing a recompute path.
+  Agents.levelForXp = levelForXp;
+
+  // grantXp(agent, n) — add clamped XP, recompute level, return {leveledUp, level}.
+  // n is clamped to a non-negative integer. Never throws; bad agent -> no-op result.
+  Agents.grantXp = function (agent, n) {
+    if (!agent) return { leveledUp: false, level: 1 };
+    var add = Number(n);
+    if (!isFinite(add) || add < 0) add = 0;
+    add = Math.floor(add);
+    var prevXp = (typeof agent.xp === 'number' && isFinite(agent.xp) && agent.xp >= 0) ? agent.xp : 0;
+    var prevLevel = (typeof agent.level === 'number' && isFinite(agent.level) && agent.level >= 1)
+      ? agent.level : levelForXp(prevXp);
+    agent.xp = prevXp + add;
+    var newLevel = levelForXp(agent.xp);
+    if (newLevel < prevLevel) newLevel = prevLevel; // levels never regress
+    agent.level = newLevel;
+    return { leveledUp: newLevel > prevLevel, level: newLevel };
   };
 
   // affinity(agent, otherId) — current affinity (default if unset). Pure read.
@@ -12311,6 +13019,54 @@ window.App = window.App || {};
     try { if (App.UI && App.UI.refreshBoard) App.UI.refreshBoard(); } catch (e) {}
   }
 
+  // sfx(name) — WAVE 4a: fire a procedural blip via App.Audio (if loaded + sound on).
+  //   Fully guarded; a missing/failing Audio module is a silent no-op. Never throws.
+  //   Known tones: 'dispatch','done','qa_fail','coffee','approval','levelup','error','tool'.
+  function sfx(name) {
+    try {
+      if (App.Audio && typeof App.Audio.sfx === 'function') App.Audio.sfx(name);
+    } catch (e) {}
+  }
+
+  // creditsPerTask() — config-owned credit reward per successful task (default 10).
+  function creditsPerTask() {
+    var n = CFG().CREDITS_PER_TASK;
+    return (typeof n === 'number' && isFinite(n) && n >= 0) ? n : 10;
+  }
+  // xpPerTask() — config-owned XP reward per successful task (default 25).
+  function xpPerTask() {
+    var n = CFG().XP_PER_TASK;
+    return (typeof n === 'number' && isFinite(n) && n >= 0) ? n : 25;
+  }
+
+  // grantTaskRewards(agent, task) — WAVE 4a gamification. On a SUCCESSFUL task:
+  //   add credits to the shared pool + grant the agent XP (Agents.grantXp). On a
+  //   level-up: levelup sfx + celebratory bubble/log + UI refresh. Fully guarded
+  //   (Agents.grantXp may not be loaded during a partial build) — never throws.
+  function grantTaskRewards(agent, task) {
+    try {
+      var s = STATE();
+      if (!s) return;
+      // shared credit pool (default 0; coerced if a save migrated in a non-number).
+      if (typeof s.credits !== 'number' || !isFinite(s.credits)) s.credits = 0;
+      s.credits += creditsPerTask();
+      try { if (App.UI && App.UI.refreshCredits) App.UI.refreshCredits(); } catch (e) {}
+
+      if (!agent) return;
+      var ag = AGENTS();
+      if (ag && typeof ag.grantXp === 'function') {
+        var res = ag.grantXp(agent, xpPerTask());
+        if (res && res.leveledUp) {
+          sfx('levelup');
+          try { ag.say(agent, '⭐ Level ' + (res.level || agent.level || '?') + '!', 4000); } catch (e) {}
+          try { log(agent.name || agent.role, 'all', 'system', '⭐ ' + (agent.name || agent.role) + ' reached level ' + (res.level || agent.level || '?')); } catch (e) {}
+          try { nudgeMood(agent, 0.08); } catch (e) {}
+          try { if (App.UI && App.UI.refreshAgentList) App.UI.refreshAgentList(); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
+
   // ===========================================================================
   // TRACE (Wave 3) — additive run telemetry. Pushes small, timestamped events onto
   //   App.state.trace (capped) so the metrics dashboard can draw a timeline + replay.
@@ -12644,6 +13400,7 @@ window.App = window.App || {};
           r = r || {};
           var label = (agent && agent.name) || (agent && agent.role) || 'agent';
           try { log(label, 'tool', 'tool', '🔧 ' + (blk.name || 'tool') + (r.ok ? ' ✓' : ' ✗')); } catch (e) {}
+          sfx('tool');   // WAVE 4a: tool-call blip.
           try { traceEvt({ type: 'tool_call', name: blk.name || 'tool', role: agent && agent.role, agentId: agent && agent.id, status: r.ok ? 'ok' : 'error' }); } catch (e) {}
           // surface in the agent transcript if the UI supports it.
           try {
@@ -13259,6 +14016,7 @@ window.App = window.App || {};
 
     var roleLabel = (ROLES()[task.role] && ROLES()[task.role].label) || task.role;
     log('Boss', agent.name || roleLabel, 'msg', '@' + (agent.name || roleLabel) + ': ' + task.title);
+    sfx('dispatch');   // WAVE 4a: dispatch blip when a task is handed to a worker.
     refreshBoard();
 
     runWorker(task);
@@ -13612,6 +14370,7 @@ window.App = window.App || {};
             task._retries = (task._retries || 0) + 1;
             task._feedback = feedback;
             log('QA', (worker ? worker.name : task.role), 'msg', '✗ FAIL → revise (' + task._retries + '): ' + truncate(feedback, 60));
+            sfx('qa_fail');   // WAVE 4a: QA rejection blip.
             try { traceEvt({ type: 'retry', role: task.role, taskId: task.id, status: 'fail', text: truncate(feedback, 60) }); } catch (e) {}
             // release the worker and re-queue for another attempt.
             if (worker) {
@@ -13722,6 +14481,10 @@ window.App = window.App || {};
       ag.say(agent, '✓ done', 2500);
       clearAttention(agent);
       nudgeMood(agent, 0.06);   // satisfaction from finishing work
+      sfx('done');   // WAVE 4a: task-complete blip.
+      // GAMIFICATION (WAVE 4a): reward a completed WORKER subtask (esp. QA-passed) —
+      //   credits to the shared pool + agent XP (level-up celebrated inside).
+      try { if (task && task.parentId) grantTaskRewards(agent, task); } catch (e) {}
       // honor a deferred break request (set while the agent was busy), else maybe wander.
       if (agent._wantBreak) {
         agent._wantBreak = false;
@@ -13768,6 +14531,7 @@ window.App = window.App || {};
     }
     var label = agent ? agent.name : task.role;
     log(label, 'Boss', 'error', 'API error' + (status ? ' (' + status + ')' : '') + ': ' + (msg || ''));
+    sfx('error');   // WAVE 4a: error blip.
     refreshBoard();
     saveSoon();
   }
@@ -13787,6 +14551,7 @@ window.App = window.App || {};
       if (STATE() && STATE()._meetingActive) return;   // don't wander off during a sync meeting
       if (Math.random() > 0.4) return;
       var ag = AGENTS();
+      sfx('coffee');   // WAVE 4a: post-task coffee wander blip.
       ag.goToBreak(agent, function () {
         // relax in the lounge, then head home after a beat
         setTimeout(function () {
@@ -13825,6 +14590,7 @@ window.App = window.App || {};
       if (agent.state === 'coffee') return;
 
       log('user', agent.name || agent.role, 'msg', '☕ taking a break');
+      sfx('coffee');   // WAVE 4a: break/coffee blip.
       ag.goToBreak(agent, function () {
         // sparse banter while relaxing
         maybeBanter(agent, 'break');
@@ -13916,6 +14682,58 @@ window.App = window.App || {};
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
+  // recentMemorySnippet(agent) — WAVE 4a grounded chatter: a short phrase pulled from
+  //   the agent's MOST RECENT real memories (prefers Agents.scoreMemories ranking,
+  //   falls back to the memories tail). Strips low-signal 'watercooler:' chatter notes
+  //   so banter references actual work. Returns '' when nothing useful. Never throws.
+  function recentMemorySnippet(agent) {
+    try {
+      if (!agent || !Array.isArray(agent.memories) || !agent.memories.length) return '';
+      var ag = AGENTS();
+      var cands = [];
+      // prefer the freshest entries (tail), then fill from the rest.
+      for (var i = agent.memories.length - 1; i >= 0 && cands.length < 6; i--) {
+        var m = agent.memories[i];
+        if (m && m.text) cands.push(String(m.text));
+      }
+      // optional relevance bump: ask Agents to rank by a generic recent-work query.
+      try {
+        if (ag && typeof ag.scoreMemories === 'function') {
+          var top = ag.scoreMemories('recent work task built delivered', agent.memories) || [];
+          for (var j = 0; j < top.length; j++) {
+            if (top[j] && top[j].text) cands.unshift(String(top[j].text));
+          }
+        }
+      } catch (e) {}
+      for (var k = 0; k < cands.length; k++) {
+        var t = cands[k].replace(/^watercooler:\s*/i, '').trim();
+        if (!t) continue;
+        if (/^watercooler/i.test(cands[k])) continue;   // skip pure chatter notes
+        return truncate(t, 40);
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  // groundedChatterLine(agent) — sometimes reference a real recent memory ('still
+  //   thinking about <memory>' templates), else fall back to the canned pool. Keeps
+  //   banter feeling like it's about actual work without any extra API cost.
+  var _groundedTemplates = [
+    'still thinking about ',
+    'happy with how the ',
+    'that ',
+    'wrapped up ',
+  ];
+  function groundedChatterLine(agent) {
+    var snip = recentMemorySnippet(agent);
+    if (snip && Math.random() < 0.55) {
+      var tpl = _groundedTemplates[Math.floor(Math.random() * _groundedTemplates.length)];
+      var tail = (tpl === 'that ') ? (snip + ' was solid') : snip;
+      return truncate(tpl + tail, 60);
+    }
+    return chatterLineFor(agent.role);
+  }
+
   function maybeWatercooler() {
     try {
       var s = STATE();
@@ -13991,7 +14809,8 @@ window.App = window.App || {};
       try {
         if (i >= turns) { endWatercooler(a, b, topicLine); return; }
         var sp = pair[i % 2];
-        var line = chatterLineFor(sp.role);
+        // GROUNDED CHATTER (WAVE 4a): reference real recent work when available.
+        var line = groundedChatterLine(sp);
         if (!topicLine) topicLine = line;
         ag.say(sp, line, 3200);
         log(sp.name || sp.role, 'all', 'msg', line);
@@ -14010,7 +14829,14 @@ window.App = window.App || {};
     var sys = "You are scripting a SHORT, light office watercooler exchange between two coworkers at an AI software company. " +
       "Keep it casual and brief: 2-4 total lines, alternating speakers, <=12 words each. No work assignments. " +
       "Output ONLY lines in the form 'NAME: text', nothing else.";
-    var content = "Speaker A is " + (a.name || aLabel) + " (" + aLabel + "). Speaker B is " + (b.name || bLabel) + " (" + bLabel + "). Write their quick break-room chat.";
+    // GROUNDED CHATTER (WAVE 4a): inject each speaker's recent-work snippet so the
+    //   live exchange references real tasks (no extra API call — same single stream).
+    var aMem = recentMemorySnippet(a), bMem = recentMemorySnippet(b);
+    var memNote = '';
+    if (aMem) memNote += "\n" + (a.name || aLabel) + " recently worked on: " + aMem + ".";
+    if (bMem) memNote += "\n" + (b.name || bLabel) + " recently worked on: " + bMem + ".";
+    if (memNote) memNote = "\nThey can casually reference recent work:" + memNote;
+    var content = "Speaker A is " + (a.name || aLabel) + " (" + aLabel + "). Speaker B is " + (b.name || bLabel) + " (" + bLabel + "). Write their quick break-room chat." + memNote;
 
     var acc = '';
     var handle = App.API.stream({
@@ -14344,6 +15170,7 @@ window.App = window.App || {};
       results: gatherWorkerResults(root),
     };
     var p;
+    sfx('approval');   // WAVE 4a: needs-approval blip when the gate opens.
     try { p = App.UI.openApproval(payload); } catch (e) { cb(true); return; }
     if (!p || typeof p.then !== 'function') { cb(true); return; }
     p.then(function (decision) {
@@ -15886,7 +16713,28 @@ window.App = window.App || {};
       '.graph-empty{padding:36px 16px;text-align:center;color:#8294c4;font-size:13px;letter-spacing:.04em}',
       '.graph-legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:11px;color:#8294c4;letter-spacing:.04em}',
       '.graph-legend .lg{display:inline-flex;align-items:center;gap:6px}',
-      '.graph-legend .sw{width:11px;height:11px;border-radius:2px;display:inline-block;box-shadow:0 0 6px currentColor}'
+      '.graph-legend .sw{width:11px;height:11px;border-radius:2px;display:inline-block;box-shadow:0 0 6px currentColor}',
+      // graph mode tabs (workflow / relationships)
+      '.graph-tabs{display:flex;gap:8px;margin:0 0 12px 0}',
+      '.graph-tab{cursor:pointer;font:inherit;font-size:11px;letter-spacing:.08em;text-transform:uppercase;',
+        'padding:5px 12px;border-radius:6px;border:1px solid rgba(57,215,255,.22);background:rgba(16,22,42,.6);',
+        'color:#8294c4}',
+      '.graph-tab.is-on{color:#dce6ff;border-color:rgba(57,215,255,.6);box-shadow:0 0 8px rgba(57,215,255,.25)}',
+      // whiteboard sticky-note cards
+      '.wb-wrap{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;padding:6px 2px}',
+      '.wb-card{position:relative;width:248px;max-height:340px;overflow:auto;border-radius:8px;padding:12px 13px;',
+        'background:rgba(16,22,42,.92);border:1px solid rgba(57,215,255,.22);box-shadow:0 6px 18px rgba(0,0,0,.35)}',
+      '.wb-card .wb-tape{position:absolute;top:-7px;left:50%;width:54px;height:14px;transform:translateX(-50%) rotate(-2deg);',
+        'background:rgba(57,215,255,.22);border:1px solid rgba(57,215,255,.35);border-radius:2px}',
+      '.wb-card .wb-head{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#39d7ff;',
+        'font-family:monospace;margin:2px 0 8px 0;border-bottom:1px solid rgba(57,215,255,.18);padding-bottom:6px}',
+      '.wb-card .wb-body{font-size:12px;line-height:1.5;color:#dce6ff}',
+      '.wb-card .wb-body .md-body{font-size:12px}',
+      '.wb-card.k-plan{border-color:rgba(155,92,255,.4)}',
+      '.wb-card.k-plan .wb-head,.wb-card.k-plan .wb-tape{color:#9b5cff;border-color:rgba(155,92,255,.35)}',
+      '.wb-card.k-debate{border-color:rgba(93,255,155,.38)}',
+      '.wb-card.k-debate .wb-head,.wb-card.k-debate .wb-tape{color:#5dff9b;border-color:rgba(93,255,155,.35)}',
+      '.wb-empty{padding:36px 16px;text-align:center;color:#8294c4;font-size:13px;letter-spacing:.04em}'
     ].join('');
     var st = elem('style');
     st.id = STYLE_ID;
@@ -16060,6 +16908,246 @@ window.App = window.App || {};
   }
 
   // ---------------------------------------------------------------------------
+  // RELATIONSHIP GRAPH — agents as nodes (role color); edges weighted by mutual
+  // affinity from agent.relationships. Read-only; circular layout. Reuses the
+  // same SVG plumbing as the workflow graph.
+  // ---------------------------------------------------------------------------
+  function agentsArr() {
+    var s = STATE();
+    return (s && Array.isArray(s.agents)) ? s.agents : [];
+  }
+
+  function agentColor(a) {
+    if (a && a.color) return a.color;
+    var roles = CFG().ROLES || {};
+    if (a && roles[a.role] && roles[a.role].color) return roles[a.role].color;
+    return FALLBACK_STATUS.boss;
+  }
+
+  // Symmetric affinity weight between two agents (average of both directions if
+  // present). Returns 0..1 or null when neither side has recorded a relation.
+  function pairAffinity(a, b) {
+    var ab = (a.relationships && typeof a.relationships[b.id] === 'number')
+      ? a.relationships[b.id] : null;
+    var ba = (b.relationships && typeof b.relationships[a.id] === 'number')
+      ? b.relationships[a.id] : null;
+    if (ab == null && ba == null) return null;
+    if (ab == null) return ba;
+    if (ba == null) return ab;
+    return (ab + ba) / 2;
+  }
+
+  function buildRelationshipGraph(container) {
+    container.innerHTML = '';
+    var agents = agentsArr();
+    var n = agents.length;
+    if (!n) {
+      container.appendChild(elem('div', 'graph-empty',
+        'No agents yet. Hire a team to see how they get along.'));
+      return;
+    }
+
+    var size = Math.max(320, Math.min(560, 90 + n * 42));
+    var cx = size / 2, cy = size / 2;
+    var R = size / 2 - 64;          // ring radius
+    var NR = 22;                    // node circle radius
+
+    var svg = svgEl('svg', {
+      'class': 'graph-canvas',
+      width: size, height: size,
+      viewBox: '0 0 ' + size + ' ' + size
+    });
+
+    // positions on a circle (single node -> center)
+    var pos = {};
+    for (var i = 0; i < n; i++) {
+      var a = agents[i];
+      if (n === 1) { pos[a.id] = { x: cx, y: cy }; continue; }
+      var ang = (-Math.PI / 2) + (i / n) * Math.PI * 2;
+      pos[a.id] = { x: cx + Math.cos(ang) * R, y: cy + Math.sin(ang) * R };
+    }
+
+    // EDGES (under nodes): one per unordered pair that has a recorded affinity.
+    var edgeLayer = svgEl('g', {});
+    svg.appendChild(edgeLayer);
+    for (var u = 0; u < n; u++) {
+      for (var v = u + 1; v < n; v++) {
+        var aw = pairAffinity(agents[u], agents[v]);
+        if (aw == null) continue;
+        var pu = pos[agents[u].id], pv = pos[agents[v].id];
+        if (!pu || !pv) continue;
+        // affinity 0..1 -> width 1..5, opacity .12..0.85
+        var w = 1 + aw * 4;
+        var op = 0.12 + aw * 0.73;
+        edgeLayer.appendChild(svgEl('line', {
+          x1: pu.x, y1: pu.y, x2: pv.x, y2: pv.y,
+          stroke: aw >= 0.5 ? '#5dff9b' : '#8294c4',
+          'stroke-width': w.toFixed(2),
+          'stroke-opacity': op.toFixed(2),
+          'stroke-linecap': 'round'
+        }));
+      }
+    }
+
+    // NODES
+    for (var m = 0; m < n; m++) {
+      var ag2 = agents[m];
+      var p = pos[ag2.id];
+      if (!p) continue;
+      var col = agentColor(ag2);
+      var g = svgEl('g', {});
+      g.appendChild(svgEl('circle', {
+        cx: p.x, cy: p.y, r: NR,
+        fill: 'rgba(16,22,42,.95)', stroke: col, 'stroke-width': '2.2'
+      }));
+      // inner glow dot
+      g.appendChild(svgEl('circle', { cx: p.x, cy: p.y, r: 5, fill: col }));
+      // name below node
+      var nm = svgEl('text', {
+        x: p.x, y: p.y + NR + 14,
+        fill: '#dce6ff', 'font-size': '11', 'font-family': 'sans-serif',
+        'text-anchor': 'middle'
+      });
+      nm.textContent = truncate(ag2.name || roleText(ag2.role), 14);
+      g.appendChild(nm);
+      // role above node
+      var rl = svgEl('text', {
+        x: p.x, y: p.y - NR - 6,
+        fill: col, 'font-size': '8.5', 'font-family': 'monospace',
+        'letter-spacing': '0.08em', 'text-anchor': 'middle'
+      });
+      rl.textContent = String(roleText(ag2.role)).toUpperCase();
+      g.appendChild(rl);
+      svg.appendChild(g);
+    }
+
+    container.appendChild(svg);
+  }
+
+  function relationshipLegend() {
+    var wrap = elem('div', 'graph-legend');
+    var items = [
+      ['Close (>=0.5)', '#5dff9b'],
+      ['Distant (<0.5)', '#8294c4']
+    ];
+    for (var i = 0; i < items.length; i++) {
+      var lg = elem('span', 'lg');
+      var sw = elem('span', 'sw');
+      sw.style.color = items[i][1];
+      sw.style.background = items[i][1];
+      lg.appendChild(sw);
+      lg.appendChild(document.createTextNode(items[i][0]));
+      wrap.appendChild(lg);
+    }
+    var note = elem('span', 'lg');
+    note.appendChild(document.createTextNode('Thicker / brighter = closer'));
+    wrap.appendChild(note);
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHITEBOARD — render the current Boss plan + latest debate/ledger as sticky
+  // cards. Uses App.MD.render for the card bodies when available.
+  // ---------------------------------------------------------------------------
+  function mdRender(text) {
+    try {
+      if (App.MD && typeof App.MD.render === 'function') return App.MD.render(text);
+    } catch (e) {}
+    // fallback: escaped plain text with line breaks
+    var esc = String(text == null ? '' : text)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return '<p>' + esc.replace(/\n/g, '<br>') + '</p>';
+  }
+
+  function stickyCard(kind, heading, mdText) {
+    var card = elem('div', 'wb-card' + (kind ? (' k-' + kind) : ''));
+    card.appendChild(elem('div', 'wb-tape'));
+    card.appendChild(elem('div', 'wb-head', heading));
+    var bodyWrap = elem('div', 'wb-body');
+    var md = elem('div', 'md-body');
+    md.innerHTML = mdRender(mdText);
+    bodyWrap.appendChild(md);
+    card.appendChild(bodyWrap);
+    return card;
+  }
+
+  // Collect whiteboard cards from current state. Sources (best-effort, guarded):
+  //   - root.desc (goal), root._plan.plan[] (planned subtasks), root._plan.final
+  //   - root._debateNotes (team critique)
+  //   - state._ledger (facts / plan / progress)
+  function collectWhiteboardCards() {
+    var cards = [];
+    var s = STATE();
+    var root = latestRoot();
+
+    if (root && (root.desc || root.title)) {
+      cards.push(stickyCard('plan', 'Goal',
+        truncate(root.desc || root.title, 600)));
+    }
+
+    if (root && root._plan && Array.isArray(root._plan.plan) && root._plan.plan.length) {
+      var lines = [];
+      for (var i = 0; i < root._plan.plan.length; i++) {
+        var it = root._plan.plan[i] || {};
+        var who = it.role ? (' _(' + roleText(it.role) + ')_') : '';
+        lines.push((i + 1) + '. **' + truncate(it.title || firstWordsLocal(it.instruction, 6), 60) + '**' + who);
+        if (it.instruction) lines.push('   ' + truncate(it.instruction, 160));
+      }
+      cards.push(stickyCard('plan', 'Boss Plan', lines.join('\n')));
+    }
+
+    // Ledger (Boss's working notes) if present and populated.
+    if (s && s._ledger) {
+      var lg = s._ledger;
+      var lparts = [];
+      if (Array.isArray(lg.plan) && lg.plan.length) {
+        lparts.push('**Next steps**');
+        for (var j = 0; j < lg.plan.length && j < 6; j++) lparts.push('- ' + truncate(lg.plan[j], 120));
+      }
+      if (Array.isArray(lg.facts) && lg.facts.length) {
+        lparts.push('**Facts**');
+        for (var f = 0; f < lg.facts.length && f < 6; f++) lparts.push('- ' + truncate(lg.facts[f], 120));
+      }
+      if (lparts.length) {
+        if (lg.progress) lparts.unshift('_status: ' + lg.progress + '_');
+        cards.push(stickyCard('', 'Ledger', lparts.join('\n')));
+      }
+    }
+
+    if (root && root._debateNotes) {
+      cards.push(stickyCard('debate', 'Team Critique',
+        truncate(String(root._debateNotes), 800)));
+    }
+
+    if (root && root._plan && root._plan.final) {
+      cards.push(stickyCard('debate', 'Synthesis',
+        truncate(String(root._plan.final), 800)));
+    }
+
+    return cards;
+  }
+
+  function firstWordsLocal(str, n) {
+    str = String(str == null ? '' : str).trim();
+    if (!str) return '(task)';
+    var parts = str.split(/\s+/);
+    return parts.slice(0, n).join(' ') + (parts.length > n ? '…' : '');
+  }
+
+  function buildWhiteboard(container) {
+    container.innerHTML = '';
+    var cards = collectWhiteboardCards();
+    if (!cards.length) {
+      container.appendChild(elem('div', 'wb-empty',
+        'The whiteboard is blank. Dispatch a goal so the Boss can sketch a plan.'));
+      return;
+    }
+    var wrap = elem('div', 'wb-wrap');
+    for (var i = 0; i < cards.length; i++) wrap.appendChild(cards[i]);
+    container.appendChild(wrap);
+  }
+
+  // ---------------------------------------------------------------------------
   // MODAL: mount into #modal-root reusing the shared modal/panel classes.
   // ---------------------------------------------------------------------------
   var MODAL_ID = 'modal-graph';
@@ -16090,8 +17178,54 @@ window.App = window.App || {};
     return wrap;
   }
 
-  function open() {
+  // Modes: 'workflow' (default, original DAG), 'relationships', 'whiteboard'.
+  var MODE_META = {
+    workflow:      { title: '◇ WORKFLOW FLOW',  tab: 'Workflow' },
+    relationships: { title: '◇ RELATIONSHIPS',  tab: 'Relationships' },
+    whiteboard:    { title: '◇ WHITEBOARD',     tab: 'Whiteboard' }
+  };
+
+  // Fill the modal body for a given mode. Pure render into `body` (cleared first).
+  function renderBody(body, mode) {
+    body.innerHTML = '';
+    if (mode === 'relationships') {
+      var rwrap = elem('div', 'graph-wrap');
+      buildRelationshipGraph(rwrap);
+      body.appendChild(rwrap);
+      body.appendChild(relationshipLegend());
+      return;
+    }
+    if (mode === 'whiteboard') {
+      buildWhiteboard(body);
+      return;
+    }
+    // default: workflow DAG (original behavior, unchanged)
+    var theRoot = latestRoot();
+    if (!theRoot) {
+      body.appendChild(elem('div', 'graph-empty',
+        'No workflow yet. Dispatch a goal to the Boss to see the task graph.'));
+      return;
+    }
+    body.appendChild(elem('div', 'result-goal',
+      'GOAL: ' + truncate(theRoot.desc || theRoot.title, 160)));
+    var wrap = elem('div', 'graph-wrap');
+    var layout = computeLayout(theRoot);
+    if (!layout.kids.length) {
+      wrap.appendChild(buildSoloRoot(theRoot));
+      wrap.appendChild(elem('div', 'graph-empty',
+        'Boss is planning… subtasks will appear here.'));
+    } else {
+      buildGraph(wrap, layout);
+    }
+    body.appendChild(wrap);
+    body.appendChild(legend());
+  }
+
+  // open(mode) — opens (or re-renders) the graph modal in the given mode.
+  // Default mode 'workflow' preserves the original App.Graph.open() behavior.
+  function open(mode) {
     try {
+      if (!MODE_META[mode]) mode = 'workflow';
       ensureStyles();
       var root = document.getElementById('modal-root');
       if (!root) return;
@@ -16108,7 +17242,7 @@ window.App = window.App || {};
       card.appendChild(accent);
 
       var head = elem('header', 'modal-head');
-      var title = elem('h2', 'modal-title', '◇ WORKFLOW FLOW');
+      var title = elem('h2', 'modal-title', MODE_META[mode].title);
       var x = elem('button', 'panel-x', '✕');
       x.type = 'button';
       on(x, 'click', closeModal);
@@ -16117,36 +17251,40 @@ window.App = window.App || {};
 
       var body = elem('div', 'modal-body');
 
-      var theRoot = latestRoot();
-      if (!theRoot) {
-        var empty = elem('div', 'graph-empty',
-          'No workflow yet. Dispatch a goal to the Boss to see the task graph.');
-        body.appendChild(empty);
-      } else {
-        var goal = elem('div', 'result-goal',
-          'GOAL: ' + truncate(theRoot.desc || theRoot.title, 160));
-        body.appendChild(goal);
+      // content wrapper — renderBody clears ONLY this, so the tabs row survives.
+      var content = elem('div');
 
-        var wrap = elem('div', 'graph-wrap');
-        var layout = computeLayout(theRoot);
-        if (!layout.kids.length) {
-          // root exists but no children planned yet: draw root alone.
-          var solo = elem('div', 'graph-empty',
-            'Boss is planning… subtasks will appear here.');
-          // still show the single root node above the message
-          wrap.appendChild(buildSoloRoot(theRoot));
-          wrap.appendChild(solo);
-        } else {
-          buildGraph(wrap, layout);
-        }
-        body.appendChild(wrap);
-        body.appendChild(legend());
+      // mode tabs (switch in place, no reopen flicker)
+      var tabs = elem('div', 'graph-tabs');
+      function makeTab(m) {
+        var tb = elem('button', 'graph-tab' + (m === mode ? ' is-on' : ''),
+          MODE_META[m].tab);
+        tb.type = 'button';
+        on(tb, 'click', function () {
+          if (m === mode) return;
+          mode = m;
+          title.textContent = MODE_META[m].title;
+          var btns = tabs.querySelectorAll('.graph-tab');
+          for (var bi = 0; bi < btns.length; bi++) {
+            btns[bi].className = 'graph-tab';
+          }
+          tb.className = 'graph-tab is-on';
+          renderBody(content, m);
+        });
+        return tb;
       }
+      tabs.appendChild(makeTab('workflow'));
+      tabs.appendChild(makeTab('relationships'));
+      tabs.appendChild(makeTab('whiteboard'));
+      body.appendChild(tabs);
+
+      body.appendChild(content);
+      renderBody(content, mode);
 
       var foot = elem('footer', 'modal-foot');
       var refresh = elem('button', 'btn', 'Refresh');
       refresh.type = 'button';
-      on(refresh, 'click', function () { open(); });
+      on(refresh, 'click', function () { renderBody(content, mode); });
       var close = elem('button', 'btn btn-primary', 'Close');
       close.type = 'button';
       on(close, 'click', closeModal);
@@ -16162,6 +17300,32 @@ window.App = window.App || {};
     } catch (e) {
       // never throw out of a UI action
       try { if (App.UI && App.UI.toast) App.UI.toast('Flow view unavailable'); } catch (e2) {}
+    }
+  }
+
+  // Public entry points for the alternate views.
+  function openRelationships() { open('relationships'); }
+  function openWhiteboard()   { open('whiteboard'); }
+
+  // renderWhiteboard(root?) — render the sticky-note whiteboard into an arbitrary
+  // host element (e.g. a UI-provided overlay). When `root` is omitted, opens the
+  // graph modal in whiteboard mode instead. Never throws.
+  // (The legacy first-arg `ctx` from the contract is accepted but ignored; this
+  //  whiteboard is DOM/SVG-based, not canvas-based.)
+  function renderWhiteboard(rootOrCtx, maybeRoot) {
+    try {
+      ensureStyles();
+      var host = maybeRoot || rootOrCtx;
+      // If we got a real DOM element to render into, use it; otherwise open modal.
+      if (host && host.nodeType === 1) {
+        buildWhiteboard(host);
+        return host;
+      }
+      openWhiteboard();
+      return null;
+    } catch (e) {
+      try { if (App.UI && App.UI.toast) App.UI.toast('Whiteboard unavailable'); } catch (e2) {}
+      return null;
     }
   }
 
@@ -16225,6 +17389,9 @@ window.App = window.App || {};
   // public API
   App.Graph = {
     open: open,
+    openRelationships: openRelationships,
+    openWhiteboard: openWhiteboard,
+    renderWhiteboard: renderWhiteboard,
     _installButton: installButton,
     _latestRoot: latestRoot,
     _computeLayout: computeLayout
@@ -16809,6 +17976,306 @@ window.App = window.App || {};
 })();
 </script>
 <script>
+window.App = window.App || {};
+/* ===========================================================================
+   audio.js -> App.Audio  [Wave 4a: alive office — procedural sound]
+   Self-contained Web Audio. ZERO assets. NEVER throws.
+   - App.Audio.sfx(name): short procedural blip via a lazily-created
+     AudioContext (Oscillator + Gain envelope). Distinct tones for:
+       'dispatch','done','qa_fail','coffee','approval','levelup','error','tool'
+     Gated by App.state.settings.sound !== false. AudioContext is created/
+     resumed only inside this call (a user-gesture-or-later moment); if context
+     creation fails, it no-ops.
+   - App.Audio.startBgm()/stopBgm()/bgmOn(): a gentle procedural ambient pad
+     (a couple of detuned oscillators through a slow LFO-modulated filter) whose
+     mood shifts subtly with the hour. Gated by settings.bgm (default OFF);
+     startBgm only takes effect after a gesture (i.e. once a context exists).
+   Load before ui. Exposes the API for ui (toggles) and orchestrator (sfx hooks).
+   =========================================================================== */
+(function () {
+  'use strict';
+
+  var Audio = {};
+
+  // --- shared lazily-created AudioContext -----------------------------------
+  var ctx = null;        // AudioContext | null
+  var master = null;     // master GainNode for sfx
+  var ctxBroken = false; // set true if creation throws -> permanent no-op
+
+  // --- bgm state ------------------------------------------------------------
+  var bgm = null;        // { nodes..., running:true } | null
+  var bgmHourTimer = 0;  // setInterval id for slow mood drift
+
+  function CFG() { return (App && App.config) || {}; }
+
+  function soundOn() {
+    try {
+      var s = App.state && App.state.settings;
+      // default ON: only off when explicitly false
+      return !s || s.sound !== false;
+    } catch (e) { return false; }
+  }
+
+  function bgmEnabled() {
+    try {
+      var s = App.state && App.state.settings;
+      // default OFF: only on when explicitly true
+      return !!(s && s.bgm === true);
+    } catch (e) { return false; }
+  }
+
+  // Lazily create (or resume) the AudioContext. Returns ctx | null.
+  // Must be called from a user-gesture-or-later moment for autoplay policies.
+  function ensureCtx() {
+    if (ctxBroken) return null;
+    try {
+      if (!ctx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) { ctxBroken = true; return null; }
+        ctx = new AC();
+        master = ctx.createGain();
+        master.gain.value = 0.0001;
+        master.connect(ctx.destination);
+        // ramp master up gently to a modest level (avoid harsh clicks)
+        try {
+          var now0 = ctx.currentTime;
+          master.gain.setValueAtTime(0.0001, now0);
+          master.gain.exponentialRampToValueAtTime(0.5, now0 + 0.05);
+        } catch (e2) { try { master.gain.value = 0.5; } catch (e3) {} }
+      }
+      if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+        // resume() returns a promise on some browsers; ignore result/errors
+        try { var p = ctx.resume(); if (p && p.catch) p.catch(function () {}); } catch (e4) {}
+      }
+      return ctx;
+    } catch (e) {
+      ctxBroken = true;
+      ctx = null;
+      master = null;
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // SFX: small library of {type, freq, freq2?, dur, gain, slide?} recipes.
+  // Each plays one (or two) short oscillator notes with a quick AD envelope.
+  // ---------------------------------------------------------------------------
+  var SFX = {
+    // dispatch a task: rising two-note chirp
+    dispatch:  { type: 'triangle', freq: 520,  freq2: 720,  dur: 0.12, gain: 0.35 },
+    // task done: bright single ping
+    done:      { type: 'sine',     freq: 880,               dur: 0.16, gain: 0.40 },
+    // QA fail: descending buzzy minor drop
+    qa_fail:   { type: 'sawtooth', freq: 360,  freq2: 240,  dur: 0.22, gain: 0.30 },
+    // coffee / break: soft mid blip
+    coffee:    { type: 'sine',     freq: 440,  freq2: 587,  dur: 0.18, gain: 0.30 },
+    // needs-approval: gentle attention double-tone (uses second note as chord)
+    approval:  { type: 'triangle', freq: 659,  freq2: 988,  dur: 0.20, gain: 0.34, chord: true },
+    // level up: cheerful upward arpeggio (special-cased below)
+    levelup:   { type: 'square',   freq: 523,               dur: 0.46, gain: 0.34, arp: [523, 659, 784, 1047] },
+    // error: low harsh blip
+    error:     { type: 'sawtooth', freq: 196,  freq2: 130,  dur: 0.26, gain: 0.30 },
+    // tool call: tiny short tick
+    tool:      { type: 'square',   freq: 1320,              dur: 0.05, gain: 0.18 }
+  };
+
+  // Play a single oscillator note with AD envelope into master.
+  function playNote(type, freq, startAt, dur, peak, slideTo) {
+    try {
+      var osc = ctx.createOscillator();
+      var g = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.setValueAtTime(Math.max(20, freq || 440), startAt);
+      if (slideTo && slideTo > 0) {
+        try { osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), startAt + dur); } catch (e) {}
+      }
+      var pk = Math.max(0.0001, peak || 0.3);
+      g.gain.setValueAtTime(0.0001, startAt);
+      g.gain.exponentialRampToValueAtTime(pk, startAt + Math.min(0.02, dur * 0.3));
+      g.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+      osc.connect(g);
+      g.connect(master);
+      osc.start(startAt);
+      osc.stop(startAt + dur + 0.02);
+      // free nodes after stop
+      osc.onended = function () {
+        try { osc.disconnect(); } catch (e) {}
+        try { g.disconnect(); } catch (e) {}
+      };
+    } catch (e) { /* never throw */ }
+  }
+
+  Audio.sfx = function (name) {
+    try {
+      if (!soundOn()) return;
+      var rec = SFX[name];
+      if (!rec) return;
+      if (!ensureCtx()) return;
+      var t0 = ctx.currentTime + 0.001;
+
+      // level-up arpeggio: quick ascending notes
+      if (rec.arp && rec.arp.length) {
+        var step = rec.dur / rec.arp.length;
+        for (var i = 0; i < rec.arp.length; i++) {
+          playNote(rec.type, rec.arp[i], t0 + i * step, step * 1.6, rec.gain, 0);
+        }
+        return;
+      }
+
+      // chord: both tones together
+      if (rec.chord && rec.freq2) {
+        playNote(rec.type, rec.freq, t0, rec.dur, rec.gain, 0);
+        playNote(rec.type, rec.freq2, t0, rec.dur, rec.gain * 0.7, 0);
+        return;
+      }
+
+      // single note, optionally sliding toward freq2
+      playNote(rec.type, rec.freq, t0, rec.dur, rec.gain, rec.freq2 || 0);
+    } catch (e) { /* never throw */ }
+  };
+
+  // ---------------------------------------------------------------------------
+  // BGM: gentle ambient pad. A couple of detuned oscillators -> a lowpass
+  // filter whose cutoff is slowly modulated by an LFO. The root note + filter
+  // brightness drift subtly with the hour of day for a day/night mood.
+  // ---------------------------------------------------------------------------
+
+  // Map current hour -> { root(Hz), bright(0..1) }. Calmer/darker at night.
+  function hourMood() {
+    var h;
+    try { h = new Date().getHours(); } catch (e) { h = 12; }
+    // root drifts between a low A2 (110) at night and an A2+ (130ish) by day
+    var dayness = 1 - Math.abs(13 - h) / 13; // 0 at midnight-ish, ~1 mid-afternoon
+    if (dayness < 0) dayness = 0;
+    if (dayness > 1) dayness = 1;
+    var root = 110 + dayness * 16;          // 110..126 Hz
+    var bright = 0.25 + dayness * 0.45;      // duller at night, brighter by day
+    return { root: root, bright: bright, dayness: dayness };
+  }
+
+  function buildBgm() {
+    if (!ensureCtx()) return null;
+    try {
+      var mood = hourMood();
+      var out = ctx.createGain();
+      out.gain.value = 0.0001;
+      out.connect(ctx.destination); // separate bus from sfx master
+
+      // lowpass filter for warmth
+      var filt = ctx.createBiquadFilter();
+      filt.type = 'lowpass';
+      filt.frequency.value = 300 + mood.bright * 900; // 300..1200ish
+      filt.Q.value = 0.7;
+      filt.connect(out);
+
+      // two slightly detuned oscillators (root + fifth) = soft pad
+      var o1 = ctx.createOscillator();
+      o1.type = 'sine';
+      o1.frequency.value = mood.root;
+      o1.detune.value = -6;
+
+      var o2 = ctx.createOscillator();
+      o2.type = 'triangle';
+      o2.frequency.value = mood.root * 1.5; // a fifth above
+      o2.detune.value = +6;
+
+      var oGain = ctx.createGain();
+      oGain.gain.value = 0.5;
+      o1.connect(oGain);
+      o2.connect(oGain);
+      oGain.connect(filt);
+
+      // slow LFO -> filter cutoff for gentle movement
+      var lfo = ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = 0.06; // very slow
+      var lfoGain = ctx.createGain();
+      lfoGain.gain.value = 150 + mood.bright * 200;
+      lfo.connect(lfoGain);
+      lfoGain.connect(filt.frequency);
+
+      // fade the pad in gently
+      var now = ctx.currentTime;
+      out.gain.setValueAtTime(0.0001, now);
+      out.gain.exponentialRampToValueAtTime(0.12, now + 2.0);
+
+      o1.start();
+      o2.start();
+      lfo.start();
+
+      return { out: out, filt: filt, o1: o1, o2: o2, oGain: oGain, lfo: lfo, lfoGain: lfoGain, running: true };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Re-tune the running pad toward the current hour's mood (smooth ramps).
+  function driftBgmMood() {
+    try {
+      if (!bgm || !bgm.running || !ctx) return;
+      var mood = hourMood();
+      var now = ctx.currentTime;
+      try { bgm.o1.frequency.linearRampToValueAtTime(mood.root, now + 6); } catch (e) {}
+      try { bgm.o2.frequency.linearRampToValueAtTime(mood.root * 1.5, now + 6); } catch (e) {}
+      try { bgm.lfoGain.gain.linearRampToValueAtTime(150 + mood.bright * 200, now + 6); } catch (e) {}
+    } catch (e) { /* never throw */ }
+  }
+
+  Audio.startBgm = function () {
+    try {
+      if (!bgmEnabled()) return;       // gated by settings.bgm (default off)
+      if (bgm && bgm.running) return;  // already playing
+      if (!ensureCtx()) return;        // no context yet (needs a gesture) -> no-op
+      bgm = buildBgm();
+      if (bgm) {
+        // slow mood drift every ~2 minutes
+        try {
+          if (bgmHourTimer) clearInterval(bgmHourTimer);
+          bgmHourTimer = setInterval(driftBgmMood, 120000);
+        } catch (e) {}
+      }
+    } catch (e) { /* never throw */ }
+  };
+
+  Audio.stopBgm = function () {
+    try {
+      if (bgmHourTimer) { try { clearInterval(bgmHourTimer); } catch (e) {} bgmHourTimer = 0; }
+      if (!bgm) return;
+      var b = bgm;
+      bgm = null;
+      if (ctx) {
+        try {
+          var now = ctx.currentTime;
+          b.out.gain.cancelScheduledValues(now);
+          b.out.gain.setValueAtTime(Math.max(0.0001, b.out.gain.value || 0.0001), now);
+          b.out.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+        } catch (e) {}
+      }
+      // stop oscillators after the fade and disconnect
+      var stopAt = (ctx ? ctx.currentTime : 0) + 1.4;
+      function killOsc(o) {
+        try { o.stop(stopAt); } catch (e) {}
+        try { o.onended = function () { try { o.disconnect(); } catch (e2) {} }; } catch (e3) {}
+      }
+      killOsc(b.o1); killOsc(b.o2); killOsc(b.lfo);
+      setTimeout(function () {
+        try { b.oGain.disconnect(); } catch (e) {}
+        try { b.lfoGain.disconnect(); } catch (e) {}
+        try { b.filt.disconnect(); } catch (e) {}
+        try { b.out.disconnect(); } catch (e) {}
+      }, 1600);
+      b.running = false;
+    } catch (e) { /* never throw */ }
+  };
+
+  Audio.bgmOn = function () {
+    try { return !!(bgm && bgm.running); } catch (e) { return false; }
+  };
+
+  App.Audio = Audio;
+})();
+</script>
+<script>
 // =============================================================================
 // ui.js  →  App.UI
 // PIXEL AI COMPANY ("NEON//WORKS") — DOM overlays, modals, input, camera controls.
@@ -16858,6 +18325,47 @@ window.App = window.App || {};
     return v < lo ? lo : (v > hi ? hi : v);
   }
 
+  // ---------------------------------------------------------------------------
+  // WAVE 4a — gamification helpers (level / XP bar / credits).
+  // Mirror config.levelForXp so badges agree everywhere; never throw.
+  // ---------------------------------------------------------------------------
+  function levelForXp(xp) {
+    var c = CFG();
+    if (c && typeof c.levelForXp === 'function') { try { return c.levelForXp(xp); } catch (e) {} }
+    var base = (c && c.LEVEL_XP_BASE > 0) ? c.LEVEL_XP_BASE : 100;
+    var max = (c && typeof c.LEVEL_MAX === 'number') ? c.LEVEL_MAX : 99;
+    var n = Number(xp); if (!isFinite(n) || n < 0) n = 0;
+    var lvl = 1 + Math.floor(Math.sqrt(n / base));
+    return clamp(lvl, 1, max);
+  }
+  // XP threshold (cumulative) required to first reach a given level.
+  function xpForLevel(level) {
+    var c = CFG();
+    var base = (c && c.LEVEL_XP_BASE > 0) ? c.LEVEL_XP_BASE : 100;
+    var n = Math.max(1, Number(level) || 1) - 1;
+    return base * n * n;
+  }
+  // Agent's level (honoring a stored .level when present, else derived).
+  function agentLevel(a) {
+    if (!a) return 1;
+    if (typeof a.level === 'number' && a.level >= 1) return a.level;
+    return levelForXp(a.xp || 0);
+  }
+  // Progress 0..1 through the CURRENT level toward the next.
+  function levelProgress(a) {
+    var xp = Number(a && a.xp) || 0;
+    var lvl = agentLevel(a);
+    var cur = xpForLevel(lvl);
+    var next = xpForLevel(lvl + 1);
+    if (next <= cur) return 1;
+    return clamp((xp - cur) / (next - cur), 0, 1);
+  }
+  function creditsNow() {
+    var s = STATE();
+    var c = Number(s && s.credits);
+    return isFinite(c) ? c : 0;
+  }
+
   // -- DOM helpers (defensive) --------------------------------------------------
   function $(id) { return (typeof document !== 'undefined') ? document.getElementById(id) : null; }
   function on(node, ev, fn) { if (node && node.addEventListener) node.addEventListener(ev, fn); }
@@ -16904,6 +18412,11 @@ window.App = window.App || {};
       on($('btn-sessions'), 'click', function () { UI.openSessions(); });
       on($('btn-cost-meter'), 'click', function () { UI.openCostBreakdown(); });
       on($('btn-metrics'), 'click', function () { UI.openMetrics(); });
+      // WAVE 4a — graph / whiteboard / office shop / credits.
+      on($('btn-graph'), 'click', function () { openGraphView(); });
+      on($('btn-whiteboard'), 'click', function () { openWhiteboardView(); });
+      on($('btn-shop'), 'click', function () { UI.openShop(); });
+      on($('btn-credits'), 'click', function () { UI.openShop(); });
       on($('btn-layout'), 'click', function () { UI.toggleLayoutEdit(); });
       on($('btn-zoom-in'), 'click', function () { UI.zoomIn(); });
       on($('btn-zoom-out'), 'click', function () { UI.zoomOut(); });
@@ -17190,7 +18703,14 @@ window.App = window.App || {};
     }
     var layoutBtn = $('btn-layout');
     if (layoutBtn && s) layoutBtn.setAttribute('aria-pressed', s.layoutEdit ? 'true' : 'false');
+    // WAVE 4a — shared credits readout in the HUD.
+    var credEl = $('credits-amount');
+    if (credEl) credEl.textContent = String(Math.round(creditsNow()));
   }
+
+  // WAVE 4a — public hook the orchestrator calls after granting per-task credits,
+  // so the HUD counter ticks up live (not only on the next full refreshHud()).
+  UI.refreshCredits = function () { try { refreshHud(); } catch (e) {} };
 
   UI.refreshAgentList = function () {
     var s = STATE();
@@ -17211,14 +18731,29 @@ window.App = window.App || {};
         dot.style.background = sc[a.state] || (CFG().palette ? CFG().palette.uiTextDim : '#8294c4');
 
         var nameWrap = el('div', 'ar-main');
+        var nameLine = el('div', 'ar-name-line');
         var nm = el('span', 'ar-name', a.name);
         nm.style.color = a.color || undefined;
+        // Level badge rides at the end of the name line (WAVE 4a).
+        var lvl = agentLevel(a);
+        var lvlBadge = el('span', 'ar-lvl', 'Lv ' + lvl);
+        lvlBadge.style.setProperty('--accent', a.color || '#9b5cff');
+        lvlBadge.title = 'Level ' + lvl + ' · ' + (Math.round(Number(a.xp) || 0)) + ' XP';
+        nameLine.appendChild(nm);
+        nameLine.appendChild(lvlBadge);
         var role = el('span', 'ar-role',
           ((ROLES()[a.role] && ROLES()[a.role].label) || a.role) + (a.temp ? ' · temp' : ''));
         var stateLbl = el('span', 'ar-state st-' + (a.state || 'idle'), a.state);
-        nameWrap.appendChild(nm);
+        nameWrap.appendChild(nameLine);
         nameWrap.appendChild(role);
         nameWrap.appendChild(stateLbl);
+        // XP bar (subtle) under the role/state line.
+        var xpBar = el('div', 'ar-xp');
+        var xpFill = el('div', 'ar-xp-fill');
+        xpFill.style.width = Math.round(levelProgress(a) * 100) + '%';
+        xpFill.style.background = a.color || 'var(--cyan)';
+        xpBar.appendChild(xpFill);
+        nameWrap.appendChild(xpBar);
 
         row.appendChild(dot);
         row.appendChild(nameWrap);
@@ -17768,10 +19303,52 @@ window.App = window.App || {};
     // accent
     var accent = $('panel-agent');
     if (accent) accent.style.setProperty('--accent', a.color || '#9b5cff');
+    // Level + XP bar in the panel head (WAVE 4a). Injected once, refreshed here.
+    refreshPanelLevel(a);
     // keep persona/memory + mood/terminal in sync while the panel is open
     refreshPersonaPanel(a.id);
     if ($('panel-agent-mood-body')) refreshMoodPanel(a.id);
     if ($('panel-agent-terminal-body')) refreshTerminalPanel(a.id);
+  }
+
+  // Level + XP bar shown in the agent panel head (under the meta line).
+  // Injected once after #panel-agent-meta; refreshed for the open agent.
+  function refreshPanelLevel(a) {
+    if (!a) return;
+    var meta = $('panel-agent-meta');
+    if (!meta || !meta.parentNode) return;
+    var box = $('panel-agent-level');
+    if (!box) {
+      box = el('div', 'panel-level');
+      box.id = 'panel-agent-level';
+      var head = el('div', 'pl-head');
+      var lvlTag = el('span', 'pl-lvl');
+      lvlTag.id = 'panel-agent-level-tag';
+      var xpTxt = el('span', 'pl-xp');
+      xpTxt.id = 'panel-agent-level-xp';
+      head.appendChild(lvlTag);
+      head.appendChild(xpTxt);
+      var bar = el('div', 'pl-bar');
+      var fill = el('div', 'pl-fill');
+      fill.id = 'panel-agent-level-fill';
+      bar.appendChild(fill);
+      box.appendChild(head);
+      box.appendChild(bar);
+      if (meta.nextSibling) meta.parentNode.insertBefore(box, meta.nextSibling);
+      else meta.parentNode.appendChild(box);
+    }
+    var lvl = agentLevel(a);
+    var xp = Math.round(Number(a.xp) || 0);
+    var next = xpForLevel(lvl + 1);
+    var tag = $('panel-agent-level-tag'); if (tag) tag.textContent = T('panel.level', 'LV ') + lvl;
+    var xpEl = $('panel-agent-level-xp');
+    if (xpEl) xpEl.textContent = xp + ' / ' + next + ' XP';
+    var fillEl = $('panel-agent-level-fill');
+    if (fillEl) {
+      fillEl.style.width = Math.round(levelProgress(a) * 100) + '%';
+      fillEl.style.background = a.color || 'var(--cyan)';
+      fillEl.style.boxShadow = '0 0 8px ' + (a.color || 'var(--cyan)');
+    }
   }
 
   // Read-only persona + recent memories for the open agent panel.
@@ -18106,8 +19683,98 @@ window.App = window.App || {};
     var cpx = $('set-cors-proxy'); if (cpx) cpx.value = settings.corsProxy || '';
     var hal = $('set-http-allowlist'); if (hal) hal.value = settings.httpAllowlist || '';
     var atg = $('set-tool-gh-push'); if (atg) atg.checked = (settings.allowToolGithubPush === true);
+    // (WAVE 4a) Inject + load the AUDIO toggles: sound effects (default ON) and
+    // ambient music (default OFF). Music toggle drives App.Audio.startBgm/stopBgm.
+    ensureAudioFields();
+    var sfxSw = $('set-sound'); if (sfxSw) sfxSw.checked = (settings.sound !== false);
+    var bgmSw = $('set-bgm'); if (bgmSw) bgmSw.checked = (settings.bgm === true);
     show($('modal-settings'));
   };
+
+  // Inject (once) the AUDIO settings group at the end of the Settings body. Adds:
+  //   - 'Sound effects' switch -> settings.sound (default ON)
+  //   - 'Ambient music' switch -> settings.bgm   (default OFF; toggles Audio bgm live)
+  // Reuses .field / .field-inline / .switch styling. Idempotent; degrades safely.
+  function ensureAudioFields() {
+    if ($('set-sound')) return; // already injected
+    var anchor = $('set-tool-gh-push') || $('set-default-model') || $('set-apikey');
+    if (!anchor || typeof document === 'undefined') return;
+    var anchorField = anchor;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    if (!anchorField || !anchorField.parentNode) return;
+
+    var group = el('div', 'field');
+    var groupLabel = el('span', 'field-label');
+    groupLabel.setAttribute('data-i18n', 'set.audio');
+    groupLabel.textContent = T('set.audio', 'AUDIO');
+    group.appendChild(groupLabel);
+
+    // --- Sound effects switch (default ON) ---
+    var sfxRow = el('div', 'field field-inline');
+    var sfxLbl = el('span', 'field-label');
+    sfxLbl.setAttribute('data-i18n', 'set.sound');
+    sfxLbl.textContent = T('set.sound', 'SOUND EFFECTS');
+    var sfxSw = makeSwitch('set-sound', true,
+      'Procedural blips on dispatch, done, level-up, etc.');
+    var sfxHint = el('span', 'field-hint inline-hint',
+      T('set.sound.hint', 'Short procedural blips on dispatch, task done, level-up, errors.'));
+    sfxRow.appendChild(sfxLbl);
+    sfxRow.appendChild(sfxSw);
+    sfxRow.appendChild(sfxHint);
+    group.appendChild(sfxRow);
+
+    // --- Ambient music switch (default OFF). Live-toggles the BGM pad. ---
+    var bgmRow = el('div', 'field field-inline');
+    var bgmLbl = el('span', 'field-label');
+    bgmLbl.setAttribute('data-i18n', 'set.bgm');
+    bgmLbl.textContent = T('set.bgm', 'AMBIENT MUSIC');
+    var bgmSw = makeSwitch('set-bgm', false,
+      'A gentle procedural ambient pad. Off by default.');
+    // Live toggle: starting BGM here happens inside this user gesture (click).
+    on(bgmSw, 'click', function () {
+      try {
+        var on_ = (bgmSw.getAttribute('aria-checked') === 'true');
+        // Set live state FIRST so App.Audio.bgmEnabled() agrees within this same
+        // user gesture — otherwise startBgm() reads the stale (old) settings.bgm
+        // and no-ops until Save. (Save still rewrites settings.bgm at #1807.)
+        var s_ = STATE();
+        if (s_ && s_.settings) s_.settings.bgm = on_;
+        if (App.Audio) {
+          if (on_ && App.Audio.startBgm) App.Audio.startBgm();
+          else if (!on_ && App.Audio.stopBgm) App.Audio.stopBgm();
+        }
+      } catch (e) {}
+    });
+    var bgmHint = el('span', 'field-hint inline-hint',
+      T('set.bgm.hint', 'A gentle procedural ambient pad that shifts with the hour.'));
+    bgmRow.appendChild(bgmLbl);
+    bgmRow.appendChild(bgmSw);
+    bgmRow.appendChild(bgmHint);
+    group.appendChild(bgmRow);
+
+    anchorField.parentNode.appendChild(group);
+  }
+
+  // Build a neon switch button with a .checked accessor mapped to aria-checked,
+  // matching the existing injected switches (tools/push). on==initial state.
+  function makeSwitch(id, on_, title) {
+    var sw = el('button', 'switch' + (on_ ? ' on' : ''));
+    sw.id = id;
+    sw.type = 'button';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('aria-checked', on_ ? 'true' : 'false');
+    if (title) sw.title = title;
+    sw.appendChild(el('span', 'switch-knob'));
+    Object.defineProperty(sw, 'checked', {
+      configurable: true,
+      get: function () { return this.getAttribute('aria-checked') === 'true'; },
+      set: function (v) { setSwitch(this, !!v); }
+    });
+    on(sw, 'click', function () { setSwitch(sw, sw.getAttribute('aria-checked') !== 'true'); });
+    return sw;
+  }
 
   // Inject (once) the AGENT TOOLS settings group after the GitHub field, reusing
   // the existing .field / .field-row / .switch styling. Adds:
@@ -18419,6 +20086,21 @@ window.App = window.App || {};
     var cpx = $('set-cors-proxy'); if (cpx) settings.corsProxy = cpx.value.trim();
     var hal = $('set-http-allowlist'); if (hal) settings.httpAllowlist = hal.value.trim();
     var atg = $('set-tool-gh-push'); if (atg) settings.allowToolGithubPush = (atg.getAttribute('aria-checked') === 'true');
+    // (WAVE 4a) Audio toggles. Sound default ON, BGM default OFF. Reconcile the
+    // live BGM pad with the saved value (start/stop happens within this gesture).
+    var sfxSw = $('set-sound'); if (sfxSw) settings.sound = (sfxSw.getAttribute('aria-checked') === 'true');
+    var bgmSw = $('set-bgm');
+    if (bgmSw) {
+      settings.bgm = (bgmSw.getAttribute('aria-checked') === 'true');
+      try {
+        if (App.Audio) {
+          var bgmOn = false;
+          try { bgmOn = App.Audio.bgmOn ? !!App.Audio.bgmOn() : false; } catch (e) {}
+          if (settings.bgm && !bgmOn && App.Audio.startBgm) App.Audio.startBgm();
+          else if (!settings.bgm && bgmOn && App.Audio.stopBgm) App.Audio.stopBgm();
+        }
+      } catch (e) {}
+    }
     if (App.Store && App.Store.save) App.Store.save();
     hide($('modal-settings'));
     requestNotifyPermission(); // polite, one-time, on this user gesture
@@ -18899,6 +20581,207 @@ window.App = window.App || {};
       setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 400);
     }, 3200);
   };
+
+  // ===========================================================================
+  // WAVE 4a — GRAPH / WHITEBOARD launchers (App.Graph owns the rendering).
+  // Prefer the relationship/whiteboard entry points; fall back gracefully to the
+  // existing workflow graph or a toast if the module/method is unavailable.
+  // ===========================================================================
+  function openGraphView() {
+    var G = App.Graph;
+    if (!G) { UI.toast(T('graph.unavailable', 'Graph view unavailable')); return; }
+    try {
+      if (typeof G.openRelationships === 'function') { G.openRelationships(); return; }
+      if (typeof G.open === 'function') { G.open(); return; }
+    } catch (e) {}
+    UI.toast(T('graph.unavailable', 'Graph view unavailable'));
+  }
+
+  function openWhiteboardView() {
+    var G = App.Graph;
+    if (!G) { UI.toast(T('whiteboard.unavailable', 'Whiteboard unavailable')); return; }
+    try {
+      if (typeof G.openWhiteboard === 'function') { G.openWhiteboard(); return; }
+      if (typeof G.renderWhiteboard === 'function') {
+        // No dedicated opener — mount a lightweight modal canvas and let Graph paint.
+        mountWhiteboardModal(G);
+        return;
+      }
+      if (typeof G.open === 'function') { G.open(); return; }
+    } catch (e) {}
+    UI.toast(T('whiteboard.unavailable', 'Whiteboard unavailable'));
+  }
+
+  // Fallback host modal for App.Graph.renderWhiteboard(ctx?, root?) when the
+  // module exposes only the renderer (no opener). Reuses standard modal chrome.
+  function mountWhiteboardModal(G) {
+    var root = $('modal-root');
+    if (!root) { UI.toast(T('whiteboard.unavailable', 'Whiteboard unavailable')); return; }
+    var prev = $('modal-whiteboard');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-whiteboard';
+    var scrim = el('div', 'modal-scrim');
+    var closeIt = function () { if (modal.parentNode) modal.parentNode.removeChild(modal); };
+    on(scrim, 'click', closeIt);
+
+    var card = el('div', 'modal-card modal-whiteboard-card');
+    card.appendChild(el('div', 'panel-accent'));
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', T('whiteboard.title', '▥ WHITEBOARD')));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', closeIt);
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    var host = el('div', 'whiteboard-host');
+    host.id = 'whiteboard-host';
+    body.appendChild(host);
+
+    card.appendChild(head); card.appendChild(body);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+
+    try { G.renderWhiteboard(null, host); }
+    catch (e) {
+      try { G.renderWhiteboard(host); } catch (e2) {
+        host.appendChild(el('div', 'pe-empty', T('whiteboard.empty', 'Nothing on the board yet.')));
+      }
+    }
+  }
+
+  // ===========================================================================
+  // WAVE 4a — OFFICE SHOP (spend App.state.credits on config.OFFICE_UPGRADES)
+  // Buying deducts credits, records the id in App.state.upgrades, installs via
+  // App.World.applyUpgrade(id) (idempotent), persists, and refreshes. Never throws.
+  // ===========================================================================
+  UI.openShop = function () {
+    var root = $('modal-root');
+    if (!root) { UI.toast(T('shop.unavailable', 'Shop unavailable')); return; }
+    var prev = $('modal-shop');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-shop';
+    var scrim = el('div', 'modal-scrim');
+    on(scrim, 'click', function () { closeShop(); });
+
+    var card = el('div', 'modal-card');
+    card.appendChild(el('div', 'panel-accent'));
+
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', T('shop.title', '🛒 OFFICE SHOP')));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', function () { closeShop(); });
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    var bal = el('div', 'shop-balance');
+    bal.id = 'shop-balance';
+    body.appendChild(bal);
+    var list = el('div', 'shop-list');
+    list.id = 'shop-list';
+    body.appendChild(list);
+
+    var foot = el('footer', 'modal-foot');
+    var close = el('button', 'btn btn-primary', T('shop.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', function () { closeShop(); });
+    foot.appendChild(close);
+
+    card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+
+    renderShop();
+    applyI18n(modal);
+  };
+
+  function closeShop() {
+    var m = $('modal-shop');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
+  function ownedUpgrades() {
+    var s = STATE();
+    return (s && Array.isArray(s.upgrades)) ? s.upgrades : [];
+  }
+
+  function renderShop() {
+    var bal = $('shop-balance');
+    var list = $('shop-list');
+    if (!list) return;
+    if (bal) {
+      clear(bal);
+      bal.appendChild(el('span', 'shop-bal-key', T('shop.balance', 'Credits')));
+      var v = el('span', 'shop-bal-val', String(Math.round(creditsNow())));
+      bal.appendChild(v);
+    }
+    clear(list);
+    var catalog = (CFG().OFFICE_UPGRADES) || [];
+    if (!catalog.length) {
+      list.appendChild(el('div', 'pe-empty', T('shop.empty', 'No upgrades available.')));
+      return;
+    }
+    var owned = ownedUpgrades();
+    var credits = creditsNow();
+    for (var i = 0; i < catalog.length; i++) {
+      (function (up) {
+        if (!up || !up.id) return;
+        var isOwned = owned.indexOf(up.id) !== -1;
+        var canAfford = credits >= (Number(up.cost) || 0);
+        var item = el('div', 'shop-item' + (isOwned ? ' owned' : ''));
+
+        var ico = el('span', 'shop-ico', up.kind === 'flair' ? '✦' : '🪑');
+        item.appendChild(ico);
+
+        var text = el('div', 'shop-text');
+        text.appendChild(el('div', 'shop-name', up.name || up.id));
+        if (up.desc) text.appendChild(el('div', 'shop-desc', up.desc));
+        item.appendChild(text);
+
+        var right = el('div', 'shop-right');
+        var cost = el('div', 'shop-cost', '◈ ' + (Number(up.cost) || 0));
+        right.appendChild(cost);
+        if (isOwned) {
+          right.appendChild(el('span', 'shop-owned', T('shop.owned', 'OWNED')));
+        } else {
+          var buy = el('button', 'btn btn-primary shop-buy', T('shop.buy', 'Buy'));
+          buy.type = 'button';
+          if (!canAfford) { buy.disabled = true; buy.classList.add('is-disabled'); }
+          on(buy, 'click', function () { buyUpgrade(up); });
+          right.appendChild(buy);
+        }
+        item.appendChild(right);
+        list.appendChild(item);
+      })(catalog[i]);
+    }
+  }
+
+  function buyUpgrade(up) {
+    var s = STATE();
+    if (!s || !up || !up.id) return;
+    var cost = Number(up.cost) || 0;
+    var owned = (s.upgrades && Array.isArray(s.upgrades)) ? s.upgrades : (s.upgrades = []);
+    if (owned.indexOf(up.id) !== -1) { renderShop(); return; }
+    if (creditsNow() < cost) {
+      UI.toast(T('shop.cantAfford', 'Not enough credits'), 'error');
+      return;
+    }
+    s.credits = creditsNow() - cost;
+    owned.push(up.id);
+    try {
+      if (App.World && typeof App.World.applyUpgrade === 'function') App.World.applyUpgrade(up.id);
+    } catch (e) {}
+    try {
+      if (App.Audio && App.Audio.sfx) App.Audio.sfx('approval');
+    } catch (e) {}
+    try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
+    UI.toast(T('shop.bought', 'Installed: ') + (up.name || up.id), 'ok');
+    renderShop();
+    refreshHud();
+  }
 
   // ===========================================================================
   // MISC
