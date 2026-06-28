@@ -118,6 +118,16 @@ window.App = window.App || {};
   // Each entry: { name, path:'inbox/'+name, text }. Shared across HUD + board.
   var _attachments = [];
 
+  // Last dispatched goal — remembered so the overload final-failure UX can offer
+  // a one-click [재시도] that re-runs the SAME goal in the SAME mode. Set by
+  // dispatchBoss/dispatchBuild right before they hand off to the orchestrator
+  // (attachments are already consumed by then, so retry runs without them).
+  var _lastGoal = { text: '', mode: 'boss' };
+  // Haiku model id used by the "switch to Haiku" overload recovery action.
+  var HAIKU_MODEL_ID = 'claude-haiku-4-5-20251001';
+  // Overload banner polling handle (started in init, harmless if it never fires).
+  var _overloadPollTimer = 0;
+
   // ===========================================================================
   // init() — bind everything by SPEC §8 ids, populate selects, refresh.
   // ===========================================================================
@@ -166,6 +176,11 @@ window.App = window.App || {};
 
       // Attach-input controls (📎) next to the HUD + board dispatch fields.
       ensureAttachControls();
+
+      // 🗳️ Opinion Warehouse launcher (after the presets button) + overload banner.
+      ensureOpinionButton();
+      ensureOverloadBanner();
+      startOverloadPoll();
 
       // Agent panel
       on($('panel-agent-close'), 'click', function () { UI.closeAgentPanel(); });
@@ -438,6 +453,7 @@ window.App = window.App || {};
     UI.refreshLedger();
     refreshSelectedPanel();
     refreshHud();
+    try { refreshOverloadBanner(); } catch (e) {}
   };
 
   function refreshHud() {
@@ -768,6 +784,7 @@ window.App = window.App || {};
     var text = (input.value || '').trim();
     if (!text) return;
     input.value = '';
+    _lastGoal = { text: text, mode: 'boss' }; // remember for overload [재시도]
     requestNotifyPermission(); // polite, one-time, on this user gesture
     if (ORCH() && ORCH().runBossTask) {
       var atts = consumeAttachments();
@@ -794,6 +811,7 @@ window.App = window.App || {};
     }
     if (hud) hud.value = '';
     if (board) board.value = '';
+    _lastGoal = { text: text, mode: 'build' }; // remember for overload [재시도]
     requestNotifyPermission();
     if (ORCH() && ORCH().runBuild) {
       var atts = consumeAttachments();
@@ -816,6 +834,270 @@ window.App = window.App || {};
     input.value = '';
     var a = AGENTS() && AGENTS().byId ? AGENTS().byId(s.selectedAgentId) : null;
     if (a && AGENTS().chat) AGENTS().chat(a, text);
+  }
+
+  // ===========================================================================
+  // OVERLOAD / RATE-LIMIT UX (additive) — three pieces wired here:
+  //   1) a non-blocking banner that appears WHILE App.API.rateState() reports an
+  //      active cooldown (429/529 backoff) and clears when it ends;
+  //   2) a final-failure recovery block injected into showFinalResult() when the
+  //      root task failed due to a rate limit / overload — [재시도] + Haiku switch;
+  //   3) helpers below. Everything feature-detects App.API.rateState so an older
+  //      api.js (no scheduler) simply never shows the banner and never throws.
+  // ===========================================================================
+
+  // Read App.API.rateState() defensively. Returns null when unavailable/malformed.
+  function apiRateState() {
+    try {
+      if (App.API && typeof App.API.rateState === 'function') {
+        var st = App.API.rateState();
+        if (st && typeof st === 'object') return st;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // True iff the API reports a cooldown window still in the future.
+  function apiCoolingDown() {
+    var st = apiRateState();
+    if (!st) return false;
+    var until = +st.cooldownUntilMs;
+    return isFinite(until) && until > Date.now();
+  }
+
+  // Classify an error string/object as a rate-limit/overload condition. Matches
+  // api.js's final reject text ('rate limited / overloaded — retried N×') plus
+  // common HTTP 429/529 phrasings, so the recovery UX shows for any of them.
+  function isOverloadError(errLike) {
+    var msg = '';
+    if (errLike == null) return false;
+    if (typeof errLike === 'string') msg = errLike;
+    else if (typeof errLike === 'object') {
+      msg = String(errLike.message || errLike.error || '');
+      var st = +errLike.status;
+      if (st === 429 || st === 529) return true;
+    }
+    if (!msg) return false;
+    return /rate.?limit|overload|429|529|too many requests/i.test(msg);
+  }
+
+  // Inject (once) the small CSS the overload/opinion controls need. We can only
+  // edit ui.js, so styles ship here via a created <style> node (no literal tags in
+  // strings — built with createElement + textContent). Idempotent by id.
+  function ensureOverloadStyles() {
+    if (typeof document === 'undefined' || !document.head) return;
+    if ($('overload-styles')) return;
+    var st = document.createElement('style');
+    st.id = 'overload-styles';
+    st.textContent = [
+      '.overload-banner{position:fixed;left:50%;top:64px;transform:translateX(-50%);',
+      'z-index:60;display:flex;align-items:center;gap:8px;padding:7px 14px;',
+      'font:600 12px/1.2 inherit;letter-spacing:.04em;color:#ffeccb;',
+      'background:rgba(20,16,28,.92);border:1px solid var(--amber,#ffb454);',
+      'border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.55),0 0 14px rgba(255,180,84,.4);',
+      'pointer-events:none;}',
+      '.overload-banner.hidden{display:none;}',
+      '.overload-spin{display:inline-block;animation:overload-spin 1.4s linear infinite;}',
+      '@keyframes overload-spin{to{transform:rotate(360deg);}}',
+      '.overload-failed{margin-top:12px;padding:11px 12px;border-radius:10px;',
+      'background:rgba(40,16,24,.6);border:1px solid var(--red,#ff5d73);color:#ffd9e0;}',
+      '.overload-failed-msg{font-size:12.5px;line-height:1.5;margin-bottom:9px;}',
+      '.overload-failed-actions{display:flex;flex-wrap:wrap;gap:8px;}',
+      '.attn-pulse{animation:attn-pulse 1.2s ease-in-out 2;}',
+      '@keyframes attn-pulse{0%,100%{box-shadow:0 0 0 0 rgba(155,92,255,.0);}',
+      '50%{box-shadow:0 0 0 4px rgba(155,92,255,.5);}}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+
+  // Create (once) the overload banner node. Lives next to #toast so it floats over
+  // the office; toggled via .hidden only. Returns the node (or null if no body).
+  function ensureOverloadBanner() {
+    if (typeof document === 'undefined' || !document.body) return null;
+    ensureOverloadStyles();
+    var existing = $('overload-banner');
+    if (existing) return existing;
+    var b = el('div', 'overload-banner hidden');
+    b.id = 'overload-banner';
+    b.setAttribute('role', 'status');
+    b.setAttribute('aria-live', 'polite');
+    var spin = el('span', 'overload-spin', '⏳');
+    spin.setAttribute('aria-hidden', 'true');
+    var label = el('span', 'overload-banner-text');
+    label.id = 'overload-banner-text';
+    label.textContent = T('overload.banner', 'API overloaded — auto-retrying...');
+    b.appendChild(spin);
+    b.appendChild(label);
+    document.body.appendChild(b);
+    return b;
+  }
+
+  // Show/hide the banner based on the current cooldown. Cheap; safe to call often.
+  function refreshOverloadBanner() {
+    var b = ensureOverloadBanner();
+    if (!b) return;
+    if (apiCoolingDown()) {
+      var lbl = $('overload-banner-text');
+      if (lbl) lbl.textContent = T('overload.banner', 'API overloaded — auto-retrying...');
+      show(b);
+    } else {
+      hide(b);
+    }
+  }
+
+  // Start the lightweight poll that drives the banner. Idempotent; guarded.
+  function startOverloadPoll() {
+    if (_overloadPollTimer) return;
+    try {
+      _overloadPollTimer = setInterval(function () {
+        try { refreshOverloadBanner(); } catch (e) {}
+      }, 1000);
+    } catch (e) { _overloadPollTimer = 0; }
+  }
+
+  // Re-dispatch the last remembered goal in its original mode. Reuses the same
+  // orchestrator entry points the dispatch handlers use (no duplicated pipeline).
+  function retryLastGoal() {
+    var g = _lastGoal || {};
+    var text = String(g.text || '').trim();
+    if (!text) { UI.toast(T('build.needGoal', 'Type a project goal first (e.g. "build a todo web app")')); return; }
+    requestNotifyPermission();
+    try {
+      if (g.mode === 'build' && ORCH() && ORCH().runBuild) ORCH().runBuild(text);
+      else if (ORCH() && ORCH().runBossTask) ORCH().runBossTask(text);
+      else { UI.showError(T('build.unavailable', 'Build mode is unavailable.')); return; }
+      UI.openTaskBoard();
+    } catch (e) { UI.showError('Retry failed: ' + (e && e.message)); }
+  }
+
+  // One-click recovery: set BOTH worker (default) and boss models to Haiku and
+  // persist. We write the two fields to state + App.Store.save() directly rather
+  // than calling saveSettings(): saveSettings() scrapes the WHOLE Settings form,
+  // and if the user never opened Settings those inputs are empty — calling it
+  // here would clobber the saved API key. We also reflect the change into the two
+  // model <select>s (which live in the shell, even when the modal is hidden) so an
+  // already-open Settings modal stays consistent.
+  function switchModelsToHaiku() {
+    var s = STATE();
+    if (s) {
+      var settings = s.settings || (s.settings = {});
+      settings.defaultModel = HAIKU_MODEL_ID;
+      settings.bossModel = HAIKU_MODEL_ID;
+      try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
+    }
+    // Keep the Settings selects in sync (no-op if the form isn't built yet).
+    var dm = $('set-default-model');
+    var bm = $('set-boss-model');
+    ensureModelOption(dm, HAIKU_MODEL_ID);
+    ensureModelOption(bm, HAIKU_MODEL_ID);
+    if (dm) dm.value = HAIKU_MODEL_ID;
+    if (bm) bm.value = HAIKU_MODEL_ID;
+    UI.toast(T('overload.useHaiku', 'Switch worker + boss to Haiku'), 'ok');
+  }
+
+  // Ensure a <select> contains an <option> for `id` so .value sticks even if the
+  // model isn't in config.MODELS. No-op when the select or id is missing.
+  function ensureModelOption(sel, id) {
+    if (!sel || !id) return;
+    try {
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === id) return;
+      }
+      var o = document.createElement('option');
+      o.value = id; o.textContent = id;
+      sel.appendChild(o);
+    } catch (e) {}
+  }
+
+  // ===========================================================================
+  // OPINION WAREHOUSE launcher (🗳️) — apply the 'opinion-warehouse' preset, then
+  // pre-fill the dispatch input with config.OPINION_GOAL_TEMPLATE and nudge the
+  // user toward the 📎 attach control so they just attach/paste opinions + DISPATCH.
+  // Reuses the existing preset-apply path (App.Store.applyPreset). Feature-detects
+  // both the preset and the template so it never throws when either is absent.
+  // ===========================================================================
+  function launchOpinionWarehouse() {
+    var presetId = 'opinion-warehouse';
+    var applied = false;
+    try {
+      if (App.Store && App.Store.applyPreset) applied = !!App.Store.applyPreset(presetId);
+    } catch (e) { applied = false; }
+    if (applied) {
+      UI.closeAgentPanel();
+      UI.refresh();
+      UI.refreshArtifacts();
+      var pname = presetDisplayName(presetId);
+      UI.toast(T('opinion.launch', 'Opinion Warehouse') + ' — ' + pname, 'ok');
+    } else {
+      // Preset missing/failed: still pre-fill the goal so the feature is useful.
+      UI.toast(T('opinion.launch.hint', 'Collect, classify & summarize classmates opinions'));
+    }
+
+    // Pre-fill the goal template into both dispatch inputs.
+    var tpl = (CFG() && CFG().OPINION_GOAL_TEMPLATE) || '';
+    var hud = $('hud-task-input');
+    var board = $('board-input');
+    if (tpl) {
+      if (hud) hud.value = tpl;
+      if (board) board.value = tpl;
+    }
+
+    // Point the user at the 📎 attach control: focus it + a brief pulse hint.
+    var attach = $('attach-btn-hud') || $('attach-btn-board');
+    if (attach) {
+      try { attach.focus(); } catch (e) {}
+      try {
+        attach.classList.add('attn-pulse');
+        setTimeout(function () { try { attach.classList.remove('attn-pulse'); } catch (e) {} }, 2400);
+      } catch (e) {}
+    } else if (hud && hud.focus) {
+      try { hud.focus(); } catch (e) {}
+    }
+  }
+
+  // Inject (once) the 🗳️ Opinion Warehouse launcher into the HUD controls, right
+  // after the presets ("New Co.") button. Mirrors the shell's HUD button markup so
+  // it inherits styling/i18n. No anchor → no-op (defensive). Idempotent by id.
+  function ensureOpinionButton() {
+    if (typeof document === 'undefined') return;
+    ensureOverloadStyles();
+    if ($('btn-opinion')) return;
+    var nav = $('hud-controls');
+    var anchor = $('btn-presets');
+    var host = nav || (anchor && anchor.parentNode);
+    if (!host) return;
+
+    var btn = el('button', 'btn');
+    btn.id = 'btn-opinion';
+    btn.type = 'button';
+    btn.title = T('opinion.launch.hint', 'Collect, classify & summarize classmates opinions');
+    btn.setAttribute('aria-label', T('opinion.launch', 'Opinion Warehouse'));
+    var ico = el('span', 'btn-ico', '🗳️');
+    ico.setAttribute('aria-hidden', 'true');
+    var lbl = el('span', 'btn-lbl', T('opinion.launch', 'Opinion Warehouse'));
+    lbl.setAttribute('data-i18n', 'opinion.launch');
+    btn.appendChild(ico);
+    btn.appendChild(lbl);
+    on(btn, 'click', function () { launchOpinionWarehouse(); });
+
+    if (anchor && anchor.parentNode === host && anchor.nextSibling) {
+      host.insertBefore(btn, anchor.nextSibling);
+    } else if (anchor && anchor.parentNode === host) {
+      host.appendChild(btn);
+    } else {
+      host.appendChild(btn);
+    }
+  }
+
+  // Look up a preset's display name from config (for the toast). Falls back to id.
+  function presetDisplayName(id) {
+    try {
+      var ps = (CFG() && CFG().PRESETS) || [];
+      for (var i = 0; i < ps.length; i++) {
+        if (ps[i] && ps[i].id === id) return ps[i].name || id;
+      }
+    } catch (e) {}
+    return id;
   }
 
   // ===========================================================================
@@ -2619,6 +2901,30 @@ window.App = window.App || {};
     }
     body.appendChild(content);
 
+    // OVERLOAD recovery: when the failure is a rate limit / overload, surface an
+    // actionable message + [재시도] (re-dispatch the last goal) and a one-click
+    // "Haiku로 전환" (set worker+boss models to Haiku and save). Additive: the
+    // normal Copy/Close footer below is always present.
+    var closeModal = function () { modal.parentNode && modal.parentNode.removeChild(modal); };
+    if (task.status === 'error' && isOverloadError(task.error)) {
+      ensureOverloadStyles();
+      var rec = el('div', 'overload-failed');
+      rec.appendChild(el('div', 'overload-failed-msg',
+        T('overload.failed',
+          'Hit a rate limit / overload. Retry shortly, switch to Haiku, or use a smaller goal.')));
+      var actions = el('div', 'overload-failed-actions');
+      var retryBtn = el('button', 'btn btn-primary', '↻ ' + T('overload.retry', 'Retry'));
+      retryBtn.type = 'button';
+      on(retryBtn, 'click', function () { closeModal(); retryLastGoal(); });
+      var haikuBtn = el('button', 'btn', '⚡ ' + T('overload.useHaiku', 'Switch worker + boss to Haiku'));
+      haikuBtn.type = 'button';
+      on(haikuBtn, 'click', function () { switchModelsToHaiku(); });
+      actions.appendChild(retryBtn);
+      actions.appendChild(haikuBtn);
+      rec.appendChild(actions);
+      body.appendChild(rec);
+    }
+
     var foot = el('footer', 'modal-foot');
     var copy = el('button', 'btn', 'Copy');
     copy.type = 'button';
@@ -2630,7 +2936,7 @@ window.App = window.App || {};
     });
     var close = el('button', 'btn btn-primary', 'Close');
     close.type = 'button';
-    on(close, 'click', function () { modal.parentNode && modal.parentNode.removeChild(modal); });
+    on(close, 'click', closeModal);
     foot.appendChild(copy); foot.appendChild(close);
 
     card.appendChild(head); card.appendChild(body); card.appendChild(foot);

@@ -647,9 +647,19 @@ window.App = window.App || {};
     WEB_SEARCH_TOOL: { type: 'web_search_20250305', name: 'web_search', max_uses: 5 },
 
     // v2: retry / exponential-backoff tuning for transient network/HTTP failures (api.js).
-    RETRY_MAX: 4,
+    // v7 RATE-LIMIT HARDENING: RETRY_MAX raised to 6; rate-limit (429/529) Retry-After is
+    // honored up to RATE_LIMIT_MAX_MS (NOT the generic RETRY_MAX_MS cap). A global request
+    // scheduler (api.js) caps concurrency at API_MAX_INFLIGHT and spaces request STARTS by at
+    // least API_MIN_SPACING_MS; after a 429/529 the spacing grows by API_COOLDOWN_GROWTH and
+    // decays back toward API_MIN_SPACING_MS on clean success. These smooth bursts past the
+    // key's per-minute window. See SHARED CONTRACTS in api.js.
+    RETRY_MAX: 6,
     RETRY_BASE_MS: 700,
-    RETRY_MAX_MS: 8000,
+    RETRY_MAX_MS: 8000,            // generic exponential cap (non-rate-limit transient statuses)
+    RATE_LIMIT_MAX_MS: 90000,     // max wait when honoring a server Retry-After on 429/529
+    API_MAX_INFLIGHT: 2,          // global cap on simultaneously in-flight API requests (< MAX_CONCURRENT on purpose)
+    API_MIN_SPACING_MS: 400,      // minimum ms between request STARTS
+    API_COOLDOWN_GROWTH: 1.6,     // spacing multiplier after a 429/529; decays toward API_MIN_SPACING_MS on success
 
     // v2: provider resolver — OpenAI ids start with gpt/o1/o3/o4/chatgpt; else Anthropic.
     providerOf: function (modelId) {
@@ -707,6 +717,15 @@ window.App = window.App || {};
     // Default UI language. Korean is now the default (store defaults settings.lang
     // to this, and i18n.getLang() falls back to it when settings.lang is unset).
     DEFAULT_LANG: 'ko',
+
+    // ---------------------------------------------------------------------------
+    // v7 section OPINION WAREHOUSE — a ready-to-use Korean goal pre-filled into the
+    // dispatch input by ui.js when the user launches the 'opinion-warehouse' preset
+    // (App.config.PRESETS[0]). The user then attaches/pastes classmates' opinions
+    // via the attach control and dispatches. Single source of truth for the launcher.
+    // ---------------------------------------------------------------------------
+    OPINION_GOAL_TEMPLATE:
+      '아래에 첨부/입력된 반 친구들의 의견을 수집·분류·중복 제거하고, 주제별 표 + 핵심 요약 + 소수의견까지 포함한 정리 리포트를 만들어줘.',
 
     // ---------------------------------------------------------------------------
     // SHARE — hash fragment key for shareable state links. App.Share.exportLink
@@ -896,22 +915,24 @@ window.App = window.App || {};
     {
       id: 'opinion-warehouse',
       name: '의견 수립 창고',
-      desc: '반 친구들의 의견을 수집·분류·요약해 리포트로 정리하는 팀.',
+      desc: '반 친구들의 의견을 수집·분류·중복 제거하고 요약 리포트로 정리하는 팀.',
       icon: '🗳️',
       agents: [
         // facilitator — runs the discussion as the orchestrator (boss).
         { name: '진행자', role: 'boss' },
+        // collector — reads the attached/pasted opinions and pulls out every distinct point (generalist).
+        { name: '수집가', role: 'generalist' },
         // researcher — gathers context/background for the topic.
         { name: '조사원', role: 'researcher' },
-        // analyst — classifies + structures the collected opinions (qa role = critical/structured).
+        // analyst — classifies + structures + de-duplicates the collected opinions (qa role = critical/structured).
         { name: '분석가', role: 'qa' },
-        // writer — turns the analysis into a clean summary report.
+        // writer — turns the analysis into a clean summary report (themed tables + key summary + minority view).
         { name: '작성자', role: 'writer' }
       ],
       sampleGoals: [
-        '반 친구들의 [수학여행 장소]에 대한 의견을 수집·분류해서 요약 리포트로 정리해줘',
-        '학급 회의 안건 [체육대회 종목]에 대한 찬반 의견을 모아 입장별로 정리해줘',
-        '[축제 부스 아이디어]에 대한 친구들의 제안을 주제별로 묶어 요약해줘'
+        '반 친구들의 [수학여행 장소]에 대한 의견을 수집·분류·중복 제거해서 주제별 표 + 요약 리포트로 정리해줘',
+        '학급 회의 안건 [체육대회 종목]에 대한 찬반 의견을 모아 입장별로 정리하고 소수의견도 따로 정리해줘',
+        '[축제 부스 아이디어]에 대한 친구들의 제안을 주제별로 묶고 핵심 요약과 함께 정리해줘'
       ]
     },
     {

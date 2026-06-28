@@ -225,7 +225,17 @@ window.App = window.App || {};
       'state.queued': 'queued',
       'state.running': 'running',
       'state.done': 'done',
-      'state.error': 'error'
+      'state.error': 'error',
+
+      // --- overload / rate-limit UX (v7) ---
+      'overload.banner': 'API overloaded - auto-retrying...',
+      'overload.retry': 'Retry',
+      'overload.useHaiku': 'Switch worker + boss to Haiku',
+      'overload.failed': 'Hit a rate limit / overload. Retry shortly, switch to Haiku, or use a smaller goal.',
+
+      // --- opinion warehouse launcher (v7) ---
+      'opinion.launch': 'Opinion Warehouse',
+      'opinion.launch.hint': 'Collect, classify & summarize classmates opinions'
     },
 
     ko: {
@@ -389,7 +399,17 @@ window.App = window.App || {};
       'state.queued': '대기',
       'state.running': '진행 중',
       'state.done': '완료',
-      'state.error': '오류'
+      'state.error': '오류',
+
+      // --- overload / rate-limit UX (v7) ---
+      'overload.banner': 'API 과부하 - 자동 재시도 중...',
+      'overload.retry': '재시도',
+      'overload.useHaiku': '워커·보스를 Haiku로 전환',
+      'overload.failed': 'API 한도·과부하로 실패했어요. 잠시 후 재시도하거나 Haiku로 바꾸거나 목표를 작게 나눠보세요.',
+
+      // --- opinion warehouse launcher (v7) ---
+      'opinion.launch': '의견 수립 창고',
+      'opinion.launch.hint': '반 친구들의 의견을 수집·분류·요약'
     }
   };
 

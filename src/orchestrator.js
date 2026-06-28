@@ -395,6 +395,33 @@ window.App = window.App || {};
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
   }
 
+  // ===========================================================================
+  // RATE-LIMIT AWARENESS — feature-detected readers over App.API.rateState().
+  //   The scheduler/backoff live in api.js; these are READ-ONLY helpers so the
+  //   orchestrator can (a) stop launching NEW workers while the API is cooling
+  //   down after a 429/529, and (b) surface a brief "overload retry" status on a
+  //   worker whose stream is backing off. Fully guarded: when App.API.rateState
+  //   is absent (older api.js / partial build) every helper is a clean no-op
+  //   (rateState() → null, cooldownActive() → false) so behavior is unchanged.
+  // ===========================================================================
+  function rateState() {
+    try {
+      if (App.API && typeof App.API.rateState === 'function') {
+        var st = App.API.rateState();
+        if (st && typeof st === 'object') return st;
+      }
+    } catch (e) {}
+    return null;
+  }
+  // cooldownActive() — true iff the API reports a cooldown window still in the
+  //   future. Anything missing/malformed → false (no throttling, no-op).
+  function cooldownActive() {
+    var st = rateState();
+    if (!st) return false;
+    var until = +st.cooldownUntilMs;
+    return isFinite(until) && until > nowMs();
+  }
+
   // providerOf — resolve a model's provider ('anthropic' | 'openai' | ...).
   function providerOf(model) {
     try {
@@ -1098,6 +1125,13 @@ window.App = window.App || {};
     if (!task) return;
     var ag = AGENTS();
     if (!agent) {
+      // OVERLOAD THROTTLE (defense-in-depth) — on the auto-pick path only, skip
+      //   launching a NEW worker while the API is cooling down after a 429/529.
+      //   We have NOT claimed an agent yet, so the task simply stays queued and a
+      //   later tick re-attempts once cooldown clears. No-op when not cooling /
+      //   when api.js lacks rateState. Explicit-agent callers (QA revise, etc.)
+      //   are never throttled here so in-flight work keeps progressing.
+      if (cooldownActive()) return;
       agent = ag.findIdle(task.role) || spawnTempWorker(task.role);
     }
     if (!agent) return; // couldn't get an agent; remain queued for a later tick
@@ -1230,6 +1264,16 @@ window.App = window.App || {};
       onState: function (st) {
         if (st === 'searching') ag.setState(agent, 'searching');
         else if (st === 'text') ag.setState(agent, 'coding'); // first text → coding
+        else if (st === 'thinking') {
+          // OVERLOAD RETRY surfacing — api.js nudges state back to 'thinking' while
+          //   a transient (429/529/5xx) backoff timer is pending. If the API reports
+          //   an active cooldown, show a brief status so the user knows we're waiting,
+          //   not stuck. Reuses the existing bubble helper; no new draw code.
+          //   No-op when not cooling / when api.js lacks rateState.
+          if (cooldownActive()) {
+            try { ag.say(agent, '⏳ 과부하 재시도', 3000); } catch (e) {}
+          }
+        }
       },
       onText: function (delta) {
         acc += delta;
@@ -3554,7 +3598,14 @@ window.App = window.App || {};
       }
       queued.sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
 
+      // OVERLOAD THROTTLE — while the API is cooling down after a 429/529, do NOT
+      //   launch NEW workers; let in-flight streams (which keep retrying inside
+      //   api.js) finish and let a later tick pick these up once cooldown clears.
+      //   No-op when App.API.rateState is absent or no cooldown is active.
+      var cooling = cooldownActive();
+
       for (var q = 0; q < queued.length; q++) {
+        if (cooling) break;
         if (runningCount() >= maxConc) break;
         var task = queued[q];
         if (!depsSatisfied(task)) {

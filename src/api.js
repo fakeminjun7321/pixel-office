@@ -591,6 +591,207 @@ window.App = window.App || {};
     }
   }
 
+  // A "rate-limit" status is one where the server is telling us to slow down for a
+  // window (429 Too Many Requests, 529 Overloaded). These honor Retry-After up to
+  // RATE_LIMIT_MAX_MS (NOT the generic RETRY_MAX_MS cap) and drive scheduler cooldown.
+  var RATE_LIMIT_STATUS = { 429: 1, 529: 1 };
+  function isRateLimitStatus(status) {
+    return !!RATE_LIMIT_STATUS[status];
+  }
+
+  // ---------------------------------------------------------------------------
+  // GLOBAL REQUEST SCHEDULER (v7 rate-limit hardening).
+  //
+  // Every stream attempt's fetch passes through here. It enforces two limits:
+  //   (a) at most API_MAX_INFLIGHT requests in flight at once, and
+  //   (b) at least `spacingMs` between request STARTS (adaptive: grows after a
+  //       429/529, decays back toward API_MIN_SPACING_MS on a clean success).
+  // After a rate-limit it also sets cooldownUntil so the UI/orchestrator can
+  // throttle. Exposed read-only via App.API.rateState().
+  //
+  // DEADLOCK-FREE + ABORT-SAFE guarantees:
+  //   * acquire() resolves with a `release` fn; the CALLER must call release()
+  //     exactly once (we do it in a finally on the attempt path). release() is
+  //     idempotent (a per-grant `released` flag) so a double-release can't drive
+  //     inflight negative or double-pump the queue.
+  //   * Each queued waiter carries an `aborted` flag. abort() on the waiter both
+  //     rejects its promise (with a sentinel the caller treats as a normal abort)
+  //     AND, if it was already granted a slot, releases that slot — so an aborted
+  //     request NEVER strands a slot or its successors.
+  //   * pump() always re-arms via setTimeout when blocked only by spacing, so a
+  //     lone queued request can never wait forever for an event that won't come.
+  //   * Every state transition (grant, release, abort) calls pump(), so the queue
+  //     always drains as long as inflight < cap.
+  // ---------------------------------------------------------------------------
+  var Sched = {
+    inflight: 0,
+    queue: [],              // FIFO of waiter objects {resolve, aborted, granted, release}
+    spacingMs: 0,           // current min spacing between starts (lazy-init from cfg)
+    lastStartAt: 0,         // ms timestamp of the most recent granted start
+    cooldownUntil: 0,       // ms timestamp; while in the future we're cooling down
+    pumpTimer: null,        // pending setTimeout id for spacing-gated re-pump
+    inited: false,
+  };
+
+  function schedCfg() {
+    var cfg = App.config || {};
+    return {
+      maxInflight: (typeof cfg.API_MAX_INFLIGHT === 'number' && cfg.API_MAX_INFLIGHT > 0)
+        ? cfg.API_MAX_INFLIGHT : 2,
+      minSpacing: (typeof cfg.API_MIN_SPACING_MS === 'number' && cfg.API_MIN_SPACING_MS >= 0)
+        ? cfg.API_MIN_SPACING_MS : 400,
+      growth: (typeof cfg.API_COOLDOWN_GROWTH === 'number' && cfg.API_COOLDOWN_GROWTH > 1)
+        ? cfg.API_COOLDOWN_GROWTH : 1.6,
+    };
+  }
+
+  // Lazily initialize spacingMs from config (config.js may load after this file).
+  function schedEnsureInit() {
+    if (Sched.inited) return;
+    Sched.spacingMs = schedCfg().minSpacing;
+    Sched.inited = true;
+  }
+
+  function now() {
+    return (typeof Date !== 'undefined' && Date.now) ? Date.now() : (+new Date());
+  }
+
+  // Hard ceiling on adaptive spacing so a long rate-limit streak can't wedge the
+  // scheduler at multi-second spacing forever. (Spec: cap around 5000ms.)
+  var SCHED_SPACING_CAP_MS = 5000;
+
+  // Drain the queue: grant slots while under the inflight cap AND spacing allows.
+  // When blocked purely by spacing, re-arm a one-shot timer so we self-resume.
+  function pump() {
+    schedEnsureInit();
+    if (Sched.pumpTimer != null) {
+      try { clearTimeout(Sched.pumpTimer); } catch (e) {}
+      Sched.pumpTimer = null;
+    }
+    var cfg = schedCfg();
+    while (Sched.queue.length && Sched.inflight < cfg.maxInflight) {
+      // Drop any already-aborted waiters at the head without consuming a slot.
+      var head = Sched.queue[0];
+      if (head.aborted) { Sched.queue.shift(); continue; }
+
+      var t = now();
+      var wait = (Sched.lastStartAt + Sched.spacingMs) - t;
+      if (wait > 0) {
+        // Spacing-gated: arm a single timer to retry; do NOT busy-loop.
+        Sched.pumpTimer = setTimeout(function () {
+          Sched.pumpTimer = null;
+          pump();
+        }, wait);
+        return;
+      }
+
+      // Grant the head.
+      Sched.queue.shift();
+      Sched.inflight += 1;
+      Sched.lastStartAt = now();
+      head.granted = true;
+      var resolve = head.resolve;
+      // Release closure: idempotent; frees the slot and pumps successors.
+      head.release = makeRelease(head);
+      // Resolve OUTSIDE the loop guard so the caller can start its fetch.
+      resolve(head.release);
+    }
+  }
+
+  // Build an idempotent release fn bound to one granted waiter.
+  function makeRelease(waiter) {
+    var released = false;
+    return function () {
+      if (released) return;
+      released = true;
+      if (Sched.inflight > 0) Sched.inflight -= 1;
+      pump();
+    };
+  }
+
+  // Acquire a scheduler slot. Returns { promise, abort }.
+  //   promise resolves -> release fn (call once when the request settles)
+  //   promise rejects  -> only via abort(), with a sentinel {__schedAbort:true}
+  // abort() is safe to call at any phase (queued OR already granted).
+  function schedAcquire() {
+    schedEnsureInit();
+    var waiter = { resolve: null, reject: null, aborted: false, granted: false, release: null };
+    var promise = new Promise(function (resolve, reject) {
+      waiter.resolve = resolve;
+      waiter.reject = reject;
+    });
+    Sched.queue.push(waiter);
+    // Kick the queue (may grant immediately if under cap + spacing allows).
+    pump();
+    return {
+      promise: promise,
+      abort: function () {
+        if (waiter.aborted) return;
+        waiter.aborted = true;
+        if (waiter.granted) {
+          // Already holding a slot: release it so successors aren't stranded.
+          if (waiter.release) {
+            try { waiter.release(); } catch (e) {}
+          } else if (Sched.inflight > 0) {
+            Sched.inflight -= 1;
+            pump();
+          }
+        } else {
+          // Still queued: reject so the caller stops waiting; pump() will skip it.
+          try { waiter.reject({ __schedAbort: true }); } catch (e) {}
+          pump();
+        }
+      },
+    };
+  }
+
+  // Feedback hook: the attempt layer calls this after each fetch settles with the
+  // observed HTTP status (or 0 for a network error / no response).
+  //   * On a rate-limit status (429/529): grow spacing (capped), arm cooldown.
+  //   * On a clean success (2xx): decay spacing back toward the floor.
+  // Other statuses leave spacing unchanged (a 500 isn't a "slow down" signal).
+  function schedNotify(status, retryAfterMs) {
+    schedEnsureInit();
+    var cfg = schedCfg();
+    if (isRateLimitStatus(status)) {
+      var grown = Math.ceil(Math.max(Sched.spacingMs, cfg.minSpacing) * cfg.growth);
+      Sched.spacingMs = Math.min(grown, SCHED_SPACING_CAP_MS);
+      // Cooldown: at least one spacing window; honor Retry-After if larger.
+      var cd = Sched.spacingMs;
+      if (typeof retryAfterMs === 'number' && retryAfterMs > cd) cd = retryAfterMs;
+      var cfgMax = App.config && typeof App.config.RATE_LIMIT_MAX_MS === 'number'
+        ? App.config.RATE_LIMIT_MAX_MS : 90000;
+      cd = Math.min(cd, cfgMax);
+      Sched.cooldownUntil = now() + cd;
+    } else if (status >= 200 && status < 300) {
+      // Decay toward the floor (halfway each clean success, never below floor).
+      var floor = cfg.minSpacing;
+      if (Sched.spacingMs > floor) {
+        Sched.spacingMs = Math.max(floor, Math.floor(Sched.spacingMs / 2));
+      }
+    }
+    pump();
+  }
+
+  // Public read-only snapshot for the UI / orchestrator throttling.
+  function rateState() {
+    schedEnsureInit();
+    var t = now();
+    var cd = Sched.cooldownUntil > t ? Sched.cooldownUntil : 0;
+    // Count only not-yet-aborted queued waiters.
+    var q = 0;
+    for (var i = 0; i < Sched.queue.length; i++) {
+      if (!Sched.queue[i].aborted) q += 1;
+    }
+    return {
+      inflight: Sched.inflight,
+      queued: q,
+      spacingMs: Sched.spacingMs,
+      cooldownUntilMs: cd,
+      recentlyRateLimited: Sched.cooldownUntil > t,
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // Core: a single streaming attempt. Provider chosen by config.providerOf.
   // Drives the success path via an accumulator's callbacks; resolves normally on
@@ -607,6 +808,83 @@ window.App = window.App || {};
     return provider === 'openai'
       ? attemptOpenAI(opts, controller)
       : attemptAnthropic(opts, controller);
+  }
+
+  // Run a fetch-driven attempt body through the global scheduler. `body(status)`
+  // is invoked once a slot is granted; it receives a `status` reporter object
+  // ({ set(httpStatus, retryAfterMs) }) it should call once when the HTTP
+  // response (or terminal network error) is known. Returns body()'s promise so
+  // the existing __transient/__toolUnsupported rethrow semantics are preserved
+  // BYTE-FOR-BYTE. The slot is released exactly once in finally (success, error,
+  // or abort) and schedNotify() runs with the observed status.
+  //
+  // Abort-safety: we wire controller.signal's 'abort' to the scheduler waiter's
+  // abort so a request still QUEUED (not yet started) is dropped and its slot/
+  // successors are freed. If the slot is never granted (acquire rejected by an
+  // abort), we resolve normally with no work — the underlying request never ran.
+  function withSchedule(controller, body) {
+    var gate = schedAcquire();
+
+    // Bridge an external abort into the scheduler waiter so a queued request is
+    // cancelled before it ever fetches.
+    var onAbort = function () {
+      try { gate.abort(); } catch (e) {}
+    };
+    var sig = controller && controller.signal;
+    if (sig) {
+      if (sig.aborted) {
+        // Already aborted before we even queued: drop the slot immediately.
+        try { gate.abort(); } catch (e) {}
+      } else {
+        try { sig.addEventListener('abort', onAbort); } catch (e) {}
+      }
+    }
+
+    return gate.promise.then(
+      function (release) {
+        // Slot granted. Track release + status so finally is exactly-once.
+        var done = false;
+        var observed = { status: 0, retryAfterMs: undefined };
+        var reporter = {
+          set: function (httpStatus, retryAfterMs) {
+            observed.status = (typeof httpStatus === 'number') ? httpStatus : 0;
+            if (typeof retryAfterMs === 'number') observed.retryAfterMs = retryAfterMs;
+          },
+        };
+        function settle() {
+          if (done) return;
+          done = true;
+          try { if (sig) sig.removeEventListener('abort', onAbort); } catch (e) {}
+          try { schedNotify(observed.status, observed.retryAfterMs); } catch (e) {}
+          try { release(); } catch (e) {}
+        }
+        var p;
+        try {
+          p = body(reporter);
+        } catch (e) {
+          settle();
+          throw e;
+        }
+        if (!p || typeof p.then !== 'function') {
+          settle();
+          return p;
+        }
+        return p.then(
+          function (v) { settle(); return v; },
+          function (err) { settle(); throw err; }
+        );
+      },
+      function (reason) {
+        // acquire() only rejects via abort. Detach listener; no slot was held.
+        try { if (sig) sig.removeEventListener('abort', onAbort); } catch (e) {}
+        if (reason && reason.__schedAbort) {
+          // Queued request cancelled before start: nothing ran, nothing to report.
+          // Resolve normally; the caller's abort path already handled UX.
+          return undefined;
+        }
+        throw reason;
+      }
+    );
   }
 
   // ---- Anthropic streaming attempt (unchanged wire format) ------------------
@@ -650,16 +928,18 @@ window.App = window.App || {};
     // Lifecycle hint: we're about to think.
     acc.onState('thinking');
 
-    return fetch(API_URL, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
+    return withSchedule(controller, function (reporter) {
+      return fetch(API_URL, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
       .then(function (resp) {
         // ---- Non-200: parse the error JSON and report ----------------------
         if (!resp.ok) {
           var retryAfter = retryAfterMsFromResp(resp);
+          reporter.set(resp.status, retryAfter);  // feed scheduler (cooldown on 429/529)
           return resp.text().then(function (txt) {
             var parsed = null;
             try {
@@ -690,6 +970,8 @@ window.App = window.App || {};
             acc.onError(err);
           });
         }
+
+        reporter.set(resp.status);  // 2xx success => scheduler decays spacing
 
         // ---- 200 OK but no readable stream: read full text, parse in bulk. --
         if (!resp.body || typeof resp.body.getReader !== 'function') {
@@ -751,6 +1033,7 @@ window.App = window.App || {};
           message: (e && e.message) || 'network error — check connection',
         });
       });
+    });
   }
 
   // ---- OpenAI streaming attempt (chat-completions; no server web_search) ----
@@ -793,15 +1076,17 @@ window.App = window.App || {};
 
     acc.onState('thinking');
 
-    return fetch(OPENAI_URL, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
+    return withSchedule(controller, function (reporter) {
+      return fetch(OPENAI_URL, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
       .then(function (resp) {
         if (!resp.ok) {
           var retryAfter = retryAfterMsFromResp(resp);
+          reporter.set(resp.status, retryAfter);  // feed scheduler (cooldown on 429/529)
           return resp.text().then(function (txt) {
             var parsed = null;
             try {
@@ -820,6 +1105,8 @@ window.App = window.App || {};
             acc.onError({ type: 'http', status: resp.status, message: msg });
           });
         }
+
+        reporter.set(resp.status);  // 2xx success => scheduler decays spacing
 
         if (!resp.body || typeof resp.body.getReader !== 'function') {
           return resp.text().then(function (txt) {
@@ -872,6 +1159,7 @@ window.App = window.App || {};
           message: (e && e.message) || 'network error — check connection',
         });
       });
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -941,23 +1229,41 @@ window.App = window.App || {};
     }
 
     // Retry tuning (from config; sane fallbacks if config absent).
-    var RETRY_MAX = (typeof cfg.RETRY_MAX === 'number') ? cfg.RETRY_MAX : 4;
+    var RETRY_MAX = (typeof cfg.RETRY_MAX === 'number') ? cfg.RETRY_MAX : 6;
     var RETRY_BASE_MS = (typeof cfg.RETRY_BASE_MS === 'number') ? cfg.RETRY_BASE_MS : 700;
     var RETRY_MAX_MS = (typeof cfg.RETRY_MAX_MS === 'number') ? cfg.RETRY_MAX_MS : 8000;
+    // Rate-limit (429/529) ceiling: honor the server's window, NOT the 8s generic
+    // cap. This is THE fix — a "Retry-After: 30" used to be clamped to 8s and burn
+    // the whole budget before the per-minute window reset.
+    var RATE_LIMIT_MAX_MS =
+      (typeof cfg.RATE_LIMIT_MAX_MS === 'number') ? cfg.RATE_LIMIT_MAX_MS : 90000;
 
     // Cancellable retry-timer handle (cleared by abort()).
     var retryTimer = null;
     var cancelled = false;
 
-    // Compute backoff delay for retry #attempt (0-based): base*2^attempt capped,
-    // plus random jitter; honor an explicit retry-after when the server gave one.
-    function backoffMs(attemptIdx, retryAfterMs) {
+    // Compute backoff delay for retry #attempt (0-based). Two regimes:
+    //   * RATE-LIMIT (429/529): honor the server's Retry-After up to
+    //     RATE_LIMIT_MAX_MS. With no header, use exponential but let the cap RISE
+    //     toward RATE_LIMIT_MAX_MS on later attempts (so we wait out the window
+    //     instead of giving up at 8s).
+    //   * other transient (408/409/5xx): base*2^attempt capped at RETRY_MAX_MS.
+    // Jitter is always added to de-correlate concurrent retriers.
+    function backoffMs(attemptIdx, retryAfterMs, status) {
+      var rateLimited = isRateLimitStatus(status);
       if (typeof retryAfterMs === 'number' && retryAfterMs >= 0) {
-        // Clamp server hint to our ceiling, still add a little jitter.
-        return Math.min(retryAfterMs, RETRY_MAX_MS) + Math.floor(Math.random() * 250);
+        // Rate-limit hints honor the (large) RATE_LIMIT_MAX_MS ceiling; other
+        // transient hints keep the generic 8s ceiling.
+        var ceil = rateLimited ? RATE_LIMIT_MAX_MS : RETRY_MAX_MS;
+        return Math.min(retryAfterMs, ceil) + Math.floor(Math.random() * 250);
       }
       var raw = RETRY_BASE_MS * Math.pow(2, attemptIdx);
-      var capped = Math.min(raw, RETRY_MAX_MS);
+      // For rate-limit with no header, let the exponential cap climb toward the
+      // rate-limit ceiling on later attempts (RETRY_MAX_MS on early ones).
+      var cap = rateLimited
+        ? Math.min(RATE_LIMIT_MAX_MS, Math.max(RETRY_MAX_MS, RETRY_BASE_MS * Math.pow(2, attemptIdx + 1)))
+        : RETRY_MAX_MS;
+      var capped = Math.min(raw, cap);
       return capped + Math.floor(Math.random() * (RETRY_BASE_MS));
     }
 
@@ -996,15 +1302,19 @@ window.App = window.App || {};
           return;
         }
 
-        // --- Transient failure: exponential backoff + retry. -----------------
+        // --- Transient failure: backoff + retry. -----------------------------
         if (e && e.__transient) {
           if (attemptIdx < RETRY_MAX) {
-            var delay = backoffMs(attemptIdx, e.retryAfterMs);
+            // Pass the status so 429/529 honor Retry-After up to RATE_LIMIT_MAX_MS
+            // (the fix) instead of the generic 8s cap.
+            var delay = backoffMs(attemptIdx, e.retryAfterMs, e && e.status);
             if (typeof console !== 'undefined' && console.info) {
-              console.info('[App.API] transient failure — retry ' +
-                (attemptIdx + 1) + '/' + RETRY_MAX + ' in ' + delay + 'ms');
+              console.info('[App.API] transient failure (status ' + (e && e.status) +
+                ') — retry ' + (attemptIdx + 1) + '/' + RETRY_MAX + ' in ' +
+                Math.round(delay / 100) / 10 + 's');
             }
-            // While waiting, do NOT call onError; nudge state back to thinking.
+            // While waiting, do NOT call onError; nudge state back to thinking so
+            // the orchestrator can surface a "retrying" bubble (it polls rateState).
             onState('thinking');
             retryTimer = setTimeout(function () {
               retryTimer = null;
@@ -1012,12 +1322,13 @@ window.App = window.App || {};
             }, delay);
             return;
           }
-          // Retries exhausted — report clearly.
+          // Retries exhausted — report clearly (attempts used + seconds-ish).
           onError({
             type: 'http',
             status: e && e.status,
             message: 'rate limited / overloaded — retried ' + RETRY_MAX +
-              '×; try again',
+              ' times over ~' + Math.round(RATE_LIMIT_MAX_MS / 1000) +
+              's window; try again',
           });
           return;
         }
@@ -1058,5 +1369,8 @@ window.App = window.App || {};
     // Exposed for reuse; harmless to share. (SPEC §7.6 lists an equivalent
     // private helper in Orchestrator; this lets callers reuse one predicate.)
     isToolUnsupportedError: isToolUnsupportedError,
+    // Read-only scheduler snapshot for the UI overload banner + orchestrator
+    // throttling. { inflight, queued, spacingMs, cooldownUntilMs, recentlyRateLimited }
+    rateState: rateState,
   };
 })();
