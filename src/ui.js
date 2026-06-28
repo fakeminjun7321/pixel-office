@@ -1042,6 +1042,24 @@ window.App = window.App || {};
     var box = $('panel-agent-transcript');
     if (!box) return;
 
+    if (role === 'tool') {
+      // tool result/notice — render as a distinct chip, not a chat bubble.
+      // a tool turn closes any open streaming assistant turn first.
+      var prevT = box.lastChild;
+      if (prevT && prevT.getAttribute) prevT.removeAttribute('data-streaming');
+      var raw = String(text || '');
+      // strip a leading "[tool NAME] " marker into a styled name chip
+      var name = 'tool', rest = raw;
+      var mm = /^\[tool\s*([^\]]*)\]\s*([\s\S]*)$/.exec(raw);
+      if (mm) { name = (mm[1] || 'tool').trim() || 'tool'; rest = mm[2]; }
+      var chip = el('div', 'tx-tool');
+      chip.appendChild(el('span', 'tx-tool-ico', '🔧'));
+      chip.appendChild(el('span', 'tx-tool-name', name));
+      if (rest) chip.appendChild(el('span', 'tx-tool-brief', truncate(rest, 160)));
+      box.appendChild(chip);
+      box.scrollTop = box.scrollHeight;
+      return;
+    }
     if (role === 'assistant') {
       var last = box.lastChild;
       if (last && last.classList && last.classList.contains('tx-assistant') &&
@@ -1085,6 +1103,42 @@ window.App = window.App || {};
       box.scrollTop = box.scrollHeight;
     } catch (e) {}
   };
+
+  // onToolCall(info) — optional hook the orchestrator may call when a tool fires.
+  // info: { agentId, agentName, name, input, ok, brief }. Pushes a styled 'tool'
+  // log line (🔧 name ok/err) and mirrors it into the open transcript. Safe no-op
+  // if Store/log is unavailable. The orchestrator already logs tool kind='tool'
+  // directly; this is an additional entry point so other callers stay decoupled.
+  UI.onToolCall = function (info) {
+    try {
+      info = info || {};
+      var name = String(info.name || 'tool');
+      var ok = (info.ok !== false);
+      var brief = info.brief != null ? String(info.brief)
+        : (info.input != null ? compactInput(info.input) : '');
+      var from = info.agentName || 'agent';
+      var txt = '🔧 ' + name + (ok ? ' ✓' : ' ✗') + (brief ? ' · ' + truncate(brief, 80) : '');
+      if (App.Store && App.Store.pushLog) {
+        App.Store.pushLog({ from: from, to: 'tool', kind: 'tool', text: txt });
+      }
+      if (info.agentId != null) UI.logToolCall(info.agentId, name, brief);
+      UI.refreshLog();
+    } catch (e) {}
+  };
+
+  // Compact a tool input object/string into a short single-line brief.
+  function compactInput(input) {
+    try {
+      if (input == null) return '';
+      if (typeof input === 'string') return input;
+      // prefer the most descriptive scalar fields when present
+      var keys = ['path', 'query', 'url', 'filename', 'title', 'type', 'expr'];
+      for (var i = 0; i < keys.length; i++) {
+        if (input[keys[i]] != null && typeof input[keys[i]] !== 'object') return keys[i] + '=' + input[keys[i]];
+      }
+      return truncate(JSON.stringify(input), 120);
+    } catch (e) { return ''; }
+  }
 
   // ----- panel mini-sprite preview (idle-bob) -----
   function startPanelPreview() {
@@ -1231,8 +1285,116 @@ window.App = window.App || {};
     var gho = $('set-gh-owner'); if (gho) gho.value = gh.owner || '';
     var ghr = $('set-gh-repo'); if (ghr) ghr.value = gh.repo || '';
     var ghb = $('set-gh-branch'); if (ghb) ghb.value = gh.branch || 'main';
+    // (v6) Inject + load the agent-tools controls (CORS proxy URL, allow tools,
+    // allow tool GitHub push). Defaults: tools ON, push OFF, proxy empty.
+    ensureToolsFields();
+    var ten = $('set-tools-enabled'); if (ten) ten.checked = (settings.toolsEnabled !== false);
+    var cpx = $('set-cors-proxy'); if (cpx) cpx.value = settings.corsProxy || '';
+    var atg = $('set-tool-gh-push'); if (atg) atg.checked = (settings.allowToolGithubPush === true);
     show($('modal-settings'));
   };
+
+  // Inject (once) the AGENT TOOLS settings group after the GitHub field, reusing
+  // the existing .field / .field-row / .switch styling. Adds:
+  //   - 'Allow agent tools' switch  -> settings.toolsEnabled (default ON)
+  //   - 'CORS proxy URL' input      -> settings.corsProxy   (default '')
+  //   - 'Allow tool GitHub push'    -> settings.allowToolGithubPush (default OFF)
+  // Idempotent; degrades gracefully if the anchor is missing.
+  function ensureToolsFields() {
+    if ($('set-tools-enabled')) return; // already injected
+    var anchor = $('set-gh-token');
+    if (!anchor || typeof document === 'undefined') return;
+    var anchorField = anchor;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    if (!anchorField || !anchorField.parentNode) return;
+
+    var group = el('div', 'field');
+    var groupLabel = el('span', 'field-label');
+    groupLabel.setAttribute('data-i18n', 'set.tools');
+    groupLabel.textContent = T('set.tools', 'AGENT TOOLS');
+    group.appendChild(groupLabel);
+
+    // --- Allow agent tools switch (default ON) ---
+    var toolRow = el('div', 'field field-inline');
+    var toolLbl = el('span', 'field-label');
+    toolLbl.setAttribute('data-i18n', 'set.toolsEnabled');
+    toolLbl.textContent = T('set.toolsEnabled', 'ALLOW AGENT TOOLS');
+    var toolSw = el('button', 'switch on');
+    toolSw.id = 'set-tools-enabled';
+    toolSw.type = 'button';
+    toolSw.setAttribute('role', 'switch');
+    toolSw.setAttribute('aria-checked', 'true');
+    toolSw.title = 'Let agents call browser tools (files, search, run, charts)';
+    toolSw.appendChild(el('span', 'switch-knob'));
+    // expose .checked-like access via a getter mapped to aria-checked
+    Object.defineProperty(toolSw, 'checked', {
+      configurable: true,
+      get: function () { return this.getAttribute('aria-checked') === 'true'; },
+      set: function (v) { setSwitch(this, !!v); }
+    });
+    on(toolSw, 'click', function () { setSwitch(toolSw, toolSw.getAttribute('aria-checked') !== 'true'); });
+    var toolHint = el('span', 'field-hint inline-hint',
+      T('set.toolsEnabled.hint', 'Let agents read/write files, search, run HTML, and make charts.'));
+    toolRow.appendChild(toolLbl);
+    toolRow.appendChild(toolSw);
+    toolRow.appendChild(toolHint);
+    group.appendChild(toolRow);
+
+    // --- CORS proxy URL ---
+    var proxyRow = el('div', 'field');
+    var proxyLbl = el('span', 'field-label');
+    proxyLbl.setAttribute('data-i18n', 'set.corsProxy');
+    proxyLbl.textContent = T('set.corsProxy', 'CORS PROXY URL');
+    var proxyInput = document.createElement('input');
+    proxyInput.id = 'set-cors-proxy';
+    proxyInput.type = 'text';
+    proxyInput.autocomplete = 'off';
+    proxyInput.spellcheck = false;
+    proxyInput.placeholder = 'https://your-proxy/?url=  (enables web_fetch)';
+    var proxyHint = el('span', 'field-hint',
+      T('set.corsProxy.hint', 'Optional. The web_fetch tool prepends this and appends the encoded URL. Leave blank to disable web fetching.'));
+    proxyRow.appendChild(proxyLbl);
+    proxyRow.appendChild(proxyInput);
+    proxyRow.appendChild(proxyHint);
+    group.appendChild(proxyRow);
+
+    // --- Allow tool GitHub push switch (default OFF) ---
+    var pushRow = el('div', 'field field-inline');
+    var pushLbl = el('span', 'field-label');
+    pushLbl.setAttribute('data-i18n', 'set.toolGhPush');
+    pushLbl.textContent = T('set.toolGhPush', 'ALLOW TOOL GITHUB PUSH');
+    var pushSw = el('button', 'switch');
+    pushSw.id = 'set-tool-gh-push';
+    pushSw.type = 'button';
+    pushSw.setAttribute('role', 'switch');
+    pushSw.setAttribute('aria-checked', 'false');
+    pushSw.title = 'Let the github_push tool push without confirmation (off by default)';
+    pushSw.appendChild(el('span', 'switch-knob'));
+    Object.defineProperty(pushSw, 'checked', {
+      configurable: true,
+      get: function () { return this.getAttribute('aria-checked') === 'true'; },
+      set: function (v) { setSwitch(this, !!v); }
+    });
+    on(pushSw, 'click', function () { setSwitch(pushSw, pushSw.getAttribute('aria-checked') !== 'true'); });
+    var pushHint = el('span', 'field-hint inline-hint',
+      T('set.toolGhPush.hint', 'Off by default — agents cannot push to GitHub via tools unless enabled.'));
+    pushRow.appendChild(pushLbl);
+    pushRow.appendChild(pushSw);
+    pushRow.appendChild(pushHint);
+    group.appendChild(pushRow);
+
+    if (anchorField.nextSibling) anchorField.parentNode.insertBefore(group, anchorField.nextSibling);
+    else anchorField.parentNode.appendChild(group);
+  }
+
+  // Generic neon-switch state setter (mirrors setWebSearchSwitch for any switch).
+  function setSwitch(sw, on_) {
+    if (!sw) return;
+    sw.setAttribute('aria-checked', on_ ? 'true' : 'false');
+    if (on_) sw.classList.add('on'); else sw.classList.remove('on');
+  }
 
   function toggleGhTokenVisible() {
     var t = $('set-gh-token');
@@ -1418,6 +1580,10 @@ window.App = window.App || {};
     var gho = $('set-gh-owner'); if (gho) gh.owner = gho.value.trim();
     var ghr = $('set-gh-repo'); if (ghr) gh.repo = ghr.value.trim();
     var ghb = $('set-gh-branch'); if (ghb) gh.branch = ghb.value.trim() || 'main';
+    // (v6) Agent-tools settings. tools default ON, push default OFF.
+    var ten = $('set-tools-enabled'); if (ten) settings.toolsEnabled = (ten.getAttribute('aria-checked') === 'true');
+    var cpx = $('set-cors-proxy'); if (cpx) settings.corsProxy = cpx.value.trim();
+    var atg = $('set-tool-gh-push'); if (atg) settings.allowToolGithubPush = (atg.getAttribute('aria-checked') === 'true');
     if (App.Store && App.Store.save) App.Store.save();
     hide($('modal-settings'));
     requestNotifyPermission(); // polite, one-time, on this user gesture

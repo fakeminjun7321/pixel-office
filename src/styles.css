@@ -285,6 +285,16 @@ body{
 .log-line .log-from{ font-weight:700; }
 .log-line .log-arrow{ color:var(--text-faint); margin:0 3px; }
 
+/* v6: tool-call log lines read distinctly (magenta, faint chip background) */
+.log-line.k-tool{
+  color:var(--magenta);
+  background:rgba(255,61,240,.07);
+  border-left:2px solid rgba(255,61,240,.45);
+  padding-left:6px;
+}
+.log-line.k-tool .log-from{ color:var(--magenta); }
+.log-line.k-tool .log-arrow{ color:rgba(255,61,240,.5); }
+
 /* =========================================================================
    GENERIC PANEL CHROME (agent panel, board, modal cards)  — visual §7
    ========================================================================= */

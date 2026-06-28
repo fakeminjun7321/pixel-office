@@ -597,9 +597,14 @@ window.App = window.App || {};
     // App.Tools.specs() to tool-capable workers. Tool implementations live in
     // tools.js; this is only the on/off switch.
     // ---------------------------------------------------------------------------
-    TOOLS_ENABLED: false,   // browser tools (calc/run_js/analyze_data) are built & sandboxed but
-                            // gated OFF by default: the Anthropic tool_use round-trip isn't fully
-                            // wired in api.js yet, so exposing them by default just burns a round-trip.
+    TOOLS_ENABLED: true,    // v6: Anthropic tool_use round-trip is now fully wired in api.js
+                            // (toolUses/stopReason surfaced through the SSE accumulator), so the
+                            // browser tools (calc/run_js/analyze_data + workspace/file/web tools)
+                            // are exposed to tool-capable workers by default.
+    // v6: optional CORS proxy URL for web_fetch (empty default = disabled). NOTE: the UI binds the
+    // user-facing value to settings.corsProxy (persisted); tools read settings.corsProxy first and
+    // fall back to this config default. Keep '' so nothing fetches cross-origin unless configured.
+    CORS_PROXY: '',
     DEFAULT_LANG: 'en',
 
     // ---------------------------------------------------------------------------

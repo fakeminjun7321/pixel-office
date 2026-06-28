@@ -592,6 +592,11 @@ window.App = window.App || {};
       var facing = agent.facing || 'down';
       var frame = (agent.anim && agent.anim.frame) || 0;
       var color = agent.color || roleColorFor(agent.role) || pal.purple;
+      var role = agent.role || 'generalist';
+
+      // Boss reads as a slightly bigger silhouette (×1.12). We scale `s` but keep
+      // the FEET anchor fixed by recomputing the origin against the boosted scale.
+      if (role === 'boss') s = s * 1.12;
 
       // Deterministic per-agent skin/hair from id hash (visual.md §3.4).
       var hp = agent.id ? hash(agent.id) : 0;
@@ -631,12 +636,12 @@ window.App = window.App || {};
 
       // Dispatch pose.
       if (seated) {
-        drawSeated(ctx, s, pal, color, skin, hair, longHair, facing, state, frame, selBoost);
+        drawSeated(ctx, s, pal, color, skin, hair, longHair, facing, state, frame, selBoost, role);
       } else if (state === 'walking') {
-        drawWalking(ctx, s, pal, color, skin, hair, longHair, facing, frame, selBoost);
+        drawWalking(ctx, s, pal, color, skin, hair, longHair, facing, frame, selBoost, role);
       } else {
         // idle / thinking / meeting / coffee → idle-bob standing pose.
-        drawStanding(ctx, s, pal, color, skin, hair, longHair, facing, state, frame, selBoost);
+        drawStanding(ctx, s, pal, color, skin, hair, longHair, facing, state, frame, selBoost, role);
         // thinking → tiny pulsing "…" above head + amber emblem tint handled inside.
       }
     } catch (e) { /* never throw from draw — bad agent must not freeze loop */ }
@@ -696,7 +701,7 @@ window.App = window.App || {};
 
   // --- Shared body parts (standing). Authored facing DOWN (visual.md §3.2),
   // adapted for up/side. Draws an outline underlay first for a 1px silhouette. ---
-  function drawStanding(ctx, s, pal, color, skin, hair, longHair, facing, state, frame, selBoost) {
+  function drawStanding(ctx, s, pal, color, skin, hair, longHair, facing, state, frame, selBoost, role) {
     var f1 = (frame % 2) === 1; // idle-bob frame
     var emblemColor = color;
     if (state === 'thinking') {
@@ -710,11 +715,11 @@ window.App = window.App || {};
     pr(5, 23, 6, 1, 'rgba(0,0,0,0.5)');
 
     if (facing === 'up') {
-      drawBodyUp(ctx, pal, color, skin, hair, longHair, emblemColor, visorA, false);
+      drawBodyUp(ctx, pal, color, skin, hair, longHair, emblemColor, visorA, false, role, state, frame);
     } else if (facing === 'left' || facing === 'right') {
-      drawBodySide(ctx, pal, color, skin, hair, longHair, emblemColor, visorA, facing, false);
+      drawBodySide(ctx, pal, color, skin, hair, longHair, emblemColor, visorA, facing, false, role, state, frame);
     } else {
-      drawBodyDown(ctx, pal, color, skin, hair, longHair, emblemColor, visorA, false);
+      drawBodyDown(ctx, pal, color, skin, hair, longHair, emblemColor, visorA, false, role, state, frame);
     }
 
     // thinking "…" mini bubble dots above head.
@@ -733,9 +738,212 @@ window.App = window.App || {};
     }
   }
 
+  // ===========================================================================
+  // drawRoleLayer(ctx, role, pal, color, facing, state, frame)   — v6 ROLE SPRITES
+  // Per-role pixel cues (headwear, held prop, garment, chest icon) layered ON TOP
+  // of the shared body, in the SAME 16-art-px box (pr() origin already set by the
+  // body draw). Facing-aware: 'up' hides face props but keeps headwear silhouette;
+  // side draws the held prop only on the FRONT hand (mirrored via X()). Wrapped in
+  // try/catch so a bad layer never freezes the loop. Reads accent colors from the
+  // palette but never changes config role colors. Pure draw.
+  // ===========================================================================
+  function drawRoleLayer(ctx, role, pal, color, facing, state, frame) {
+    try {
+      if (!role) return;
+      var up = (facing === 'up');
+      var side = (facing === 'left' || facing === 'right');
+      var flip = (facing === 'left');
+      // Mirror helper for side view (matches body draw convention).
+      var X = function (x, w) { return flip ? (16 - x - (w || 1)) : x; };
+
+      switch (role) {
+        case 'boss':       drawRoleBoss(ctx, pal, color, up, side, X); break;
+        case 'engineer':   drawRoleEngineer(ctx, pal, color, up, side, X); break;
+        case 'designer':   drawRoleDesigner(ctx, pal, color, up, side, X); break;
+        case 'researcher': drawRoleResearcher(ctx, pal, color, up, side, X); break;
+        case 'writer':     drawRoleWriter(ctx, pal, color, up, side, X); break;
+        case 'qa':         drawRoleQA(ctx, pal, color, up, side, X, state); break;
+        case 'generalist':
+        default:           drawRoleGeneralist(ctx, pal, color, up, side, X); break;
+      }
+    } catch (e) { /* never throw from draw */ }
+  }
+
+  // --- BOSS (cyan): crown + suit lapels + cyan tie + star chest icon. ----------
+  function drawRoleBoss(ctx, pal, color, up, side, X) {
+    var cyan = pal.cyan, suitMid = pal.suitMid;
+    // 3-tooth crown — keep silhouette even when facing up.
+    withGlow(ctx, cyan, 5, function () {
+      pr(X(5, 1), -2, 1, 2, cyan);
+      pr(X(7, 1), -2, 1, 2, cyan);
+      pr(X(9, 1), -2, 1, 2, cyan);
+      pr(X(5, 5), 0, 5, 1, cyan, 0.9); // crown band
+    });
+    pr(X(7, 1), -3, 1, 1, '#ffffff', 0.9); // center spark
+    if (up) return; // suit/tie/icon are front-only
+    // Suit lapels + cyan tie.
+    pr(X(5, 1), 8, 1, 4, suitMid);
+    pr(X(10, 1), 8, 1, 4, suitMid);
+    pr(X(7, 2), 8, 2, 5, cyan, 0.85);  // tie
+    pr(X(7, 2), 8, 2, 1, cyan);        // knot
+    // Star chest icon (5px plus + corners).
+    if (!side) {
+      pr(7, 11, 2, 2, '#ffffff', 0.9);
+      pr(6, 12, 4, 1, cyan, 0.8);
+      pr(7, 10, 2, 4, cyan, 0.7);
+    }
+  }
+
+  // --- ENGINEER (blue): hood + headset + glasses + </> chevrons. ---------------
+  function drawRoleEngineer(ctx, pal, color, up, side, X) {
+    var blue = pal.blue, suitMid = pal.suitMid;
+    var hd = '#1a2238';
+    // Hood silhouette (kept for up too).
+    pr(X(3, 1), 0, 1, 5, hd);
+    pr(X(12, 1), 0, 1, 5, hd);
+    pr(X(4, 8), -1, 8, 2, hd);
+    // Headset band + ear cup + mic boom.
+    pr(X(4, 8), 1, 8, 1, '#0c1124');
+    withGlow(ctx, blue, 4, function () { pr(X(3, 1), 2, 1, 2, blue, 0.9); });
+    if (up) return;
+    pr(X(3, 2), 4, 2, 1, blue, 0.8); // mic boom (front only)
+    // Glasses.
+    pr(X(5, 2), 3, 2, 1, '#bfe0ff', 0.7);
+    pr(X(9, 2), 3, 2, 1, '#bfe0ff', 0.7);
+    if (side) return;
+    // Hoodie pocket + </> chevrons chest icon.
+    pr(5, 12, 6, 2, suitMid);
+    pr(5, 11, 1, 1, blue, 0.9); pr(6, 12, 1, 1, blue, 0.9); pr(5, 13, 1, 1, blue, 0.9); // <
+    pr(10, 11, 1, 1, blue, 0.9); pr(9, 12, 1, 1, blue, 0.9); pr(10, 13, 1, 1, blue, 0.9); // >
+  }
+
+  // --- DESIGNER (magenta): tilted beret + stylus + smock + pen-nib icon. -------
+  function drawRoleDesigner(ctx, pal, color, up, side, X) {
+    var magenta = pal.magenta;
+    var be = '#2a1030';
+    // Tilted beret.
+    pr(X(4, 8), 0, 8, 2, be);
+    pr(X(4, 5), -1, 5, 1, be);
+    withGlow(ctx, magenta, 4, function () { pr(X(4, 1), -1, 1, 1, magenta, 0.9); }); // nub
+    if (up) return;
+    // Held stylus on front hand (side) / right hand (front).
+    pr(X(12, 1), 11, 1, 4, '#dddddd');
+    pr(X(12, 1), 11, 1, 1, magenta, 0.9); // tip
+    // Smock + paint flecks.
+    pr(X(4, 8), 9, 8, 6, '#3a2742');
+    if (side) return;
+    pr(6, 11, 1, 1, magenta, 0.8);
+    pr(9, 13, 1, 1, pal.lime, 0.8);
+    pr(8, 10, 1, 1, pal.amber, 0.8);
+    // Pen-nib chest icon.
+    pr(7, 10, 2, 3, '#ffffff', 0.85);
+    pr(7, 13, 2, 1, magenta, 0.9);
+  }
+
+  // --- RESEARCHER (lime): round glasses + magnifier + WHITE LAB COAT + flask. --
+  function drawRoleResearcher(ctx, pal, color, up, side, X) {
+    var lime = pal.lime;
+    var coat = '#e8eef7';
+    // Lab coat torso + sleeves (under headwear, drawn first so glasses sit on top).
+    if (!up) {
+      pr(X(4, 8), 8, 8, 8, coat);
+      pr(X(7, 1), 8, 1, 7, '#c9d4e6'); // center seam
+      pr(X(6, 1), 8, 1, 2, '#c9d4e6'); pr(X(9, 1), 8, 1, 2, '#c9d4e6'); // collar V
+      pr(X(3, 2), 9, 2, 5, coat);  // left sleeve
+      pr(X(11, 2), 9, 2, 5, coat); // right sleeve
+      // Flask chest icon.
+      if (!side) {
+        pr(7, 10, 2, 1, lime, 0.9);
+        pr(6, 11, 4, 3, lime, 0.6);
+        pr(7, 11, 2, 3, '#ffffff', 0.5);
+      }
+    }
+    if (up) return;
+    // Round glasses + glints.
+    pr(X(4, 2), 3, 2, 2, lime, 0.5);
+    pr(X(10, 2), 3, 2, 2, lime, 0.5);
+    pr(X(4, 1), 3, 1, 1, '#ffffff', 0.7);
+    pr(X(10, 1), 3, 1, 1, '#ffffff', 0.7);
+    // Magnifier on the front/right hand.
+    pr(X(11, 3), 12, 3, 1, lime, 0.8); // ring top
+    pr(X(11, 3), 14, 3, 1, lime, 0.8); // ring bottom
+    pr(X(11, 1), 13, 1, 1, lime, 0.8); // ring left
+    pr(X(13, 1), 13, 1, 1, lime, 0.8); // ring right
+    pr(X(12, 1), 13, 1, 1, '#ffffff', 0.6); // glint
+    pr(X(13, 1), 15, 2, 1, '#caa15a'); // handle
+  }
+
+  // --- WRITER (amber): pencil behind ear + scarf + notepad + pen-nib icon. -----
+  function drawRoleWriter(ctx, pal, color, up, side, X) {
+    var amber = pal.amber;
+    // Pencil behind ear (headwear-ish silhouette, keep for up).
+    pr(X(3, 1), 2, 1, 3, '#caa15a');
+    pr(X(3, 1), 5, 1, 1, '#444444'); // tip
+    // Amber scarf.
+    pr(X(5, 6), 7, 6, 2, amber, 0.8);
+    pr(X(4, 1), 8, 1, 3, amber, 0.7); // tail
+    if (up) return;
+    if (side) return;
+    // Notepad on left hand.
+    pr(2, 12, 4, 4, '#f2efe6');
+    pr(3, 13, 3, 1, '#9aa0b0', 0.7);
+    pr(3, 14, 3, 1, '#9aa0b0', 0.7);
+    pr(2, 12, 1, 4, '#caa15a'); // spiral
+    // Pen-nib chest icon.
+    pr(7, 10, 2, 3, '#ffffff', 0.85);
+    pr(7, 13, 2, 1, amber, 0.9);
+  }
+
+  // --- QA (red): flat cap + clipboard (check/X by state) + red armband. --------
+  function drawRoleQA(ctx, pal, color, up, side, X, state) {
+    var red = pal.red, lime = pal.lime;
+    var fail = (state === 'fail' || state === 'error');
+    // Flat cap crown + front brim + red button.
+    pr(X(3, 10), 0, 10, 2, '#1a1d2e');
+    if (!up) pr(X(4, 8), 2, 8, 1, '#0c1124'); // brim (front)
+    withGlow(ctx, red, 3, function () { pr(X(7, 1), 0, 1, 1, red, 0.9); }); // button
+    // Red armband.
+    if (!up) pr(X(3, 2), 9, 2, 1, red, 0.85);
+    if (up) return;
+    if (side) return;
+    // Clipboard with check (or red X on fail).
+    pr(5, 11, 6, 6, '#e6e6ea');
+    pr(7, 10, 2, 1, '#b0b4c0'); // clip
+    if (fail) {
+      pr(6, 12, 1, 1, red); pr(7, 13, 1, 1, red); pr(8, 14, 1, 1, red);
+      pr(8, 12, 1, 1, red); pr(7, 13, 1, 1, red); pr(6, 14, 1, 1, red);
+    } else {
+      pr(9, 12, 1, 1, lime); pr(8, 13, 1, 1, lime); pr(7, 14, 1, 1, lime); pr(6, 13, 1, 1, lime);
+    }
+  }
+
+  // --- GENERALIST (purple): knit beanie + wrench + utility vest + gear icon. ---
+  function drawRoleGeneralist(ctx, pal, color, up, side, X) {
+    var purple = pal.purple;
+    var kn = '#2a2440';
+    // Knit beanie + fold + pom.
+    pr(X(4, 8), -1, 8, 3, kn);
+    pr(X(4, 8), 1, 8, 1, '#3a3458'); // fold
+    withGlow(ctx, purple, 4, function () { pr(X(7, 2), -2, 2, 1, purple, 0.9); }); // pom
+    if (up) return;
+    // Wrench on front/right hand.
+    pr(X(11, 1), 11, 1, 4, '#9aa0b0'); // shaft
+    pr(X(11, 3), 11, 3, 2, purple, 0.85); // open-end head
+    // Utility vest pockets + zipper.
+    if (!side) {
+      pr(5, 12, 2, 2, '#3a3458');
+      pr(9, 12, 2, 2, '#3a3458');
+      pr(7, 9, 1, 6, '#4a4470'); // zipper
+      // Gear chest icon.
+      pr(7, 10, 2, 2, purple, 0.85);
+      pr(6, 10, 1, 1, purple, 0.7); pr(9, 10, 1, 1, purple, 0.7);
+      pr(6, 11, 1, 1, purple, 0.7); pr(9, 11, 1, 1, purple, 0.7);
+    }
+  }
+
   // Standing body — FACING DOWN (the canonical map, visual.md §3.2). The `seatTint`
   // arg is unused for standing but kept for symmetry.
-  function drawBodyDown(ctx, pal, color, skin, hair, longHair, emblemColor, visorA) {
+  function drawBodyDown(ctx, pal, color, skin, hair, longHair, emblemColor, visorA, seatTint, role, state, frame) {
     // Outline underlay: cheap silhouette by drawing the main blocks 1px larger first.
     pr(3, 0, 10, 23, pal.outline, 0.0); // (kept negligible; per-block underlays below)
 
@@ -776,10 +984,12 @@ window.App = window.App || {};
     pr(5, 3, 6, 2, '#05070f');       // housing
     withGlow(ctx, color, 4, function () { pr(5, 3, 6, 1, color, visorA); }); // glowing band
     pr(6, 3, 1, 1, '#ffffff', 0.8);  // visor glint
+
+    drawRoleLayer(ctx, role, pal, color, 'down', state, frame);
   }
 
   // Standing body — FACING UP (away; no face). visual.md §3.3.
-  function drawBodyUp(ctx, pal, color, skin, hair, longHair, emblemColor, visorA) {
+  function drawBodyUp(ctx, pal, color, skin, hair, longHair, emblemColor, visorA, seatTint, role, state, frame) {
     // Legs.
     pr(5, 16, 3, 5, pal.suitDark);
     pr(8, 16, 3, 5, pal.suitDark);
@@ -809,10 +1019,12 @@ window.App = window.App || {};
     if (longHair) { pr(3, 2, 1, 3, hair); pr(12, 2, 1, 3, hair); }
     // Nape line — visor glow bleeds around the head.
     withGlow(ctx, color, 4, function () { pr(5, 5, 6, 1, color, visorA * 0.8); });
+
+    drawRoleLayer(ctx, role, pal, color, 'up', state, frame);
   }
 
   // Standing body — FACING SIDE (right; mirror for left). visual.md §3.3.
-  function drawBodySide(ctx, pal, color, skin, hair, longHair, emblemColor, visorA, facing) {
+  function drawBodySide(ctx, pal, color, skin, hair, longHair, emblemColor, visorA, facing, seatTint, role, state, frame) {
     var flip = (facing === 'left');
     // Mirror by reflecting x within the 16-wide cell when facing left.
     var X = function (x, w) { return flip ? (16 - x - (w || 1)) : x; };
@@ -844,10 +1056,12 @@ window.App = window.App || {};
     if (longHair) pr(X(4, 1), 2, 1, 3, hair);
     // Visor band on the front half.
     withGlow(ctx, color, 4, function () { pr(X(8, 3), 3, 3, 1, color, visorA); });
+
+    drawRoleLayer(ctx, role, pal, color, facing, state, frame);
   }
 
   // --- WALKING (visual.md §3.5.2). 4-frame leg swing + 1px body bob. ----------
-  function drawWalking(ctx, s, pal, color, skin, hair, longHair, facing, frame, selBoost) {
+  function drawWalking(ctx, s, pal, color, skin, hair, longHair, facing, frame, selBoost, role) {
     var f = frame % 4; // [contactL, passing, contactR, passing]
     var lift = (f === 1 || f === 3) ? -1 : 0; // body lifts on passing frames
 
@@ -863,11 +1077,11 @@ window.App = window.App || {};
     // Lift the torso/head by `lift` art-px.
     begin(ctx, _ox, saveOy + lift * s, s);
     if (facing === 'up') {
-      drawWalkUpper(ctx, pal, color, skin, hair, longHair, 'up', f, color);
+      drawWalkUpper(ctx, pal, color, skin, hair, longHair, 'up', f, color, role);
     } else if (facing === 'left' || facing === 'right') {
-      drawWalkUpper(ctx, pal, color, skin, hair, longHair, facing, f, color);
+      drawWalkUpper(ctx, pal, color, skin, hair, longHair, facing, f, color, role);
     } else {
-      drawWalkUpper(ctx, pal, color, skin, hair, longHair, 'down', f, color);
+      drawWalkUpper(ctx, pal, color, skin, hair, longHair, 'down', f, color, role);
     }
     begin(ctx, _ox, saveOy, s); // restore
   }
@@ -901,7 +1115,7 @@ window.App = window.App || {};
 
   // Upper body for walking (torso/arms/head) — reuses standing torso/head with a
   // small arm swing. Arms swing opposite on passing frames.
-  function drawWalkUpper(ctx, pal, color, skin, hair, longHair, facing, f, emblemColor) {
+  function drawWalkUpper(ctx, pal, color, skin, hair, longHair, facing, f, emblemColor, role) {
     var swing = (f === 1) ? -1 : (f === 3 ? 1 : 0);
     if (facing === 'up') {
       // Torso back.
@@ -914,6 +1128,7 @@ window.App = window.App || {};
       pr(4, 0, 8, 6, hair);
       if (longHair) { pr(3, 2, 1, 3, hair); pr(12, 2, 1, 3, hair); }
       withGlow(ctx, color, 4, function () { pr(5, 5, 6, 1, color, 0.85); });
+      drawRoleLayer(ctx, role, pal, color, 'up', 'walking', f);
       return;
     }
     if (facing === 'left' || facing === 'right') {
@@ -929,6 +1144,7 @@ window.App = window.App || {};
       pr(X(5, 6), 0, 6, 2, hair);
       pr(X(4, 1), 1, 1, 5, hair);
       withGlow(ctx, color, 4, function () { pr(X(8, 3), 3, 3, 1, color, 0.9); });
+      drawRoleLayer(ctx, role, pal, color, facing, 'walking', f);
       return;
     }
     // DOWN.
@@ -951,11 +1167,13 @@ window.App = window.App || {};
     pr(5, 3, 6, 2, '#05070f');
     withGlow(ctx, color, 4, function () { pr(5, 3, 6, 1, color, 0.9); });
     pr(6, 3, 1, 1, '#ffffff', 0.8);
+
+    drawRoleLayer(ctx, role, pal, color, 'down', 'walking', f);
   }
 
   // --- SEATED / sit-and-type (visual.md §3.5.3). Used for coding & searching. --
   // Lower legs occluded by chair; torso lowered ~2px; hands tap on the desk.
-  function drawSeated(ctx, s, pal, color, skin, hair, longHair, facing, state, frame, selBoost) {
+  function drawSeated(ctx, s, pal, color, skin, hair, longHair, facing, state, frame, selBoost, role) {
     var typeUp = (frame % 2) === 1; // 2-frame typing tap
     var emblemColor = (state === 'searching') ? pal.amber : color;
 
@@ -978,6 +1196,7 @@ window.App = window.App || {};
       var hy = typeUp ? 14 : 15;
       pr(4, hy, 2, 2, skin);   // L hand
       pr(10, hy, 2, 2, skin);  // R hand
+      drawRoleLayer(ctx, role, pal, color, 'up', state, frame);
     } else if (facing === 'left' || facing === 'right') {
       var flip = (facing === 'left');
       var X = function (x, w) { return flip ? (16 - x - (w || 1)) : x; };
@@ -990,6 +1209,7 @@ window.App = window.App || {};
       withGlow(ctx, color, 4, function () { pr(X(8, 3), 3, 3, 1, color, 0.9); });
       var hyS = typeUp ? 14 : 15;
       pr(X(9, 2), hyS, 2, 2, skin); // front hand taps
+      drawRoleLayer(ctx, role, pal, color, facing, state, frame);
     } else {
       // DOWN seated (faces camera).
       pr(4, 8, 8, 8, pal.suitDark);
@@ -1008,6 +1228,7 @@ window.App = window.App || {};
       var hyD = typeUp ? 14 : 15;
       pr(4, hyD, 2, 2, skin);
       pr(10, hyD, 2, 2, skin);
+      drawRoleLayer(ctx, role, pal, color, 'down', state, frame);
     }
 
     // Occasional keypress sparks (visual.md §3.5.3) in agent color.
@@ -1233,6 +1454,10 @@ window.App = window.App || {};
   // Animated double ring + corner ticks at the agent's feet, in agent.color.
   // (sx,sy) = FEET screen position. Drawn UNDER the agent by the caller.
   // ===========================================================================
+  // Boss reads bigger (×1.12); chrome (glow/ring/nameplate) uses this so it matches
+  // the boss body scaled inside drawAgent. Keep in sync with drawAgent's boss scale.
+  PixelArt.roleScale = function (role) { return role === 'boss' ? 1.12 : 1; };
+
   PixelArt.drawSelection = function (ctx, agent, sx, sy, size) {
     try {
       if (!agent) return;

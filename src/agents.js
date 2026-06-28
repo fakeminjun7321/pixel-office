@@ -692,19 +692,23 @@ window.App = window.App || {};
 
         var selected = (s.selectedAgentId === a.id);
 
+        // Chrome (ring/glow/nameplate/bubble/marker) uses csize so the boss's bigger
+        // body (drawAgent scales it ×1.12 internally) gets matching-size chrome.
+        var csize = size * (art.roleScale ? art.roleScale(a.role) : 1);
+
         // Selection ring UNDER the agent.
-        if (selected && art.drawSelection) art.drawSelection(ctx, a, scr.x, scr.y, size);
+        if (selected && art.drawSelection) art.drawSelection(ctx, a, scr.x, scr.y, csize);
 
         // Wave B/C: activity glow UNDER the agent (a soft pool that fades with
         // recent streaming activity). Drawn before the sprite so it reads as a halo.
         if (art.drawAgentGlow) {
           var glow = Agents.activityGlow(a);
           if (glow > 0.01) {
-            try { art.drawAgentGlow(ctx, a, scr.x, scr.y, size, glow); } catch (e) {}
+            try { art.drawAgentGlow(ctx, a, scr.x, scr.y, csize, glow); } catch (e) {}
           }
         }
 
-        // The sprite (feet anchor).
+        // The sprite (feet anchor). drawAgent applies the boss ×1.12 internally.
         if (art.drawAgent) {
           art.drawAgent(ctx, a, scr.x, scr.y, size, {
             seated: (a.state === 'coding' || a.state === 'searching'),
@@ -714,18 +718,18 @@ window.App = window.App || {};
         }
 
         // Nameplate above head.
-        if (art.drawNameplate) art.drawNameplate(ctx, a, scr.x, scr.y, size);
+        if (art.drawNameplate) art.drawNameplate(ctx, a, scr.x, scr.y, csize);
 
         // Speech bubble above head (head screen pos ≈ feet - ~26 art-px).
         if (a.bubble && a.bubble.text && art.drawBubble) {
-          var headY = scr.y - 26 * (size / 16);
-          art.drawBubble(ctx, a.bubble.text, scr.x, headY, size, a.color);
+          var headY = scr.y - 26 * (csize / 16);
+          art.drawBubble(ctx, a.bubble.text, scr.x, headY, csize, a.color);
         }
 
         // v3: pulsing yellow "!" attention marker above the head (drawn here, not
         // in pixelart.js). Sits a touch above the nameplate so it stays visible.
         if (a._attention) {
-          drawAttentionMarker(ctx, scr.x, scr.y, size);
+          drawAttentionMarker(ctx, scr.x, scr.y, csize);
         }
       } catch (e) { /* one bad sprite must not break the pass */ }
     }

@@ -108,6 +108,12 @@ window.App = window.App || {};
     this.firstTextSeen = false;       // emit onState('text') exactly once
     this.searchingAnnounced = false;  // emit onState('searching') at most once
     this.doneEmitted = false;         // guard onDone()/error against double-fire
+
+    // --- Tool-use round-trip state (v6) -------------------------------------
+    this.toolUses = [];               // finalized client tool_use blocks
+    this.toolBlocks = {};             // index -> { id, name, jsonParts:[] }
+    this.stopReason = null;           // message_delta.stop_reason
+    this.assistantContent = [];       // assistant tool_use blocks (for replay)
   }
 
   // Emit the terminal onDone exactly once (idempotent).
@@ -119,6 +125,9 @@ window.App = window.App || {};
       text: this.fullText,
       usage: this.usage,
       raw: this.lastMessageDelta,
+      toolUses: this.toolUses,
+      stopReason: this.stopReason,
+      assistantContent: this.assistantContent,
     });
   };
 
@@ -191,6 +200,10 @@ window.App = window.App || {};
             this.onState('searching');
           }
         }
+        // Client tool_use blocks (NOT server_tool_use — that mis-routes search).
+        if (cb.type === 'tool_use') {
+          this.toolBlocks[evt.index] = { id: cb.id, name: cb.name, jsonParts: [] };
+        }
         break;
       }
 
@@ -204,15 +217,35 @@ window.App = window.App || {};
           this.fullText += d.text;
           this.onText(d.text);
         }
-        // input_json_delta (tool args) intentionally ignored for display.
+        // input_json_delta carries streamed tool_use input JSON fragments.
+        if (d.type === 'input_json_delta' && typeof d.partial_json === 'string') {
+          var tb = this.toolBlocks[evt.index];
+          if (tb) tb.jsonParts.push(d.partial_json);
+        }
         break;
       }
 
-      case 'content_block_stop':
-        break; // nothing to accumulate
+      case 'content_block_stop': {
+        var fin = this.toolBlocks[evt.index];
+        if (fin) {
+          var input = {};
+          try {
+            input = JSON.parse(fin.jsonParts.join('')) || {};
+          } catch (e) {
+            input = { __parse_error: true, __raw: fin.jsonParts.join('') };
+          }
+          this.toolUses.push({ id: fin.id, name: fin.name, input: input });
+          this.assistantContent.push({
+            type: 'tool_use', id: fin.id, name: fin.name, input: input,
+          });
+          delete this.toolBlocks[evt.index];
+        }
+        break;
+      }
 
       case 'message_delta':
         this.lastMessageDelta = evt;
+        if (evt.delta && evt.delta.stop_reason) this.stopReason = evt.delta.stop_reason;
         if (evt.usage) {
           if (typeof evt.usage.output_tokens === 'number') {
             this.usage.output_tokens = evt.usage.output_tokens;
@@ -259,16 +292,35 @@ window.App = window.App || {};
     this.lastChunk = null;            // raw last JSON chunk (for onDone.raw)
     this.firstTextSeen = false;       // emit onState('text') exactly once
     this.doneEmitted = false;
+
+    // --- Tool-use round-trip state (v6; telemetry only for now) -------------
+    this.toolCalls = {};              // index -> { id, name, args }
+    this.toolUses = [];               // finalized { id, name, input }
+    this.stopReason = null;           // mapped finish_reason
   }
 
   OpenAIAccumulator.prototype.finish = function (announceState) {
     if (this.doneEmitted) return;
     this.doneEmitted = true;
+    // Finalize any accumulated tool_calls into {id,name,input}.
+    for (var idx in this.toolCalls) {
+      if (!Object.prototype.hasOwnProperty.call(this.toolCalls, idx)) continue;
+      var slot = this.toolCalls[idx];
+      var input = {};
+      try {
+        input = JSON.parse(slot.args || '{}') || {};
+      } catch (e) {
+        input = { __parse_error: true, __raw: slot.args || '' };
+      }
+      this.toolUses.push({ id: slot.id, name: slot.name, input: input });
+    }
     if (announceState) this.onState('done');
     this.onDone({
       text: this.fullText,
       usage: this.usage,
       raw: this.lastChunk,
+      toolUses: this.toolUses,
+      stopReason: this.stopReason,
     });
   };
 
@@ -334,6 +386,24 @@ window.App = window.App || {};
         this.fullText += delta.content;
         this.onText(delta.content);
       }
+      // tool_calls arrive as partials: id/name in the first delta per index,
+      // argument fragments in later deltas. Accumulate per tc.index.
+      if (delta && Array.isArray(delta.tool_calls)) {
+        for (var j = 0; j < delta.tool_calls.length; j++) {
+          var tc = delta.tool_calls[j];
+          if (!tc) continue;
+          var ix = tc.index || 0;
+          var slot = this.toolCalls[ix] ||
+            (this.toolCalls[ix] = { id: '', name: '', args: '' });
+          if (tc.id) slot.id = tc.id;
+          if (tc.function) {
+            if (tc.function.name) slot.name = tc.function.name;
+            if (tc.function.arguments) slot.args += tc.function.arguments;
+          }
+        }
+      }
+      var fr = choices[0] && choices[0].finish_reason;
+      if (fr) this.stopReason = (fr === 'tool_calls') ? 'tool_use' : fr;
     }
   };
 

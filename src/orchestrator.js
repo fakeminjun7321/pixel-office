@@ -875,12 +875,9 @@ window.App = window.App || {};
     var toolList = [];
     if (wantWeb && CFG().WEB_SEARCH_TOOL) toolList.push(CFG().WEB_SEARCH_TOOL);
 
-    // CLIENT TOOLS (Browser tools — calc/run_js/analyze_data). Anthropic-only; the
-    //   server-side stream parser in api.js doesn't surface tool_use args, so we
-    //   cannot run a true round-trip tool loop here. We EXPOSE the tools to the
-    //   model (so models that can answer without calling a tool benefit from the
-    //   schema/hint) and detect a tool_use stop gracefully (see startWorkerStream).
-    //   This is the deliberate "minimal, robust" integration the contract allows.
+    // CLIENT TOOLS (Anthropic-only). api.js now surfaces structured tool_use
+    //   (res.toolUses [{id,name,input}] + res.stopReason), so startWorkerStream runs a
+    //   real tool_result round-trip loop. Expose the full App.Tools.specs() here.
     if (clientToolsApplicable(agent, settings)) {
       try {
         var specs = App.Tools.specs();
@@ -910,6 +907,8 @@ window.App = window.App || {};
   //   message_delta.delta.stop_reason). null for OpenAI / unknown.
   function stopReasonOf(res) {
     try {
+      // v6: prefer the flat field the api.js accumulators now surface (Anthropic + OpenAI).
+      if (res && typeof res.stopReason === 'string') return res.stopReason;
       var raw = res && res.raw;
       if (raw && raw.delta && typeof raw.delta.stop_reason === 'string') return raw.delta.stop_reason;
     } catch (e) {}
@@ -959,9 +958,9 @@ window.App = window.App || {};
         }
         task._acc += acc;
 
-        // TOOL LOOP (real path) — only if a future api.js surfaces structured
-        //   tool_use blocks on the result (res.toolUses [{id,name,input}]). Today's
-        //   api.js does not, so this branch is normally skipped; it's forward-safe.
+        // TOOL LOOP (real path, ACTIVE) — api.js surfaces structured tool_use blocks
+        //   (res.toolUses [{id,name,input}]); execute the tools and re-stream with the
+        //   tool_result. (The stop_reason branch below is now only a fallback.)
         var toolUses = res && Array.isArray(res.toolUses) ? res.toolUses : null;
         if (toolUses && toolUses.length && tools && tools.length && iter < MAX_TOOL_ITERS) {
           var s4 = STATE(); if (s4 && s4._activeStreams) delete s4._activeStreams[agent.id];
@@ -983,10 +982,9 @@ window.App = window.App || {};
           return;
         }
 
-        // TOOL LOOP (fallback) — the model wanted to call a client tool but api.js
-        //   does not surface tool_use arguments/ids through its stream, so we cannot
-        //   execute a true tool_result round-trip. Robust fallback: nudge the model
-        //   to inline-compute (it already has its reasoning) and re-run once. Bounded.
+        // TOOL LOOP (fallback) — stop_reason was 'tool_use' but no structured toolUses
+        //   came back (e.g. OpenAI client tools, which we don't execute). Robust
+        //   fallback: nudge the model to inline-compute and re-run once. Bounded.
         if (stopReasonOf(res) === 'tool_use' && tools && tools.length && iter < MAX_TOOL_ITERS) {
           try { log(agent.name || agent.role, 'tool', 'tool', '🔧 wanted a tool — asking for an inline answer'); } catch (e) {}
           var follow = messages.slice();
