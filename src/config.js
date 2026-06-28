@@ -73,9 +73,10 @@ window.App = window.App || {};
 
   // ---------------------------------------------------------------------------
   // §4.2 TILE enum (PINNED — arch numbering WINS).
-  // layout.tiles[gy][gx]. Walkable: FLOOR,CARPET,DOOR,RUG. Blocking: WALL,VOID.
+  // layout.tiles[gy][gx]. Walkable: FLOOR,CARPET,DOOR,RUG,WOOD,TILEFLOOR,GRASS,NEONFLOOR. Blocking: WALL,VOID.
+  // NEW (all WALKABLE; purely visual zones): WOOD:6, TILEFLOOR:7, GRASS:8, NEONFLOOR:9.
   // ---------------------------------------------------------------------------
-  var TILES = { FLOOR: 0, WALL: 1, CARPET: 2, DOOR: 3, RUG: 4, VOID: 5 };
+  var TILES = { FLOOR: 0, WALL: 1, CARPET: 2, DOOR: 3, RUG: 4, VOID: 5, WOOD: 6, TILEFLOOR: 7, GRASS: 8, NEONFLOOR: 9 };
 
   // ---------------------------------------------------------------------------
   // §4.3 FURNITURE definitions (PINNED). w/h = footprint cells; blocks = occupies
@@ -89,7 +90,17 @@ window.App = window.App || {};
     plant:        { w: 1, h: 1, blocks: true,  hasSeat: false },
     coffee:       { w: 1, h: 1, blocks: true,  hasSeat: true  },
     neonSign:     { w: 1, h: 1, blocks: false, hasSeat: false },
-    whiteboard:   { w: 2, h: 1, blocks: true,  hasSeat: false }
+    whiteboard:   { w: 2, h: 1, blocks: true,  hasSeat: false },
+    // NEW (exact dims/flags per SPEC) — decorative + functional props.
+    sofa:         { w: 2, h: 1, blocks: true,  hasSeat: true  },
+    bookshelf:    { w: 1, h: 2, blocks: true,  hasSeat: false },
+    fridge:       { w: 1, h: 1, blocks: true,  hasSeat: false },
+    waterCooler:  { w: 1, h: 1, blocks: true,  hasSeat: false },
+    arcade:       { w: 1, h: 1, blocks: true,  hasSeat: false },
+    tv:           { w: 2, h: 1, blocks: true,  hasSeat: false },
+    printer:      { w: 1, h: 1, blocks: true,  hasSeat: false },
+    reception:    { w: 2, h: 1, blocks: true,  hasSeat: true  },
+    pottedTree:   { w: 1, h: 1, blocks: true,  hasSeat: false }
   };
 
   // ---------------------------------------------------------------------------

@@ -176,6 +176,12 @@ window.App = window.App || {};
     WALKABLE_TILES[T.CARPET] = true;
     WALKABLE_TILES[T.DOOR]   = true;
     WALKABLE_TILES[T.RUG]    = true;
+    // v3 decorative floor tiles — all WALKABLE (purely visual zones, never block).
+    // Guarded with typeof so a legacy config without these keys can't poison the set.
+    if (typeof T.WOOD      === 'number') WALKABLE_TILES[T.WOOD]      = true;
+    if (typeof T.TILEFLOOR === 'number') WALKABLE_TILES[T.TILEFLOOR] = true;
+    if (typeof T.GRASS     === 'number') WALKABLE_TILES[T.GRASS]     = true;
+    if (typeof T.NEONFLOOR === 'number') WALKABLE_TILES[T.NEONFLOOR] = true;
     return WALKABLE_TILES;
   }
 
@@ -586,6 +592,55 @@ window.App = window.App || {};
     if (meetW < 5) { meetX = x1 - 6; meetW = 6; }     // keep room for a 3x2 table
     paint(meetX, meetY, meetW, meetH, T.RUG);
 
+    // --- 3b) decorative FLOOR ZONES (v3) --------------------------------------
+    // New tiles WOOD/TILEFLOOR/GRASS/NEONFLOOR are all walkable, so painting them
+    // anywhere inside the interior can NEVER block movement. We only repaint cells
+    // that are already open floor (paint() clamps to the interior rect and we keep
+    // OFF the corridor column / door cells so the look stays clean — connectivity is
+    // unaffected either way). Guard each tile read with a numeric fallback so a
+    // legacy config without these keys degrades to plain FLOOR instead of NaN.
+    var WOOD      = (typeof T.WOOD      === 'number') ? T.WOOD      : T.FLOOR;
+    var TILEFLOOR = (typeof T.TILEFLOOR === 'number') ? T.TILEFLOOR : T.FLOOR;
+    var GRASS     = (typeof T.GRASS     === 'number') ? T.GRASS     : T.FLOOR;
+    var NEONFLOOR = (typeof T.NEONFLOOR === 'number') ? T.NEONFLOOR : T.FLOOR;
+
+    // paintIf: like paint() but skips the corridor column + any DOOR cell, so a
+    // decorative repaint can never visually swallow the spine or a doorway.
+    function paintIf(px, py, pw, ph, tile) {
+      for (var ry = 0; ry < ph; ry++) {
+        for (var rx = 0; rx < pw; rx++) {
+          var tx = px + rx, ty = py + ry;
+          if (ty < y0 || ty > y1 || tx < x0 || tx > x1) continue;
+          if (tx === corrX) continue;                 // never repaint the spine
+          if (tiles[ty][tx] === T.DOOR) continue;     // never repaint a doorway
+          if (tiles[ty][tx] === T.WALL) continue;     // never repaint walls
+          tiles[ty][tx] = tile;
+        }
+      }
+    }
+
+    // RECEPTION foyer: warm WOOD planks framing the entrance door at the bottom.
+    paintIf(doorX - 3, y1 - 2, 7, 3, WOOD);
+
+    // KITCHEN / PANTRY: tiled hygienic floor in the lounge's left third.
+    var kitchenX = x0 + 1;
+    var kitchenY = labBot + 1;
+    paintIf(kitchenX, kitchenY, 5, Math.max(2, y1 - kitchenY + 1), TILEFLOOR);
+
+    // LOUNGE core: cozy WOOD floor across the lounge center band.
+    paintIf(corrX - 5, labBot + 1, 11, Math.max(2, y1 - (labBot + 1) + 1), WOOD);
+
+    // ATRIUM: a GRASS patch in the lounge's right third (greenery zone).
+    var atriumX = x1 - 5;
+    var atriumY = labBot + 1;
+    paintIf(atriumX, atriumY, 5, Math.max(2, y1 - atriumY + 1), GRASS);
+
+    // NEONFLOOR accents in the department rooms (glowing strips, walkable).
+    paintIf(bossCx - 3, bossBot - 1, 7, 1, NEONFLOOR);          // boss office front strip
+    paintIf(corrX - 5, midBot - 1, 4, 1, NEONFLOOR);            // engineering bay strip
+    paintIf(corrX + 2, midBot - 1, 4, 1, NEONFLOOR);            // design studio strip
+    paintIf(corrX - 5, labBot - 1, 4, 1, NEONFLOOR);            // research lab strip
+
     // --- 4) furniture builder -------------------------------------------------
     var furniture = [];
     var fid = 0;
@@ -641,6 +696,9 @@ window.App = window.App || {};
     place('server', bossDeskX + 3, bossDeskY, 'down');           // rack beside the desk
     place('neonSign', bossCx, y0, 'down');                       // logo on back wall row
     place('plant', bossCx - 3, bossDeskY, 'down');
+    // Boss office flair: a TV on the back wall + a potted tree in the far corner.
+    place('tv', bossCx + 1, y0, 'down');                         // back-wall display
+    place('pottedTree', bossCx + 3, bossDeskY, 'down');          // accent greenery
 
     // ===== ENGINEERING BAY (upper-left room) =====
     // Two desks facing the central corridor (seat to the RIGHT, toward corridor).
@@ -655,6 +713,10 @@ window.App = window.App || {};
     place('chair', engDesk2.seatGx, engDesk2.seatGy, 'left');
     place('server', x0, engRowTop, 'down');        // a little server rack in the bay
     place('plant', engColX, (engRowTop + engRowBot) >> 1, 'down');
+    // Engineering flair: a whiteboard + printer + bookshelf along the far wall.
+    place('whiteboard', engColX, engRowTop - 1, 'down');         // sprint board over the desks
+    place('printer', x0, engRowBot - 1, 'down');                 // shared printer (fills the corner so no dead floor pocket)
+    place('bookshelf', x0 + 1, engRowTop, 'down');               // 1x2 reference shelf
 
     // ===== DESIGN STUDIO (upper-right room) =====
     // Two desks facing the corridor (seat to the LEFT, toward corridor).
@@ -669,6 +731,10 @@ window.App = window.App || {};
     place('chair', desDesk2.seatGx, desDesk2.seatGy, 'right');
     place('whiteboard', desColX, desRowTop - 1, 'down');   // studio whiteboard
     place('plant', desColX + 1, (desRowTop + desRowBot) >> 1, 'down');
+    // Design flair: a mood-board TV + printer + potted tree along the far wall.
+    place('tv', x1 - 1, desRowTop, 'down');                      // 2x1 mood-board display
+    place('printer', x1, desRowBot, 'down');                     // studio printer
+    place('pottedTree', x1, desRowBot + 1, 'down');              // accent greenery (clear of TV/printer)
 
     // ===== RESEARCH LAB (lower-left room) =====
     var resColX  = corrX - 4;
@@ -684,6 +750,10 @@ window.App = window.App || {};
     place('server', x0, resRowTop, 'down');
     place('server', x0, resRowTop + 1, 'down');
     place('plant', resColX, (resRowTop + resRowBot) >> 1, 'down');
+    // Research flair: a whiteboard, a reference bookshelf, and a printer.
+    place('whiteboard', resColX, resRowTop - 1, 'down');         // hypotheses board
+    place('bookshelf', x0, resRowBot + 1, 'down');               // 1x2 papers shelf (below the server stack)
+    place('printer', x0 + 2, resRowBot, 'down');                 // lab printer
 
     // ===== MEETING ROOM (lower-right, purple rug + meetingTable) =====
     var tableX = meetX + Math.floor((meetW - 3) / 2);    // center the 3-wide table
@@ -691,31 +761,84 @@ window.App = window.App || {};
     place('meetingTable', tableX, tableY, 'up');
     place('whiteboard', tableX, meetY - 1, 'down');      // whiteboard above the rug
     place('plant', meetX + meetW - 1, meetY, 'down');
+    // Meeting flair: a presentation TV + a potted tree in the room corner.
+    // Place against the room's far-right wall, clear of the table's seat ring.
+    place('tv', x1 - 1, meetY - 1, 'down');                      // 2x1 presentation screen
+    place('pottedTree', x1, labBot - 1, 'down');                 // corner greenery
 
     // ===== LOUNGE / BREAK ROOM (bottom band, full width below labBot) =====
-    // Coffee machine + a sofa-style cluster of chairs + plants. We tag the lounge
-    // furniture with lounge:true so World.breakSpots() can find loiter cells.
-    var loungeY = labBot + 2;                       // a row inside the lounge
-    if (loungeY > y1) loungeY = y1;                 // legacy-grid safety
-    var coffeeX = corrX - 1;
-    var coffeeY = labBot + 1;
+    // Richer break room: coffee + sofas + arcade + tv + rug + potted trees, plus a
+    // KITCHEN/PANTRY on the left and a GRASS ATRIUM on the right. Everything that is
+    // a loiter target keeps lounge:true so World.breakSpots() still finds it.
+    //
+    // Layout reference (v2 46x30): lounge band y in [labBot+1 .. y1] = [22..28];
+    // corrX=22 spine + doorX=23 entrance approach must stay clear. We keep all
+    // blocking lounge furniture OFF columns corrX and doorX in the two bottom rows
+    // so the door->corridor path is never sealed; the connectivity guard below is a
+    // final backstop. All coordinates are clamped to the interior by place().
+    var loungeTop = labBot + 1;                      // first lounge row
+    var loungeY = labBot + 2;                        // a working row inside the lounge
+    if (loungeY > y1) loungeY = y1;                  // legacy-grid safety
+    var sofaY = Math.min(y1, loungeY + 1);
+
+    // A small rug under the lounge seating cluster for warmth (walkable tile).
+    paintIf(corrX - 5, loungeTop, 5, Math.max(2, sofaY - loungeTop + 1), T.RUG);
+
+    // --- Coffee corner (just left of the spine) ---
+    var coffeeX = corrX - 2;
+    var coffeeY = loungeTop;
     if (coffeeY > y1) coffeeY = y1;
     place('coffee', coffeeX, coffeeY, 'down', { lounge: true });  // seat below it
-    place('plant', coffeeX - 1, coffeeY, 'down', { lounge: true });
-    place('plant', coffeeX + 1, coffeeY, 'down', { lounge: true });
+    place('pottedTree', corrX - 6, coffeeY, 'down', { lounge: true }); // greenery left of the sofas
 
-    // Sofa = a short row of chairs facing the coffee table area (left of center).
-    var sofaY = Math.min(y1, loungeY + 1);
-    place('chair', corrX - 4, sofaY, 'down', { lounge: true });
-    place('chair', corrX - 3, sofaY, 'down', { lounge: true });
-    place('chair', corrX - 2, sofaY, 'down', { lounge: true });
-    // A couple of lounge chairs on the right side too.
-    place('chair', corrX + 2, sofaY, 'down', { lounge: true });
-    place('chair', corrX + 3, sofaY, 'down', { lounge: true });
-    // Greenery + a neon sign for break-room flavor.
-    place('plant', x0, loungeY, 'down', { lounge: true });
-    place('plant', x1, loungeY, 'down', { lounge: true });
-    place('neonSign', corrX, labBot + 1, 'down', { lounge: true });
+    // --- Sofa lounge: two real sofas (2x1) facing a TV, with potted trees ---
+    // Left sofa + right sofa flanking the rug; both tagged lounge for loiter cells.
+    place('sofa', corrX - 5, sofaY, 'up', { lounge: true });      // 2x1, seat above
+    place('sofa', corrX - 2, sofaY, 'up', { lounge: true });      // 2x1, seat above
+    place('tv', corrX - 4, loungeTop, 'down', { lounge: true });  // wall-mounted screen
+    place('pottedTree', corrX - 5, loungeTop, 'down', { lounge: true });
+
+    // --- Arcade nook (right of the spine, clear of the door column) ---
+    place('arcade', corrX + 3, sofaY, 'down', { lounge: true });
+    place('sofa', corrX + 4, sofaY - 1, 'down', { lounge: true });// chill sofa by arcade
+    place('pottedTree', corrX + 6, sofaY, 'down', { lounge: true });
+
+    // --- KITCHEN / PANTRY (far-left of the lounge, TILEFLOOR zone) ---
+    // fridge + waterCooler + a coffee counter + small pantry-table chairs.
+    place('fridge', x0, loungeTop, 'down', { lounge: true });
+    place('waterCooler', x0 + 1, loungeTop, 'down', { lounge: true });
+    place('coffee', x0 + 3, loungeTop, 'down', { lounge: true });  // counter machine
+    // Small pantry seating: two chairs on the lower kitchen row (loiter cells).
+    place('chair', x0, sofaY, 'down', { lounge: true });
+    place('chair', x0 + 2, sofaY, 'down', { lounge: true });
+
+    // --- LIBRARY / quiet nook (left-center, bookshelves + chairs + rug) ---
+    // Sits between the kitchen and the sofa cluster on the lowest lounge row.
+    var libX = corrX - 9;
+    if (libX < x0) libX = x0 + 5;
+    paintIf(libX, loungeTop, 3, Math.max(2, y1 - loungeTop + 1), WOOD);
+    place('bookshelf', libX, loungeTop, 'down', { lounge: true }); // 1x2 shelf
+    place('bookshelf', libX + 2, loungeTop, 'down', { lounge: true });
+    place('chair', libX + 1, sofaY, 'down', { lounge: true });     // reading chair
+
+    // --- ATRIUM (far-right GRASS patch): potted trees + greenery ---
+    place('pottedTree', atriumX, loungeTop, 'down', { lounge: true });
+    place('pottedTree', atriumX + 2, loungeTop, 'down', { lounge: true });
+    place('plant', atriumX + 4, loungeTop, 'down', { lounge: true });
+
+    // Break-room neon sign for flavor (non-blocking) just off the spine.
+    place('neonSign', corrX - 1, loungeTop, 'down', { lounge: true });
+
+    // ===== RECEPTION (near the entrance door, WOOD foyer painted above) =====
+    // Reception desk + rug + plants + neon logo, set to one side of the door so the
+    // doorway approach column stays open. doorX is the bottom-wall door; the foyer
+    // WOOD was painted at [doorX-3 .. doorX+3] x [y1-2 .. y1].
+    var recX = doorX - 3;                            // reception desk left of the door
+    if (recX < x0) recX = x0;
+    place('reception', recX, y1 - 1, 'down', { reception: true }); // 2x1, faces visitors
+    place('neonSign', recX, y1 - 2, 'down', { reception: true });  // logo over the desk
+    place('pottedTree', doorX - 4, y1, 'down', { reception: true });
+    place('pottedTree', doorX + 3, y1, 'down', { reception: true });
 
     // ===== DATACENTER cluster (bottom-right corner): a few server racks =====
     var dcX = x1, dcY = y1;

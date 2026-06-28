@@ -61,7 +61,12 @@ window.App = window.App || {};
 
   // Tile enum (SPEC §4.2 — arch numbering WINS). Local mirror so we never depend
   // on load order beyond config (which is guaranteed first anyway).
-  var TILES = { FLOOR: 0, WALL: 1, CARPET: 2, DOOR: 3, RUG: 4, VOID: 5 };
+  // The 4 ADD tiles (WOOD:6, TILEFLOOR:7, GRASS:8, NEONFLOOR:9) are ALL WALKABLE
+  // and purely visual; world treats them as floor for pathing, we just paint them.
+  var TILES = {
+    FLOOR: 0, WALL: 1, CARPET: 2, DOOR: 3, RUG: 4, VOID: 5,
+    WOOD: 6, TILEFLOOR: 7, GRASS: 8, NEONFLOOR: 9
+  };
 
   // Art-px sprite metrics (visual.md §3.1 / SPEC §2). One cell = 16 art-px wide;
   // the agent sprite is 16 wide × 24 tall — taller than a tile, on purpose.
@@ -189,6 +194,23 @@ window.App = window.App || {};
           drawZoneTile(ctx, sx, sy, s, pal, pal.purple);
           break;
 
+        // --- 4 ADD walkable visual tiles (all rendered distinct in neon theme) ---
+        case TILES.WOOD:
+          drawWoodTile(ctx, sx, sy, s, pal);
+          break;
+
+        case TILES.TILEFLOOR:
+          drawTileFloorTile(ctx, sx, sy, s, pal);
+          break;
+
+        case TILES.GRASS:
+          drawGrassTile(ctx, sx, sy, s, pal);
+          break;
+
+        case TILES.NEONFLOOR:
+          drawNeonFloorTile(ctx, sx, sy, s, pal);
+          break;
+
         case TILES.FLOOR:
         default:
           drawFloorTile(ctx, sx, sy, s, pal, tileType);
@@ -224,6 +246,119 @@ window.App = window.App || {};
 
     // Sparse "data" floor dot on ~1-in-6 tiles (hashed → stable, no thrash).
     if ((hash(gx + ',' + gy) % 6) === 0) pr(7, 7, 2, 2, pal.gridGlow, 0.25);
+  }
+
+  // Recover stable grid coords from a cell's screen TL (mirrors drawFloorTile).
+  // Used by the new visual tiles so their patterns stay phase-stable across camera.
+  function cellCoords(sx, sy) {
+    var gx = 0, gy = 0;
+    try {
+      var W = window.App && App.World;
+      if (W && W.screenToCell) {
+        var c = W.screenToCell(sx + 1, sy + 1);
+        gx = c.gx | 0; gy = c.gy | 0;
+      }
+    } catch (e) {}
+    return { gx: gx, gy: gy };
+  }
+
+  // WOOD (TILES.WOOD) — warm plank floor. Horizontal planks with staggered seams
+  // and a faint amber neon edge so it still belongs to the neon office. -----------
+  function drawWoodTile(ctx, sx, sy, s, pal) {
+    var g = cellCoords(sx, sy);
+    // Two warm-brown plank tones, alternated per row so adjacent tiles read as wood.
+    var darkPlank = '#3a2a1c', litPlank = '#473322';
+    // 4 plank bands (4 art-px each). Tone alternates with row+band for variety.
+    for (var b = 0; b < 4; b++) {
+      var tone = (((g.gy + b) & 1) ? litPlank : darkPlank);
+      pr(0, b * 4, 16, 4, tone);
+      // Plank top highlight (1px) for a subtle bevel.
+      pr(0, b * 4, 16, 1, '#5a4330', 0.5);
+      // Horizontal plank seam shadow at the band bottom.
+      pr(0, b * 4 + 3, 16, 1, '#241910', 0.7);
+    }
+    // Staggered short end-seams (vertical) per plank, hashed so they don't line up.
+    for (var r = 0; r < 4; r++) {
+      var seamX = 3 + (hash('wd' + g.gx + ',' + g.gy + ',' + r) % 11);
+      pr(seamX, r * 4, 1, 4, '#241910', 0.6);
+    }
+    // Faint warm grain fleck (stable per tile).
+    if ((hash('wg' + g.gx + ',' + g.gy) % 4) === 0) pr(6, 6, 2, 1, '#6b4f37', 0.45);
+    // Subtle amber neon accent on the top edge to keep cohesion with the theme.
+    pr(0, 0, 16, 1, pal.amber, 0.10);
+  }
+
+  // TILEFLOOR (TILES.TILEFLOOR) — cool ceramic checkerboard. 8x8 art-px tiles with
+  // grout lines and a cyan grout glow; the checker phase is grid-stable. ----------
+  function drawTileFloorTile(ctx, sx, sy, s, pal) {
+    var g = cellCoords(sx, sy);
+    var coolA = '#16203a', coolB = '#1d2b48';
+    // 2x2 sub-tiles (each 8 art-px). Checker phase derived from grid coords * 2
+    // so the pattern is continuous across cell boundaries.
+    for (var sub = 0; sub < 4; sub++) {
+      var cxp = (sub % 2);            // 0 or 1
+      var cyp = (sub >> 1);           // 0 or 1
+      var parity = ((g.gx * 2 + cxp) + (g.gy * 2 + cyp)) & 1;
+      pr(cxp * 8, cyp * 8, 8, 8, parity ? coolB : coolA);
+      // Soft sheen highlight in the top-left of the lighter sub-tiles.
+      if (parity) pr(cxp * 8 + 1, cyp * 8 + 1, 3, 1, '#2a3a60', 0.5);
+    }
+    // Grout lines (cross through center + outer top/left edges) with a cyan glow.
+    pr(8, 0, 1, 16, '#0b1326');
+    pr(0, 8, 16, 1, '#0b1326');
+    pr(0, 0, 16, 1, '#0b1326');
+    pr(0, 0, 1, 16, '#0b1326');
+    pr(8, 0, 1, 16, pal.cyan, 0.10);
+    pr(0, 8, 16, 1, pal.cyan, 0.10);
+  }
+
+  // GRASS (TILES.GRASS) — muted green atrium turf. Mottled green base with a few
+  // hashed blade tufts; a thin lime neon edge keeps it on-theme. ------------------
+  function drawGrassTile(ctx, sx, sy, s, pal) {
+    var g = cellCoords(sx, sy);
+    var baseA = '#16331f', baseB = '#193a23';
+    // Base + gentle checker so a turf area has organic tonal variation.
+    pr(0, 0, 16, 16, ((g.gx + g.gy) & 1) ? baseB : baseA);
+    // Mottled darker patches (hashed, stable).
+    var h = hash('gr' + g.gx + ',' + g.gy);
+    pr(2 + (h % 4), 9 + ((h >> 2) % 4), 3, 2, '#11281a', 0.6);
+    pr(9 - ((h >> 4) % 3), 3 + ((h >> 5) % 3), 2, 2, '#11281a', 0.5);
+    // A few short blade tufts catching the office light (lime tips).
+    var tufts = 3;
+    for (var i = 0; i < tufts; i++) {
+      var hb = hash('gb' + g.gx + ',' + g.gy + ',' + i);
+      var bx = 2 + (hb % 13);
+      var by = 4 + ((hb >> 3) % 9);
+      pr(bx, by, 1, 2, '#27623a');                  // blade body
+      pr(bx, by, 1, 1, pal.lime, 0.5);              // lit blade tip
+    }
+    // Thin lime atrium edge.
+    pr(0, 0, 16, 1, pal.lime, 0.10);
+  }
+
+  // NEONFLOOR (TILES.NEONFLOOR) — dark floor with a subtle glowing grid/accent.
+  // Reads as a "feature" floor: near-black base, a glowing cyan/magenta grid, and
+  // a hashed pulsing node where major lines cross. ------------------------------
+  function drawNeonFloorTile(ctx, sx, sy, s, pal) {
+    var g = cellCoords(sx, sy);
+    // Deep base, a touch darker than normal floor so the grid pops.
+    pr(0, 0, 16, 16, '#080b16');
+    // Inner glowing grid: thin lines inset 0 on top/left so they tile seamlessly.
+    var gridCol = ((g.gx + g.gy) & 1) ? pal.cyan : pal.magenta;
+    withGlow(ctx, gridCol, 5, function () {
+      pr(0, 0, 16, 1, gridCol, 0.35);
+      pr(0, 0, 1, 16, gridCol, 0.35);
+    });
+    // Half-tile secondary lines (dimmer) for a denser tech grid.
+    pr(8, 0, 1, 16, gridCol, 0.12);
+    pr(0, 8, 16, 1, gridCol, 0.12);
+    // Pulsing node on ~1-in-4 tiles where the bright grid crosses (corner).
+    if ((hash('nf' + g.gx + ',' + g.gy) % 4) === 0) {
+      var pulse = 0.35 + 0.4 * (0.5 + 0.5 * Math.sin(timeSec() * 3 + (g.gx + g.gy)));
+      withGlow(ctx, gridCol, 6, function () {
+        pr(0, 0, 2, 2, gridCol, pulse);
+      });
+    }
   }
 
   // WALL — extruded neon-trim wall (visual.md §2.2). Trim line glows cyan.
@@ -292,6 +427,16 @@ window.App = window.App || {};
         case 'coffee':       drawCoffee(ctx, sx, sy, s, pal, seatedAgent); break;
         case 'neonSign':     drawNeonSign(ctx, sx, sy, s, pal); break;
         case 'whiteboard':   drawWhiteboard(ctx, sx, sy, s, size, pal, w, h); break;
+        // --- 9 ADD furniture (procedural neon sprites, footprint-aware) ---------
+        case 'sofa':         drawSofa(ctx, sx, sy, s, size, pal, dir, w, h, seatedAgent); break;
+        case 'bookshelf':    drawBookshelf(ctx, sx, sy, s, size, pal, w, h); break;
+        case 'fridge':       drawFridge(ctx, sx, sy, s, pal); break;
+        case 'waterCooler':  drawWaterCooler(ctx, sx, sy, s, pal); break;
+        case 'arcade':       drawArcade(ctx, sx, sy, s, pal); break;
+        case 'tv':           drawTV(ctx, sx, sy, s, size, pal, w, h); break;
+        case 'printer':      drawPrinter(ctx, sx, sy, s, pal); break;
+        case 'reception':    drawReception(ctx, sx, sy, s, size, pal, w, h, seatedAgent); break;
+        case 'pottedTree':   drawPottedTree(ctx, sx, sy, s, pal); break;
         default:             drawUnknownProp(ctx, sx, sy, s, pal); break;
       }
     } catch (e) { /* never throw from draw */ }
@@ -571,6 +716,273 @@ window.App = window.App || {};
     pr(3, 4, 10, 11, '#141a33');
     pr(3, 4, 10, 1, '#1d264a');
     pr(3, 14, 10, 1, pal.purple, 0.5);
+  }
+
+  // ===========================================================================
+  // 9 ADD FURNITURE SPRITES (procedural, neon-theme). Each respects its config
+  // footprint (w/h), reuses the pr()/withGlow helpers, never throws, and reads at
+  // TILE=16*PIXEL. Multi-cell props draw across the full footprint with explicit
+  // rects (like meetingTable/whiteboard); single-cell props use the art-px box.
+  // ===========================================================================
+
+  // --- SOFA (2x1, hasSeat) — lounge couch. Cushioned back + two seat cushions +
+  // accent piping in the seated agent's color (or purple lounge accent). ---------
+  function drawSofa(ctx, sx, sy, s, size, pal, dir, w, h, seatedAgent) {
+    w = w || 2;
+    var accent = (seatedAgent && seatedAgent.color) || pal.purple;
+    var body = '#2a2440', bodyHi = '#3a3458', cushion = '#322a4c';
+    // Draw across the full 2-cell footprint in art-px relative to the anchor box.
+    // Each cell is 16 art-px wide; total run is 16*w art-px. We keep pr() origin
+    // at the anchor cell and just extend x beyond 16 into the next cell.
+    var run = 16 * w;
+    // Backrest (upper band).
+    pr(1, 3, run - 2, 5, body);
+    pr(1, 3, run - 2, 1, bodyHi);              // top highlight
+    // Armrests (left + right).
+    pr(1, 3, 2, 11, body);
+    pr(run - 3, 3, 2, 11, body);
+    pr(1, 3, 2, 1, bodyHi);
+    pr(run - 3, 3, 2, 1, bodyHi);
+    // Seat base.
+    pr(3, 8, run - 6, 6, cushion);
+    // Seat cushions: one per cell, with a seam between.
+    for (var c = 0; c < w; c++) {
+      var cx0 = 4 + c * 16;
+      pr(cx0, 9, 12, 4, '#3c3358');
+      pr(cx0, 9, 12, 1, '#473d66', 0.7);       // cushion top sheen
+    }
+    // Accent piping along the seat front (neon).
+    withGlow(ctx, accent, 5, function () { pr(3, 13, run - 6, 1, accent, 0.7); });
+    // Little feet.
+    pr(2, 14, 2, 2, '#0c1124');
+    pr(run - 4, 14, 2, 2, '#0c1124');
+  }
+
+  // --- BOOKSHELF (1x2) — tall shelving. Drawn across 2 vertical cells (32 art-px
+  // tall). Colorful spines with faint neon glints; cohesive dark frame. ----------
+  function drawBookshelf(ctx, sx, sy, s, size, pal, w, h) {
+    h = h || 2;
+    var runH = 16 * h;                          // total art-px height across cells
+    var frame = '#241a2e', wood = '#2e2238';
+    // Cabinet body + frame.
+    pr(2, 1, 12, runH - 2, wood);
+    pr(2, 1, 12, 1, '#3a2c4c');                 // top lip
+    pr(2, 1, 1, runH - 2, '#1c1424');           // left edge shade
+    pr(13, 1, 1, runH - 2, '#1c1424');          // right edge shade
+    // Shelves every ~6 art-px; books between them.
+    var shelfYs = [];
+    for (var y = 3; y < runH - 3; y += 6) shelfYs.push(y);
+    var spineCols = [pal.cyan, pal.magenta, pal.lime, pal.amber, pal.blue, pal.red, pal.purple];
+    for (var si = 0; si < shelfYs.length; si++) {
+      var sy0 = shelfYs[si];
+      // Shelf board.
+      pr(3, sy0 + 4, 10, 1, frame);
+      // Row of book spines.
+      var bx = 3;
+      var idx = 0;
+      while (bx < 13) {
+        var hb = hash('bk' + si + ',' + idx);
+        var bw = 1 + (hb % 2);                  // spine width 1-2
+        if (bx + bw > 13) bw = 13 - bx;
+        if (bw <= 0) break;
+        var col = spineCols[hb % spineCols.length];
+        pr(bx, sy0, bw, 4, col, 0.8);
+        pr(bx, sy0, bw, 1, '#ffffff', 0.18);    // top page glint
+        bx += bw + 1;                           // small gap
+        idx++;
+      }
+    }
+    // Subtle cyan ambient glint on the top shelf to tie into the theme.
+    pr(3, 2, 1, 1, pal.cyan, 0.5);
+  }
+
+  // --- FRIDGE (1x1) — break-room fridge. Two doors, chrome handles, a small
+  // glowing status LED, and a fish-magnet style accent. -------------------------
+  function drawFridge(ctx, sx, sy, s, pal) {
+    var body = '#cfd8e6', shade = '#aab4c6', dark = '#0c1124';
+    // Cabinet.
+    pr(3, 1, 10, 15, body);
+    pr(3, 1, 10, 1, '#e6edf7');                 // top highlight
+    pr(3, 1, 1, 15, '#e6edf7', 0.6);            // left highlight
+    pr(12, 1, 1, 15, shade);                    // right shade
+    // Door split (freezer on top, fridge below).
+    pr(3, 6, 10, 1, shade);
+    // Handles (vertical chrome bars on the right of each door).
+    pr(10, 3, 1, 2, dark);
+    pr(10, 8, 1, 6, dark);
+    // Status LED (small glowing cyan) on the upper door.
+    withGlow(ctx, pal.cyan, 4, function () { pr(5, 3, 1, 1, pal.cyan, 0.9); });
+    // A magnet/note fleck for character.
+    pr(6, 10, 2, 2, pal.amber, 0.7);
+  }
+
+  // --- WATER COOLER (1x1) — bottle on a dispenser. Translucent blue bottle with a
+  // shifting waterline + cyan tap glow. -----------------------------------------
+  function drawWaterCooler(ctx, sx, sy, s, pal) {
+    var base = '#dfe7f2', baseSh = '#b6c0d2';
+    // Dispenser base cabinet.
+    pr(4, 8, 8, 7, base);
+    pr(4, 8, 8, 1, '#eef3fb');
+    pr(11, 8, 1, 7, baseSh);
+    // Drip tray + spouts.
+    pr(5, 11, 6, 1, '#0c1124');
+    withGlow(ctx, pal.cyan, 3, function () { pr(6, 10, 1, 1, pal.cyan, 0.9); }); // cold tap
+    pr(9, 10, 1, 1, pal.red, 0.8);              // hot tap
+    // Inverted bottle (translucent blue) on top.
+    pr(6, 1, 4, 7, pal.blue, 0.5);
+    pr(6, 1, 4, 1, '#bfe0ff', 0.6);            // cap collar
+    pr(7, 2, 2, 1, '#ffffff', 0.4);            // highlight
+    // Animated waterline (slow bob) + bubble.
+    var f = frameCounter();
+    var wl = 3 + (f % 3);
+    pr(6, wl, 4, (8 - wl), pal.cyan, 0.35);     // water below the line
+    pr(7 + (f % 2), 2 + (f % 4), 1, 1, '#ffffff', 0.5); // rising bubble
+  }
+
+  // --- ARCADE (1x1) — upright arcade cabinet. Glowing marquee + animated screen +
+  // joystick & buttons. The marquee/screen are the focal neon glow. -------------
+  function drawArcade(ctx, sx, sy, s, pal) {
+    var body = '#161d36', bodyHi = '#222c4d';
+    // Cabinet body (tapered look: full lower, marquee on top).
+    pr(3, 0, 10, 16, body);
+    pr(3, 0, 10, 1, bodyHi);
+    pr(3, 0, 1, 16, '#0e1428');                 // left edge shade
+    pr(12, 0, 1, 16, '#0e1428');                // right edge shade
+    // Marquee (glowing magenta header).
+    withGlow(ctx, pal.magenta, 6, function () {
+      pr(4, 1, 8, 2, pal.magenta, 0.85);
+    });
+    // Screen — animated pixel "game" (scrolling blocks).
+    pr(4, 4, 8, 5, '#05070f');
+    var f = frameCounter();
+    var cols = [pal.cyan, pal.lime, pal.amber, pal.magenta];
+    for (var i = 0; i < 4; i++) {
+      var bx = 4 + ((f + i * 2) % 8);
+      var by = 5 + (i % 3);
+      pr(bx, by, 1, 1, cols[i % cols.length], 0.9);
+    }
+    // Control panel.
+    pr(4, 10, 8, 3, '#1a2340');
+    // Joystick (stick + ball).
+    pr(5, 11, 1, 2, '#0c1124');
+    pr(5, 10, 1, 1, pal.red, 0.9);
+    // Buttons.
+    pr(8, 11, 1, 1, pal.cyan, 0.9);
+    pr(10, 11, 1, 1, pal.lime, 0.9);
+    // Coin slot glow at the bottom.
+    pr(7, 14, 2, 1, pal.amber, 0.6);
+  }
+
+  // --- TV (2x1) — wall flat-screen / display. Wide bezel + animated content +
+  // cyan backlight glow. Drawn across the 2-cell footprint. ---------------------
+  function drawTV(ctx, sx, sy, s, size, pal, w, h) {
+    w = w || 2;
+    var run = 16 * w;
+    // Bezel.
+    pr(1, 2, run - 2, 11, '#05070f');
+    pr(1, 2, run - 2, 1, '#1a2238');            // top bezel highlight
+    // Screen area (animated dashboard-y content).
+    var scrX = 3, scrY = 4, scrW = run - 6, scrH = 7;
+    pr(scrX, scrY, scrW, scrH, '#08121f');
+    var f = frameCounter();
+    // Faux chart bars sweeping across the screen.
+    var cols = [pal.cyan, pal.lime, pal.magenta, pal.amber];
+    for (var i = 0; i < scrW; i += 3) {
+      var bh = 1 + (hash('tv' + i + (f >> 1)) % (scrH - 1));
+      var col = cols[(i / 3 | 0) % cols.length];
+      pr(scrX + i, scrY + (scrH - bh), 2, bh, col, 0.7);
+    }
+    // A scanline + screen glow (the focal neon).
+    pr(scrX, scrY + (f % scrH), scrW, 1, '#ffffff', 0.12);
+    withGlow(ctx, pal.cyan, 8, function () {
+      pr(scrX, scrY, scrW, 1, pal.cyan, 0.25);
+    });
+    // Wall mount nub + faint shadow under the panel.
+    pr(Math.floor(run / 2) - 1, 13, 2, 1, '#0c1124');
+    pr(1, 13, run - 2, 1, pal.wallShadow, 0.4);
+  }
+
+  // --- PRINTER (1x1) — office multifunction printer. Paper tray, blinking status
+  // LEDs, and an occasional ejected sheet. --------------------------------------
+  function drawPrinter(ctx, sx, sy, s, pal) {
+    var body = '#1a2238', bodyHi = '#2a375f', dark = '#0e1428';
+    // Main body.
+    pr(2, 5, 12, 9, body);
+    pr(2, 5, 12, 1, bodyHi);
+    pr(2, 13, 12, 1, dark);
+    // Top scanner lid.
+    pr(3, 3, 10, 2, '#222c4d');
+    pr(3, 3, 10, 1, '#2e3a5e');
+    // Output slot + ejected paper (animated).
+    pr(3, 8, 10, 1, dark);                      // paper slot
+    var f = frameCounter();
+    if ((f % 6) < 3) {
+      pr(4, 7 - (f % 3), 8, 2, '#f2efe6');      // sheet rising out
+      pr(4, 7 - (f % 3), 8, 1, '#c9d0dc');      // page edge
+    }
+    // Front paper tray.
+    pr(3, 11, 10, 3, '#141b34');
+    pr(4, 12, 8, 1, '#0c1124');
+    // Status LEDs (blinking lime/amber).
+    var on = (f % 4) < 2;
+    withGlow(ctx, pal.lime, 3, function () {
+      pr(11, 6, 1, 1, on ? pal.lime : pal.amber, 0.9);
+    });
+    pr(9, 6, 1, 1, pal.cyan, 0.7);
+  }
+
+  // --- RECEPTION (2x1, hasSeat) — front desk. Long counter slab with a glowing
+  // neon trim, a small monitor, and a hello/logo plate. Drawn across 2 cells. ----
+  function drawReception(ctx, sx, sy, s, size, pal, w, h, seatedAgent) {
+    w = w || 2;
+    var run = 16 * w;
+    var accent = (seatedAgent && seatedAgent.color) || pal.cyan;
+    var slab = '#1a2340', slabHi = '#2a375f', front = '#11182f';
+    // Counter front panel (the tall public-facing face).
+    pr(1, 6, run - 2, 9, front);
+    pr(1, 6, run - 2, 1, '#1a2238');
+    // Counter top slab (overhangs slightly).
+    pr(0, 4, run, 3, slab);
+    pr(0, 4, run, 1, slabHi);                   // top edge highlight
+    // Glowing neon trim along the counter face (brand strip).
+    withGlow(ctx, accent, 6, function () {
+      pr(1, 12, run - 2, 1, accent, 0.7);
+    });
+    // Logo / network glyph plate on the front (echoes the neon sign).
+    var flick = signFlicker('recep');
+    withGlow(ctx, accent, 5, function () {
+      pr(4, 8, 2, 2, accent, flick);            // core
+      pr(7, 9, 1, 1, pal.magenta, flick);       // satellite
+      pr(5, 8, 2, 1, accent, 0.4 * flick);      // connector
+    });
+    // Small clerk-side monitor peeking above the counter.
+    pr(run - 8, 1, 5, 4, '#05070f');
+    drawMonitorScreen(ctx, run - 7, 2, 3, 2, s, pal, 'idle', accent, true);
+  }
+
+  // --- POTTED TREE (1x1) — tall indoor tree in a planter. Slim trunk + layered
+  // canopy that sways; neon leaf glints. Larger/taller than the small `plant`. ---
+  function drawPottedTree(ctx, sx, sy, s, pal) {
+    var sway = Math.round(Math.sin(timeSec() * 0.9)); // -1,0,1
+    var planter = '#2a2036', planterHi = '#3a2c4c';
+    // Planter pot.
+    pr(5, 13, 6, 3, planter);
+    pr(5, 13, 6, 1, planterHi);
+    pr(6, 12, 4, 1, '#352843');                 // pot rim
+    // Trunk.
+    pr(7, 8, 2, 5, '#4a3324');
+    pr(7, 8, 1, 5, '#5c4030', 0.6);             // trunk highlight
+    // Layered canopy (3 tiers), shifted by sway.
+    var fx = sway;
+    var leaf = '#1f6b4a', leafDk = '#175239';
+    pr(4 + fx, 5, 8, 3, leaf);                  // lower tier
+    pr(5 + fx, 5, 6, 1, leafDk, 0.5);
+    pr(5 + fx, 2, 6, 3, leaf);                  // mid tier
+    pr(6 + fx, 0, 4, 3, leaf);                  // top tier
+    // Neon leaf glints (catch the office light).
+    pr(5 + fx, 5, 1, 1, pal.lime, 0.8);
+    pr(10 + fx, 6, 1, 1, pal.lime, 0.8);
+    pr(7 + fx, 1, 1, 1, pal.lime, 0.8);
   }
 
   // ===========================================================================
