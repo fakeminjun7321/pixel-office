@@ -801,13 +801,34 @@ window.App = window.App || {};
   // ===========================================================================
   // DISPATCH / CHAT input handlers
   // ===========================================================================
+  // looksLikeBuild(text) — VERB-driven build-intent detector so "X 만들어줘" / "build a
+  // todo app" auto-routes to the real project builder (files) instead of the Q&A path.
+  // Verb-anchored on purpose so questions that merely mention "게임/앱" don't misfire.
+  function looksLikeBuild(text) {
+    var t = String(text || '');
+    return /(만들어|만들 |만들자|만들게|제작|구현|개발|코딩|코드\s*(짜|작성)|웹페이지\s*만|빌드해|build\b|make\s+(me\s+)?(a|an|the)\b|create\s+(a|an|the)\b|코드로\s)/i.test(t);
+  }
+
   function dispatchBoss(input) {
     if (!input) return;
     var text = (input.value || '').trim();
     if (!text) return;
     input.value = '';
-    _lastGoal = { text: text, mode: 'boss' }; // remember for overload [재시도]
     requestNotifyPermission(); // polite, one-time, on this user gesture
+    // Auto-route "build something" goals to the real file-producing pipeline so the
+    // user gets actual project files (like Claude Code) instead of analysis docs.
+    if (looksLikeBuild(text) && ORCH() && ORCH().runBuild) {
+      _lastGoal = { text: text, mode: 'build' };
+      var batts = consumeAttachments();
+      try {
+        if (batts) ORCH().runBuild(text, { attachments: batts });
+        else ORCH().runBuild(text);
+      } catch (e) { UI.showError('Build failed to start: ' + (e && e.message)); return; }
+      UI.toast(T('build.autoRoute', '🔨 프로젝트 빌드 모드로 실행합니다 (진짜 파일 생성)'));
+      UI.openTaskBoard();
+      return;
+    }
+    _lastGoal = { text: text, mode: 'boss' }; // remember for overload [재시도]
     if (ORCH() && ORCH().runBossTask) {
       var atts = consumeAttachments();
       if (atts) ORCH().runBossTask(text, { attachments: atts });
@@ -1065,7 +1086,7 @@ window.App = window.App || {};
       pool.push('claude-haiku-4-5-20251001');
       pool.push('claude-sonnet-4-6');
     }
-    if (set.geminiKey) pool.push('gemini-3.1-flash');
+    if (set.geminiKey) pool.push('gemini-3.5-flash');
     if (set.openaiKey) pool.push('gpt-5.4-mini');
     if (!pool.length) {
       UI.toast(T('set.distribute.nokey', 'Add an API key first.'), 'warn');

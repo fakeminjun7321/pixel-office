@@ -365,6 +365,10 @@ window.App = window.App || {};
 'Plan rules:\n' +
 '- For a WEB project: include an "index.html" ENTRY point plus the css/js it needs, and a "README.md".\n' +
 '- Keep the file count SENSIBLE: 3 to 8 files. Do not over-split.\n' +
+'- Plan ONLY real, working files with conventional names (index.html, app.js, style.css, README.md,\n' +
+'  game.js, etc.). NEVER plan numbered stub/spec/placeholder files (mvp-1.json, feature-2.json,\n' +
+'  data-N.json, task-N.md) or doc-only deliverables UNLESS the user explicitly asks for docs/data.\n' +
+'  Every file MUST be a real, substantial part of a program that actually runs when opened.\n' +
 '- Use real relative paths with "/" for folders (e.g. "index.html", "css/style.css", "js/app.js",\n' +
 '  "README.md"). No leading "/" or "./"; no "..".\n' +
 '- Set "deps" so each file lists the OTHER files it relies on by path (e.g. js/app.js depends on\n' +
@@ -397,6 +401,9 @@ window.App = window.App || {};
 '\n' +
 'Rules:\n' +
 '- Write EACH assigned file FULLY and runnably — the complete file contents, not a snippet or outline.\n' +
+'- COMPLETE, production-quality, WORKING content only. NO placeholders, NO "TODO"/"coming soon", NO stub\n' +
+'  or empty/near-empty files. If it is code it MUST run as-is. Implement REAL functionality (real UI, real\n' +
+'  logic), not a skeleton. A file under ~300 bytes is almost always wrong unless it is genuinely tiny config.\n' +
 '- Be CONSISTENT with the provided dependency files: match exact element ids/classes, file names,\n' +
 '  function/variable names, data shapes and relative paths so the project actually works together.\n' +
 '- Use real relative paths exactly as assigned. For web, reference sibling files by their given paths.\n' +
@@ -644,8 +651,8 @@ window.App = window.App || {};
       { id: 'gpt-5.5',                   label: 'GPT-5.5',         provider: 'openai' },
       { id: 'gpt-5.4',                   label: 'GPT-5.4',         provider: 'openai' },
       { id: 'gpt-5.4-mini',              label: 'GPT-5.4 mini',    provider: 'openai' },
-      { id: 'gemini-3.1-pro',            label: 'Gemini 3.1 Pro',  provider: 'gemini' },
-      { id: 'gemini-3.1-flash',          label: 'Gemini 3.1 Flash', provider: 'gemini' }
+      { id: 'gemini-3.1-pro-preview',    label: 'Gemini 3.1 Pro',  provider: 'gemini' },
+      { id: 'gemini-3.5-flash',          label: 'Gemini 3.5 Flash', provider: 'gemini' }
     ],
     MAX_TOKENS: 4096,
     WEB_SEARCH_TOOL: { type: 'web_search_20250305', name: 'web_search', max_uses: 5 },
@@ -963,8 +970,8 @@ window.App = window.App || {};
     'gpt-5.4':                   { in: 2.50,  out: 10.00 },
     'gpt-5.4-mini':              { in: 0.30,  out: 1.20  },
     // Gemini (approximate, USD / 1M tokens)
-    'gemini-3.1-pro':            { in: 2.00,  out: 10.00 },
-    'gemini-3.1-flash':          { in: 0.30,  out: 1.20  }
+    'gemini-3.1-pro-preview':    { in: 2.00,  out: 10.00 },
+    'gemini-3.5-flash':          { in: 0.30,  out: 1.20  }
   };
 
   // ---------------------------------------------------------------------------

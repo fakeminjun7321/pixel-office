@@ -234,6 +234,9 @@ window.App = window.App || {};
     if (!_running) return;
     var now = (typeof ts === 'number') ? ts
       : ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
+    // ECO (heat): cap the loop to ~40fps. A skipped frame is just a cheap time-check
+    // + reschedule, so we shed ~1/3 of the per-frame sim+canvas-render cost vs 60fps.
+    if ((now - _last) < (CFG().ECO_FRAME_MS || 24)) { requestAnimationFrame(Main.loop); return; }
     var dt = (now - _last) / 1000;
     _last = now;
     if (!(dt >= 0)) dt = 0;
@@ -254,16 +257,16 @@ window.App = window.App || {};
       if (s && !s.paused && App.Orchestrator && App.Orchestrator.tick) App.Orchestrator.tick();
     } catch (e) { warnOnce('orchestrator.tick', e); }
 
-    // --- follow-camera: gently ease the camera toward the followed agent ---
-    try { followCamera(s); } catch (e) { warnOnce('main.followCamera', e); }
-
-    // --- draw (guarded) ---
-    try {
-      Main.draw();
-    } catch (e) { warnOnce('main.draw', e); }
-
-    // --- minimap overlay (guarded; never throws into the loop) ---
-    try { if (App.UI && App.UI.drawMinimap) App.UI.drawMinimap(); } catch (e) { warnOnce('ui.drawMinimap', e); }
+    // --- render: skip the heavy canvas draw when the tab is HIDDEN (ECO/heat).
+    //     Sim + orchestration above keep running, so work continues in the bg. ---
+    if (!(typeof document !== 'undefined' && document.hidden)) {
+      // follow-camera: gently ease the camera toward the followed agent
+      try { followCamera(s); } catch (e) { warnOnce('main.followCamera', e); }
+      // draw (guarded)
+      try { Main.draw(); } catch (e) { warnOnce('main.draw', e); }
+      // minimap overlay (guarded; never throws into the loop)
+      try { if (App.UI && App.UI.drawMinimap) App.UI.drawMinimap(); } catch (e) { warnOnce('ui.drawMinimap', e); }
+    }
 
     // --- periodic autosave on meaningful change ---
     _saveAccum += dt;

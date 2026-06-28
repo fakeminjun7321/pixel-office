@@ -809,6 +809,45 @@ window.App = window.App || {};
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
   }
 
+  // find the boss agent (for "보스/boss" mentions).
+  function findBossAgent() {
+    var s = STATE(); if (!s || !Array.isArray(s.agents)) return null;
+    for (var i = 0; i < s.agents.length; i++) if (s.agents[i] && s.agents[i].role === 'boss') return s.agents[i];
+    return null;
+  }
+  // resolve who a casual message is about: the boss, or a teammate named in the text.
+  function chatTargetFrom(self, text) {
+    var s = STATE(); if (!s || !Array.isArray(s.agents)) return null;
+    var t = String(text || '').toLowerCase();
+    if (/보스|boss|사장|대표/.test(t)) return findBossAgent();
+    for (var i = 0; i < s.agents.length; i++) {
+      var a = s.agents[i];
+      if (a && a.id !== self.id && a.name && t.indexOf(String(a.name).toLowerCase()) !== -1) return a;
+    }
+    return null;
+  }
+  // applyChatIntent — light keyword reaction so everyday/social directives in direct
+  // chat actually move the sim (mood / relationships), e.g. "보스랑 친해져봐" raises this
+  // agent's affinity toward the boss. Best-effort and defensive; never throws.
+  function applyChatIntent(agent, text) {
+    var s = STATE(); if (!s || !agent) return;
+    var t = String(text || '').toLowerCase();
+    function bumpMood(d) { agent.mood = clamp01n((typeof agent.mood === 'number' ? agent.mood : 0.7) + d); }
+    if (/친해|사이\s*좋|친하게|친목|친구|가까워|get along|befriend/.test(t)) {
+      var target = chatTargetFrom(agent, text) || findBossAgent();
+      if (target && target.id !== agent.id) {
+        agent.relationships = agent.relationships || {};
+        agent.relationships[target.id] = clamp01n((agent.relationships[target.id] || 0.5) + 0.2);
+        target.relationships = target.relationships || {};
+        target.relationships[agent.id] = clamp01n((target.relationships[agent.id] || 0.5) + 0.1);
+      }
+      bumpMood(0.05);
+    }
+    if (/기운|힘내|즐겁|행복|신나|기분\s*좋|cheer|happy|웃/.test(t)) bumpMood(0.1);
+    if (/쉬어|쉬자|휴식|break|티타임|커피|coffee/.test(t)) bumpMood(0.05);
+    if (/싸우|화나|혼나|짜증|stress|angry/.test(t)) bumpMood(-0.05);
+  }
+
   Agents.chat = function (agent, userText, opts) {
     var noop = { abort: function () {} };
     if (!agent) return noop;
@@ -856,6 +895,10 @@ window.App = window.App || {};
       return noop;
     }
 
+    // Casual coworker chat: let everyday/social directives nudge the sim a little
+    // (befriend -> affinity+mood, cheer -> mood) so they have a real effect.
+    try { applyChatIntent(agent, userText); } catch (e) {}
+
     // Record the user turn. The API/agent sees messageText (attachments inline);
     // the visible transcript shows the raw userText the human typed.
     agent.conversation.push({ role: 'user', content: messageText });
@@ -878,7 +921,10 @@ window.App = window.App || {};
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
       model: agent.model || settings.defaultModel,
-      system: agent.systemPrompt || '',
+      system: (agent.systemPrompt || '') +
+        '\n\n[CHAT MODE] You are chatting 1:1 with a teammate. Reply IN CHARACTER, briefly, like a real ' +
+        'coworker. Understand everyday/social messages too (relationships, mood, small talk, breaks, getting ' +
+        "along with the boss) - not only work tasks. Reply in the user's language (Korean or English).",
       messages: agent.conversation.slice(),
       tools: tools,
       onState: function (st) {
