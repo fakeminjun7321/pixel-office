@@ -1261,6 +1261,69 @@ select option{ background:var(--panel); color:var(--text); }
   .fv-diff{ max-height:40vh; }
 }
 
+/* ===========================================================================
+   WAVE 3 — METRICS / OBSERVABILITY DASHBOARD
+   =========================================================================== */
+.metrics-summary{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px;
+}
+.metric-stat{
+  background:var(--field); border:1px solid var(--panel-edge); border-radius:6px;
+  padding:10px 12px; text-align:center;
+}
+.metric-val{ font-size:18px; font-weight:800; color:var(--cyan); font-variant-numeric:tabular-nums; }
+.metric-key{
+  font-size:9px; font-weight:700; letter-spacing:1px; color:var(--text-dim);
+  text-transform:uppercase; margin-top:4px;
+}
+.metrics-h{ margin-top:18px; margin-bottom:8px; }
+.metrics-chart{
+  background:var(--field); border:1px solid var(--panel-edge); border-radius:6px;
+  padding:8px; overflow:hidden;
+}
+.metrics-chart svg{ display:block; }
+.metrics-timeline-wrap{ margin-top:4px; }
+.metrics-legend{
+  display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; padding:0 4px;
+  font-size:9px; color:var(--text-dim); letter-spacing:.3px;
+}
+.metrics-leg-item{ display:inline-flex; align-items:center; gap:4px; }
+.metrics-leg-dot{ width:8px; height:8px; border-radius:2px; display:inline-block; }
+.metrics-replay-ctrl{
+  display:flex; align-items:center; gap:10px; margin:12px 0 8px;
+}
+.metrics-scrubber{
+  flex:1; -webkit-appearance:none; appearance:none; height:5px; border-radius:4px;
+  background:linear-gradient(90deg, var(--cyan), var(--magenta));
+  outline:none; cursor:pointer;
+}
+.metrics-scrubber::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none; width:14px; height:14px; border-radius:50%;
+  background:var(--text); border:2px solid var(--cyan); box-shadow:0 0 8px var(--cyan); cursor:pointer;
+}
+.metrics-scrubber::-moz-range-thumb{
+  width:14px; height:14px; border-radius:50%; background:var(--text);
+  border:2px solid var(--cyan); box-shadow:0 0 8px var(--cyan); cursor:pointer;
+}
+.metrics-scrubber:disabled{ opacity:.4; cursor:not-allowed; }
+.metrics-time{
+  font-size:10px; color:var(--text-dim); font-variant-numeric:tabular-nums;
+  min-width:90px; text-align:right;
+}
+.metrics-replay-log{
+  background:var(--field); border:1px solid var(--panel-edge); border-radius:6px;
+  padding:8px 10px; max-height:24vh; overflow-y:auto; font-size:11px; line-height:1.7;
+  font-family:var(--mono, ui-monospace, monospace);
+}
+.metrics-log-line{ display:flex; align-items:center; gap:6px; color:var(--text-dim); }
+.metrics-log-dot{ width:7px; height:7px; border-radius:50%; flex:none; }
+.metrics-log-t{ color:var(--text-faint); font-size:10px; min-width:54px; }
+.metrics-log-type{ font-weight:700; letter-spacing:.3px; }
+
+@media (max-width:760px){
+  .metrics-summary{ grid-template-columns:repeat(2,1fr); }
+}
+
 /* reduced motion: calm all the loops */
 @media (prefers-reduced-motion:reduce){
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,
@@ -1355,6 +1418,9 @@ select option{ background:var(--panel); color:var(--text); }
       </button>
       <button id="btn-cost-meter"  class="btn cost-meter" type="button" title="Running session cost — click for breakdown">
         <span class="btn-ico">$</span><span id="cost-meter-amount" class="cost-amount">0.0000</span>
+      </button>
+      <button id="btn-metrics"     class="btn"        type="button" title="Observability: tokens/cost charts, timeline + replay">
+        <span class="btn-ico">📊</span><span class="btn-lbl" data-i18n="hud.metrics">Metrics</span>
       </button>
 
       <span class="hud-sep" aria-hidden="true"></span>
@@ -2249,6 +2315,11 @@ window.App = window.App || {};
 
     // v3: artifact store cap (oldest dropped past this).
     ARTIFACT_MAX: 200,
+
+    // WAVE 3: structured run-event trace cap (App.state.trace; newest kept).
+    // Drives the metrics dashboard timeline + replay scrubber. Store persists
+    // App.state.trace capped to this many newest events; oldest dropped past it.
+    TRACE_CAP: 600,
 
     // v3: watercooler chatter cooldown (ms between idle banter events).
     CHATTER_COOLDOWN_MS: 25000,
@@ -5697,6 +5768,234 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // PROJECT IMPORT INGEST -- importFiles(entries[{path,content}])
+  //   Normalize each path + write() each into the workspace. Respects caps (the
+  //   write() helper enforces per-file size + total-file count). Skips binaries
+  //   (NUL bytes) and oversized/invalid entries gracefully. Never throws.
+  //   -> { ok:Bool, count:Number, skipped:Number }
+  // ===========================================================================
+  function looksBinary(str) {
+    try {
+      var s = String(str == null ? '' : str);
+      // sample up to first ~64k chars; a NUL byte strongly implies binary
+      var lim = s.length < 65536 ? s.length : 65536;
+      for (var i = 0; i < lim; i++) {
+        if (s.charCodeAt(i) === 0) return true;
+      }
+      return false;
+    } catch (e) {
+      return true; // be conservative on failure -> skip
+    }
+  }
+
+  function importFiles(entries) {
+    var count = 0, skipped = 0;
+    try {
+      if (!entries || typeof entries.length !== 'number') {
+        return { ok: false, count: 0, skipped: 0 };
+      }
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        if (!e || typeof e !== 'object') { skipped++; continue; }
+        var rawPath = e.path;
+        var content = (e.content == null) ? '' : String(e.content);
+        var p = normalizePath(rawPath);
+        if (!p) { skipped++; continue; }              // empty/dir-like path
+        if (/\/$/.test(String(rawPath))) { skipped++; continue; } // explicit dir
+        if (looksBinary(content)) { skipped++; continue; }        // binary -> skip
+        var wrote = write(p, content, 'import');
+        if (wrote) count++; else skipped++;           // cap-rejected -> skipped
+      }
+      return { ok: count > 0, count: count, skipped: skipped };
+    } catch (err) {
+      return { ok: count > 0, count: count, skipped: skipped };
+    }
+  }
+
+  // ===========================================================================
+  // ZIP READ (best-effort) -- readZip(arrayBuffer) -> Promise<[{path,content}]>
+  //   Parse a .zip via its central directory; for STORED (method 0) entries
+  //   slice bytes; for DEFLATED (method 8) inflate via DecompressionStream
+  //   ('deflate-raw') when available, else skip that entry. UTF-8 decode; skip
+  //   directories + binary (NUL) entries. Resolve [] on failure; NEVER throws.
+  //   Pairs with the makeStoreZip()/buildZip() writer above.
+  // ===========================================================================
+  function readU16(view, off) {
+    try { return view[off] | (view[off + 1] << 8); } catch (e) { return 0; }
+  }
+  function readU32(view, off) {
+    try {
+      return (view[off] | (view[off + 1] << 8) | (view[off + 2] << 16) | (view[off + 3] << 24)) >>> 0;
+    } catch (e) { return 0; }
+  }
+
+  function utf8Decode(bytes) {
+    try {
+      if (typeof TextDecoder !== 'undefined') {
+        return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      }
+    } catch (e) {}
+    // manual UTF-8 decode fallback
+    var out = '';
+    try {
+      var i = 0, len = bytes.length;
+      while (i < len) {
+        var c = bytes[i++];
+        if (c < 0x80) { out += String.fromCharCode(c); }
+        else if (c >= 0xC0 && c < 0xE0) {
+          out += String.fromCharCode(((c & 0x1F) << 6) | (bytes[i++] & 0x3F));
+        } else if (c >= 0xE0 && c < 0xF0) {
+          out += String.fromCharCode(((c & 0x0F) << 12) | ((bytes[i++] & 0x3F) << 6) | (bytes[i++] & 0x3F));
+        } else if (c >= 0xF0) {
+          var cp = ((c & 0x07) << 18) | ((bytes[i++] & 0x3F) << 12) | ((bytes[i++] & 0x3F) << 6) | (bytes[i++] & 0x3F);
+          cp -= 0x10000;
+          out += String.fromCharCode(0xD800 + (cp >> 10), 0xDC00 + (cp & 0x3FF));
+        }
+      }
+    } catch (e) {}
+    return out;
+  }
+
+  // Inflate raw DEFLATE bytes via DecompressionStream('deflate-raw').
+  // Returns Promise<Uint8Array|null> (null if unavailable / on failure).
+  function inflateRaw(bytes) {
+    return new Promise(function (resolve) {
+      try {
+        if (typeof DecompressionStream === 'undefined' || typeof Response === 'undefined') {
+          return resolve(null);
+        }
+        var ds = new DecompressionStream('deflate-raw');
+        var blob;
+        try { blob = new Blob([bytes]); } catch (e) { blob = null; }
+        var stream = blob && blob.stream ? blob.stream() : null;
+        if (!stream) {
+          // fall back to constructing a ReadableStream manually
+          if (typeof ReadableStream === 'undefined') return resolve(null);
+          stream = new ReadableStream({
+            start: function (controller) { controller.enqueue(bytes); controller.close(); }
+          });
+        }
+        var out = stream.pipeThrough(ds);
+        new Response(out).arrayBuffer().then(function (ab) {
+          try { resolve(new Uint8Array(ab)); } catch (e) { resolve(null); }
+        }).catch(function () { resolve(null); });
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  function readZip(arrayBuffer) {
+    return new Promise(function (resolve) {
+      try {
+        if (!arrayBuffer) return resolve([]);
+        var bytes;
+        try {
+          bytes = (arrayBuffer instanceof Uint8Array) ? arrayBuffer : new Uint8Array(arrayBuffer);
+        } catch (e) { return resolve([]); }
+        var len = bytes.length;
+        if (len < 22) return resolve([]); // smaller than minimal EOCD record
+
+        // 1) Locate End Of Central Directory (EOCD) signature 0x06054b50,
+        //    scanning backwards from the end (comment may follow it).
+        var eocd = -1;
+        var scanFloor = len - 22 - 65535;
+        if (scanFloor < 0) scanFloor = 0;
+        for (var s = len - 22; s >= scanFloor; s--) {
+          if (readU32(bytes, s) === 0x06054b50) { eocd = s; break; }
+        }
+        if (eocd < 0) return resolve([]);
+
+        var total = readU16(bytes, eocd + 10);          // total central dir records
+        var cdSize = readU32(bytes, eocd + 12);         // central dir size
+        var cdOffset = readU32(bytes, eocd + 16);       // central dir offset
+        if (cdOffset > len || cdOffset + cdSize > len) {
+          // tolerate slightly off offsets by clamping
+          if (cdOffset > len) return resolve([]);
+        }
+
+        // 2) Walk the central directory records.
+        var jobs = [];      // { path, async:Bool, content?, bytes?, method }
+        var ptr = cdOffset;
+        var guard = 0;
+        while (ptr + 46 <= len && guard < 100000) {
+          guard++;
+          if (readU32(bytes, ptr) !== 0x02014b50) break; // not a central header
+          var method = readU16(bytes, ptr + 10);
+          var compSize = readU32(bytes, ptr + 20);
+          var nameLen = readU16(bytes, ptr + 28);
+          var extraLen = readU16(bytes, ptr + 30);
+          var commentLen = readU16(bytes, ptr + 32);
+          var localOff = readU32(bytes, ptr + 42);
+          var nameBytes = bytes.subarray(ptr + 46, ptr + 46 + nameLen);
+          var name = utf8Decode(nameBytes);
+          ptr = ptr + 46 + nameLen + extraLen + commentLen;
+
+          if (!name) continue;
+          if (/\/$/.test(name)) continue;               // directory entry -> skip
+
+          // 3) Resolve the local header to find the data start (extra field
+          //    length can differ from the central record).
+          if (localOff + 30 > len) continue;
+          if (readU32(bytes, localOff) !== 0x04034b50) continue; // not a local header
+          var lNameLen = readU16(bytes, localOff + 26);
+          var lExtraLen = readU16(bytes, localOff + 28);
+          var dataStart = localOff + 30 + lNameLen + lExtraLen;
+          if (dataStart > len) continue;
+          var dataEnd = dataStart + compSize;
+          if (dataEnd > len) dataEnd = len;
+          var raw = bytes.subarray(dataStart, dataEnd);
+
+          if (method === 0) {
+            // STORED -> raw bytes are the content
+            jobs.push({ path: name, async: false, bytes: raw });
+          } else if (method === 8) {
+            // DEFLATED -> needs inflate (may be unavailable)
+            jobs.push({ path: name, async: true, bytes: raw });
+          } else {
+            // unsupported method -> skip
+            continue;
+          }
+        }
+
+        // 4) Materialize each job (inflate as needed), then build results.
+        var results = [];
+        function finalizeBytes(name, decompressed) {
+          try {
+            if (!decompressed) return; // skip on inflate failure
+            var text = utf8Decode(decompressed);
+            if (looksBinary(text)) return;      // binary -> skip
+            var p = normalizePath(name);
+            if (!p) return;
+            results.push({ path: p, content: text });
+          } catch (e) {}
+        }
+
+        function step(idx) {
+          // Drain consecutive synchronous (STORED) jobs in a loop so a zip with
+          // thousands of stored entries can't overflow the call stack; only async
+          // (DEFLATED) jobs break out to a .then() continuation (stack = O(#deflated)).
+          while (idx < jobs.length && !jobs[idx].async) {
+            finalizeBytes(jobs[idx].path, jobs[idx].bytes);
+            idx++;
+          }
+          if (idx >= jobs.length) { return resolve(results); }
+          var job = jobs[idx];
+          inflateRaw(job.bytes).then(function (out) {
+            finalizeBytes(job.path, out);
+            step(idx + 1);
+          }).catch(function () {
+            step(idx + 1);
+          });
+        }
+        step(0);
+      } catch (e) {
+        resolve([]);
+      }
+    });
+  }
+
+  // ===========================================================================
   // ATTACH
   // ===========================================================================
   App.Workspace = {
@@ -5711,6 +6010,9 @@ window.App = window.App || {};
     buildZip: buildZip,
     assembleRunnable: assembleRunnable,
     githubPush: githubPush,
+    // PROJECT IMPORT (Wave 3 builder)
+    importFiles: importFiles,
+    readZip: readZip,
     // VERSION HISTORY (Wave 1 reliability core)
     history: history,
     restore: restore,
@@ -9591,6 +9893,53 @@ window.App = window.App || {};
     return { facts: facts, plan: plan, progress: progress, updated: updated };
   }
 
+  // WAVE 3: cap helper for the structured run-event trace (App.state.trace).
+  function traceCap() {
+    var n = cfg().TRACE_CAP;
+    return (typeof n === 'number' && n > 0) ? n : 600;
+  }
+
+  // WAVE 3: sanitize the structured run-event trace -> small {t,type,...} rows.
+  // Each event is coerced field-by-field: numeric fields pass through as numbers,
+  // string fields are coerced + length-clamped (text especially), unknown fields
+  // are dropped. Oversized/garbage rows are skipped. Keeps only the newest
+  // TRACE_CAP events. Never throws. Migrate older saves (missing trace -> []).
+  function normalizeTrace(arr) {
+    if (!Array.isArray(arr)) return [];
+    var TEXT_MAX = 240;     // short summary text only — drop anything huge
+    var NAME_MAX = 80;
+    function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : undefined; }
+    function str(v, max) {
+      if (v == null) return undefined;
+      var s = String(v);
+      if (s.length > max) s = s.slice(0, max);
+      return s;
+    }
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var e = arr[i];
+      if (!e || typeof e !== 'object') continue;
+      var row = {
+        t: (typeof e.t === 'number' && isFinite(e.t)) ? e.t : nowMs(),
+        type: str(e.type, NAME_MAX) || 'event',
+      };
+      // optional, coerced fields (only attached when present/valid)
+      var taskId = str(e.taskId, NAME_MAX); if (taskId !== undefined) row.taskId = taskId;
+      var role = str(e.role, NAME_MAX); if (role !== undefined) row.role = role;
+      var agentId = str(e.agentId, NAME_MAX); if (agentId !== undefined) row.agentId = agentId;
+      var name = str(e.name, NAME_MAX); if (name !== undefined) row.name = name;
+      var ms = num(e.ms); if (ms !== undefined) row.ms = ms;
+      var tIn = num(e.tokensIn); if (tIn !== undefined) row.tokensIn = tIn;
+      var tOut = num(e.tokensOut); if (tOut !== undefined) row.tokensOut = tOut;
+      var status = str(e.status, NAME_MAX); if (status !== undefined) row.status = status;
+      var text = str(e.text, TEXT_MAX); if (text !== undefined) row.text = text;
+      out.push(row);
+    }
+    var cap = traceCap();
+    if (out.length > cap) out = out.slice(out.length - cap);   // keep newest
+    return out;
+  }
+
   // v5: detect a file's language from its extension (mirror of
   // Workspace.detectLang; kept here so the store can normalize standalone).
   function detectLangFor(path) {
@@ -9688,6 +10037,7 @@ window.App = window.App || {};
       tasks: [],
       log: [],
       artifacts: [],          // v3: Artifact[] (persisted, capped at ARTIFACT_MAX)
+      trace: [],              // WAVE 3: structured run-event trace (persisted, capped at TRACE_CAP)
       files: {},              // v5: project workspace (path -> {content,lang,updatedBy,t}); persisted, capped at MAX_PROJECT_FILES
       camera: defaultCamera(),
       layout: emptyLayout(),
@@ -9722,6 +10072,7 @@ window.App = window.App || {};
     if (!Array.isArray(s.tasks)) s.tasks = [];
     if (!Array.isArray(s.log)) s.log = [];
     if (!Array.isArray(s.artifacts)) s.artifacts = [];
+    if (!Array.isArray(s.trace)) s.trace = [];                   // WAVE 3: run-event trace
     if (!s.files || typeof s.files !== 'object') s.files = {};   // v5: project workspace map
     if (!s.camera || typeof s.camera !== 'object') s.camera = def.camera;
     if (!s.layout || typeof s.layout !== 'object') s.layout = def.layout;
@@ -9864,6 +10215,13 @@ window.App = window.App || {};
       role: t.role || 'generalist',
       needsWeb: !!t.needsWeb,
       verify: !!t.verify,   // v3: keep the QA-gate flag so it survives reload (DAG dep order is lossy on mid-run reload — acceptable)
+      // WAVE 3: per-task token accounting (Orchestrator accumulates _tokensIn/_tokensOut
+      // as a worker streams). Persist as non-underscore numeric fields so per-task cost
+      // survives reload; rebuildTask reads these back onto task._tokensIn/_tokensOut.
+      tokensIn: (typeof t._tokensIn === 'number' && isFinite(t._tokensIn)) ? t._tokensIn
+                : ((typeof t.tokensIn === 'number' && isFinite(t.tokensIn)) ? t.tokensIn : 0),
+      tokensOut: (typeof t._tokensOut === 'number' && isFinite(t._tokensOut)) ? t._tokensOut
+                : ((typeof t.tokensOut === 'number' && isFinite(t.tokensOut)) ? t.tokensOut : 0),
       // STRIPPED: _ctrl and any _*
     };
   }
@@ -9907,6 +10265,9 @@ window.App = window.App || {};
     // v3: artifacts — normalize + cap (deep cloned via normalize copy)
     var artifacts = normalizeArtifacts(s.artifacts);
 
+    // WAVE 3: structured run-event trace — coerce/clamp + cap newest TRACE_CAP
+    var trace = normalizeTrace(s.trace);
+
     // v5: project workspace — normalize + cap (fresh plain map, no live refs)
     var files = normalizeFiles(s.files);
 
@@ -9927,6 +10288,7 @@ window.App = window.App || {};
       tasks: tasks,
       log: log,
       artifacts: artifacts,
+      trace: trace,           // WAVE 3: structured run-event trace
       files: files,           // v5: project workspace
       layout: layout,
       settings: settings,
@@ -9980,6 +10342,12 @@ window.App = window.App || {};
       if (!rt || typeof rt !== 'object') continue;
       var st = validStatus[rt.status] ? rt.status : 'queued';
       if (st === 'running') st = 'queued';
+      // WAVE 3: restore per-task token accounting onto the runtime task. Accept
+      // both the persisted non-underscore fields and any legacy _-prefixed ones.
+      var rtIn = (typeof rt.tokensIn === 'number' && isFinite(rt.tokensIn)) ? rt.tokensIn
+                 : ((typeof rt._tokensIn === 'number' && isFinite(rt._tokensIn)) ? rt._tokensIn : 0);
+      var rtOut = (typeof rt.tokensOut === 'number' && isFinite(rt.tokensOut)) ? rt.tokensOut
+                 : ((typeof rt._tokensOut === 'number' && isFinite(rt._tokensOut)) ? rt._tokensOut : 0);
       newTasks.push({
         id: rt.id || uid('t'),
         title: rt.title || '',
@@ -9994,6 +10362,10 @@ window.App = window.App || {};
         role: rt.role || 'generalist',
         needsWeb: !!rt.needsWeb,
         verify: !!rt.verify,   // v3: restore QA-gate flag
+        // WAVE 3: per-task tokens live on _-prefixed runtime fields (Orchestrator
+        // accumulates them); seed from the persisted values so cost-per-task carries.
+        _tokensIn: rtIn,
+        _tokensOut: rtOut,
         _ctrl: null,
       });
     }
@@ -10014,6 +10386,12 @@ window.App = window.App || {};
     if (!Array.isArray(s.artifacts)) s.artifacts = [];
     s.artifacts.length = 0;
     for (var aj = 0; aj < rebuiltArtifacts.length; aj++) s.artifacts.push(rebuiltArtifacts[aj]);
+
+    // --- WAVE 3: run-event trace (coerce/clamp + cap; migrate missing -> []) ---
+    var rebuiltTrace = normalizeTrace(blob.trace);
+    if (!Array.isArray(s.trace)) s.trace = [];
+    s.trace.length = 0;
+    for (var tj = 0; tj < rebuiltTrace.length; tj++) s.trace.push(rebuiltTrace[tj]);
 
     // --- files: project workspace (normalize + cap) ---
     var rebuiltFiles = normalizeFiles(blob.files);
@@ -10147,6 +10525,14 @@ window.App = window.App || {};
         }
         // blob.ledger absent -> normalizeLedger yields null (no ledger). Forward no-op.
         v = 5;
+      }
+      // v5 -> current (WAVE 3): structured run-event trace (blob.trace). Filled with
+      // safe defaults by normalizeTrace on load (missing -> []), so this step only
+      // ensures the shape exists; everything else is a forward no-op. Defensive: run
+      // whenever v<6 regardless of whether SCHEMA_VERSION was bumped.
+      if (v < 6) {
+        if (!Array.isArray(blob.trace)) blob.trace = [];
+        v = 6;
       }
       // Always stamp to current after running known steps.
       blob.v = target;
@@ -11924,6 +12310,35 @@ window.App = window.App || {};
   function refreshBoard() {
     try { if (App.UI && App.UI.refreshBoard) App.UI.refreshBoard(); } catch (e) {}
   }
+
+  // ===========================================================================
+  // TRACE (Wave 3) — additive run telemetry. Pushes small, timestamped events onto
+  //   App.state.trace (capped) so the metrics dashboard can draw a timeline + replay.
+  //   Bounded and fully guarded: NEVER throws (called from inside the run loop).
+  //   Event shape: { t, type, taskId?, role?, agentId?, name?, ms?, tokensIn?,
+  //                  tokensOut?, status?, text? }. Keep events SMALL.
+  // ===========================================================================
+  function traceEvt(evt) {
+    try {
+      var s = STATE();
+      if (!s || !evt || typeof evt !== 'object') return;
+      if (!Array.isArray(s.trace)) s.trace = [];
+      var cap = (CFG().TRACE_CAP != null) ? CFG().TRACE_CAP : 600;
+      // coerce + bound the event so nothing huge lands in the trace.
+      var e = { t: nowMs(), type: String(evt.type || 'event') };
+      if (evt.taskId != null) e.taskId = String(evt.taskId);
+      if (evt.role != null) e.role = String(evt.role);
+      if (evt.agentId != null) e.agentId = String(evt.agentId);
+      if (evt.name != null) e.name = truncate(String(evt.name), 40);
+      if (typeof evt.ms === 'number' && isFinite(evt.ms)) e.ms = Math.max(0, evt.ms | 0);
+      if (typeof evt.tokensIn === 'number' && isFinite(evt.tokensIn)) e.tokensIn = evt.tokensIn | 0;
+      if (typeof evt.tokensOut === 'number' && isFinite(evt.tokensOut)) e.tokensOut = evt.tokensOut | 0;
+      if (evt.status != null) e.status = String(evt.status);
+      if (evt.text != null) e.text = truncate(String(evt.text), 80);
+      s.trace.push(e);
+      if (s.trace.length > cap) s.trace.splice(0, s.trace.length - cap);
+    } catch (e2) {}
+  }
   function saveSoon() {
     try {
       if (App.Store && App.Store.saveDebounced) App.Store.saveDebounced();
@@ -12040,6 +12455,7 @@ window.App = window.App || {};
   Orchestrator.PLAN_SCHEMA_VERSION = 1;
   Orchestrator.adjustAffinity = adjustAffinity;
   Orchestrator.bondParticipants = bondParticipants;
+  Orchestrator.trace = traceEvt;   // Wave 3: structured-event emitter (capped, never throws)
 
   // ===========================================================================
   // TASK LEDGER (Wave 1) — App.state._ledger = {facts, plan, progress, updated}.
@@ -12228,6 +12644,7 @@ window.App = window.App || {};
           r = r || {};
           var label = (agent && agent.name) || (agent && agent.role) || 'agent';
           try { log(label, 'tool', 'tool', '🔧 ' + (blk.name || 'tool') + (r.ok ? ' ✓' : ' ✗')); } catch (e) {}
+          try { traceEvt({ type: 'tool_call', name: blk.name || 'tool', role: agent && agent.role, agentId: agent && agent.id, status: r.ok ? 'ok' : 'error' }); } catch (e) {}
           // surface in the agent transcript if the UI supports it.
           try {
             if (App.UI && App.UI.appendTranscript && agent) {
@@ -12629,6 +13046,7 @@ window.App = window.App || {};
           var roleLabel = (ROLES()[t.role] && ROLES()[t.role].label) || t.role;
           if (boss) ag.say(boss, '@' + roleLabel + ': ' + t.title, 3000);
           log('Boss', roleLabel, 'msg', '@' + roleLabel + ': ' + t.title);
+          try { traceEvt({ type: 'delegate', role: t.role, taskId: t.id, text: t.title }); } catch (e) {}
           refreshBoard();
         }, stagger * idx);
       })(items[i], i);
@@ -12829,6 +13247,13 @@ window.App = window.App || {};
     task.assignee = agent.id;
     task.status = 'running';
 
+    // TRACE (Wave 3): record start time + tokens baseline; emit a task_start event.
+    //   _startedAt only set on the FIRST start (preserve across QA retries' re-assigns).
+    if (typeof task._startedAt !== 'number') task._startedAt = nowMs();
+    if (typeof task._tokensIn !== 'number') task._tokensIn = 0;
+    if (typeof task._tokensOut !== 'number') task._tokensOut = 0;
+    try { traceEvt({ type: 'task_start', role: task.role, taskId: task.id, agentId: agent.id, text: task.title }); } catch (e) {}
+
     // (re)assignment clears any prior attention flag on this agent.
     clearAttention(agent);
 
@@ -12958,6 +13383,9 @@ window.App = window.App || {};
         if (res && res.usage) {
           agent.stats.tokensIn += (res.usage.input_tokens || 0);
           agent.stats.tokensOut += (res.usage.output_tokens || 0);
+          // PER-TASK TOKENS (Wave 3): accumulate across every tool-loop iteration.
+          task._tokensIn = (task._tokensIn || 0) + (res.usage.input_tokens || 0);
+          task._tokensOut = (task._tokensOut || 0) + (res.usage.output_tokens || 0);
         }
         task._acc += acc;
 
@@ -13184,6 +13612,7 @@ window.App = window.App || {};
             task._retries = (task._retries || 0) + 1;
             task._feedback = feedback;
             log('QA', (worker ? worker.name : task.role), 'msg', '✗ FAIL → revise (' + task._retries + '): ' + truncate(feedback, 60));
+            try { traceEvt({ type: 'retry', role: task.role, taskId: task.id, status: 'fail', text: truncate(feedback, 60) }); } catch (e) {}
             // release the worker and re-queue for another attempt.
             if (worker) {
               try {
@@ -13273,6 +13702,17 @@ window.App = window.App || {};
     task.result = text;
     task.error = null;
 
+    // TRACE (Wave 3): task_done with duration + the task's accumulated tokens.
+    try {
+      traceEvt({
+        type: 'task_done', role: task.role, taskId: task.id, agentId: task.assignee,
+        status: 'done',
+        ms: (typeof task._startedAt === 'number') ? (nowMs() - task._startedAt) : undefined,
+        tokensIn: task._tokensIn || 0, tokensOut: task._tokensOut || 0,
+        text: task.title,
+      });
+    } catch (e) {}
+
     var agent = ag.byId(task.assignee);
     if (agent) {
       agent.busy = false;
@@ -13302,6 +13742,17 @@ window.App = window.App || {};
     var ag = AGENTS();
     task.status = 'error';
     task.error = msg || 'error';
+
+    // TRACE (Wave 3): task_done (error) with duration + the task's accumulated tokens.
+    try {
+      traceEvt({
+        type: 'task_done', role: task.role, taskId: task.id, agentId: task.assignee,
+        status: 'error',
+        ms: (typeof task._startedAt === 'number') ? (nowMs() - task._startedAt) : undefined,
+        tokensIn: task._tokensIn || 0, tokensOut: task._tokensOut || 0,
+        text: truncate(msg || 'error', 60),
+      });
+    } catch (e) {}
 
     var agent = ag.byId(task.assignee);
     if (agent) {
@@ -13733,6 +14184,7 @@ window.App = window.App || {};
     var done = false;
     function finish(added) { if (done) return; done = true; cb(added || 0); }
     try { log('Boss', 'system', 'system', '🔄 reviewing results (replan)…'); } catch (e) {}
+    try { traceEvt({ type: 'replan', role: 'boss', taskId: root.id }); } catch (e) {}
 
     var handle = App.API.stream({
       apiKey: settings.apiKey,
@@ -13852,6 +14304,7 @@ window.App = window.App || {};
     var done = false;
     function finish() { if (done) return; done = true; cb(); }
     try { log('Boss', 'all', 'system', '💬 team critique round…'); } catch (e) {}
+    try { traceEvt({ type: 'debate', role: 'boss', taskId: root.id }); } catch (e) {}
 
     var handle = App.API.stream({
       apiKey: settings.apiKey,
@@ -13966,6 +14419,7 @@ window.App = window.App || {};
     // sparse friendly banter from one participant during the sync.
     if (participants.length > 1) maybeBanter(participants[1], 'meeting');
     log('Boss', 'all', 'system', 'Synthesizing ' + kids.length + ' results…');
+    try { traceEvt({ type: 'synth', role: 'boss', taskId: rootTask.id, text: 'synthesizing ' + kids.length + ' results' }); } catch (e) {}
     refreshBoard();
 
     // Build synth content and stream.
@@ -14185,6 +14639,7 @@ window.App = window.App || {};
     };
     s.tasks.push(root);
     log('user', 'Boss', 'msg', '🔨 build: ' + truncate(goalText, 110));
+    try { traceEvt({ type: 'build', role: 'boss', taskId: root.id, text: truncate(goalText, 60) }); } catch (e) {}
     // TASK LEDGER: seed facts from the build goal.
     initLedger(goalText);
     refreshBoard();
@@ -14925,6 +15380,7 @@ window.App = window.App || {};
           }
           round++;
           try { log('Boss', 'all', 'system', '🔧 self-repair round ' + round); } catch (e) {}
+          try { traceEvt({ type: 'repair', role: 'engineer', status: 'round', text: 'round ' + round + ' (' + errs.length + ' error' + (errs.length === 1 ? '' : 's') + ')' }); } catch (e) {}
           refreshBoard();
           dispatchRepair(errs).then(function () {
             try { if (App.UI && App.UI.refreshFiles) App.UI.refreshFiles(); } catch (e) {}
@@ -16447,6 +16903,7 @@ window.App = window.App || {};
       on($('btn-presets'), 'click', function () { UI.openPresets(); });
       on($('btn-sessions'), 'click', function () { UI.openSessions(); });
       on($('btn-cost-meter'), 'click', function () { UI.openCostBreakdown(); });
+      on($('btn-metrics'), 'click', function () { UI.openMetrics(); });
       on($('btn-layout'), 'click', function () { UI.toggleLayoutEdit(); });
       on($('btn-zoom-in'), 'click', function () { UI.zoomIn(); });
       on($('btn-zoom-out'), 'click', function () { UI.zoomOut(); });
@@ -19527,7 +19984,32 @@ window.App = window.App || {};
     var ghBtn = el('button', 'btn', '⇪ ' + T('files.push', 'Push to GitHub'));
     ghBtn.type = 'button';
     on(ghBtn, 'click', function () { pushToGithub(); });
+
+    // PROJECT IMPORT (Wave 3): folder (webkitdirectory) + single .zip.
+    var folderBtn = el('button', 'btn', '📂 ' + T('files.importFolder', 'Import folder'));
+    folderBtn.type = 'button';
+    var folderInput = document.createElement('input');
+    folderInput.type = 'file';
+    folderInput.multiple = true;
+    try { folderInput.setAttribute('webkitdirectory', ''); folderInput.setAttribute('directory', ''); } catch (e) {}
+    folderInput.className = 'hidden';
+    folderInput.id = 'files-import-folder';
+    on(folderInput, 'change', function (e) { importFolderFiles(e); });
+    on(folderBtn, 'click', function () { try { folderInput.value = ''; } catch (e) {} folderInput.click(); });
+
+    var zipInBtn = el('button', 'btn', '🗜 ' + T('files.importZip', 'Import .zip'));
+    zipInBtn.type = 'button';
+    var zipInput = document.createElement('input');
+    zipInput.type = 'file';
+    zipInput.accept = '.zip,application/zip';
+    zipInput.className = 'hidden';
+    zipInput.id = 'files-import-zip';
+    on(zipInput, 'change', function (e) { importZipFile(e); });
+    on(zipInBtn, 'click', function () { try { zipInput.value = ''; } catch (e) {} zipInput.click(); });
+
     bar.appendChild(addBtn); bar.appendChild(runBtn); bar.appendChild(zipBtn); bar.appendChild(ghBtn);
+    bar.appendChild(folderBtn); bar.appendChild(zipInBtn);
+    bar.appendChild(folderInput); bar.appendChild(zipInput);
     m.body.appendChild(bar);
 
     var split = el('div', 'files-split');
@@ -20330,6 +20812,483 @@ window.App = window.App || {};
     close.type = 'button';
     on(close, 'click', m.close);
     m.foot.appendChild(close);
+  }
+
+  // ===========================================================================
+  // WAVE 3 — PROJECT IMPORT (folder via webkitdirectory + single .zip)
+  // Reads File objects -> [{path, content}] -> App.Workspace.importFiles. Skips
+  // binaries/oversized gracefully (Workspace enforces caps). Refresh + toast.
+  // ===========================================================================
+  function readFileText(file) {
+    return new Promise(function (resolve) {
+      try {
+        if (file && typeof file.text === 'function') {
+          file.text().then(function (t) { resolve(t); }, function () { resolve(null); });
+          return;
+        }
+        var fr = new FileReader();
+        fr.onload = function () { resolve(String(fr.result == null ? '' : fr.result)); };
+        fr.onerror = function () { resolve(null); };
+        fr.readAsText(file);
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  // Heuristic: treat as binary if the text contains a NUL byte (skip such files).
+  function looksBinaryText(t) {
+    if (t == null) return true;
+    var probe = String(t).slice(0, 4000);
+    return probe.indexOf(String.fromCharCode(0)) !== -1;
+  }
+
+  function ingestEntries(entries, label) {
+    var ws = WS();
+    if (!ws || !ws.importFiles) { UI.toast(T('files.importUnavailable', 'Import unavailable')); return; }
+    var clean = [];
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      if (!e || e.content == null) continue;
+      if (looksBinaryText(e.content)) continue;
+      clean.push({ path: e.path, content: e.content });
+    }
+    var res = null;
+    try { res = ws.importFiles(clean); } catch (err) { res = null; }
+    UI.refreshFiles();
+    var count = (res && res.count != null) ? res.count : clean.length;
+    var skipped = (res && res.skipped != null) ? res.skipped : (entries.length - count);
+    var msg = T('files.imported', 'Imported ') + count + T('files.importedTail', ' file(s)') +
+      (label ? ' (' + label + ')' : '') + (skipped ? ' · ' + skipped + T('files.skippedTail', ' skipped') : '');
+    UI.toast(msg, count > 0 ? 'ok' : undefined);
+  }
+
+  function importFolderFiles(ev) {
+    try {
+      var files = (ev && ev.target && ev.target.files) ? ev.target.files : [];
+      if (!files || !files.length) return;
+      UI.toast(T('files.importing', 'Importing…'));
+      var arr = Array.prototype.slice.call(files);
+      var jobs = arr.map(function (f) {
+        var rel = f.webkitRelativePath || f.relativePath || f.name || '';
+        return readFileText(f).then(function (txt) { return { path: rel, content: txt }; });
+      });
+      Promise.all(jobs).then(function (entries) {
+        ingestEntries(entries.filter(function (e) { return e && e.content != null; }), T('files.folder', 'folder'));
+      });
+    } catch (e) { UI.toast(T('files.importFailed', 'Import failed')); }
+  }
+
+  function importZipFile(ev) {
+    try {
+      var file = (ev && ev.target && ev.target.files && ev.target.files[0]) ? ev.target.files[0] : null;
+      if (!file) return;
+      var ws = WS();
+      if (!ws || !ws.readZip) { UI.toast(T('files.zipUnavailable', 'ZIP import unavailable')); return; }
+      UI.toast(T('files.importing', 'Importing…'));
+      var getBuf = (file.arrayBuffer ? file.arrayBuffer() : new Promise(function (resolve) {
+        var fr = new FileReader();
+        fr.onload = function () { resolve(fr.result); };
+        fr.onerror = function () { resolve(null); };
+        fr.readAsArrayBuffer(file);
+      }));
+      getBuf.then(function (buf) {
+        if (!buf) { UI.toast(T('files.importFailed', 'Import failed')); return; }
+        Promise.resolve(ws.readZip(buf)).then(function (entries) {
+          ingestEntries(Array.isArray(entries) ? entries : [], file.name || 'zip');
+        }, function () { UI.toast(T('files.importFailed', 'Import failed')); });
+      });
+    } catch (e) { UI.toast(T('files.importFailed', 'Import failed')); }
+  }
+
+  // ===========================================================================
+  // WAVE 3 — METRICS DASHBOARD (tokens/cost charts + timeline + replay)
+  // Reachable from the HUD 📊 button. Inline SVG, mirrors generate_chart styling.
+  // ===========================================================================
+  var _metricsState = { play: 0, raf: 0 };
+
+  // Per-task token accumulators (orchestrator writes task._tokensIn/_tokensOut).
+  function tasksWithTokens() {
+    var s = STATE();
+    var tasks = (s && Array.isArray(s.tasks)) ? s.tasks : [];
+    var out = [];
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i]; if (!t) continue;
+      var tin = Number(t._tokensIn) || 0;
+      var tout = Number(t._tokensOut) || 0;
+      if (tin === 0 && tout === 0) continue;
+      out.push({
+        id: t.id, title: t.title || t.desc || t.id || '(task)', role: t.role || 'generalist',
+        tokensIn: tin, tokensOut: tout
+      });
+    }
+    return out;
+  }
+
+  function escXml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function nx(n) { n = Number(n) || 0; return Math.round(n * 100) / 100; }
+
+  // Stacked horizontal bar chart of in/out tokens per row, as inline SVG string.
+  // rows: [{ label, inV, outV, sub }]. Returns an SVG element.
+  function buildStackedTokenSvg(rows) {
+    var W = 560, rowH = 26, gap = 8, padL = 130, padR = 14, top = 26, bottom = 14;
+    var H = top + bottom + rows.length * (rowH + gap);
+    if (!rows.length) H = top + bottom + 30;
+    var max = 1;
+    for (var i = 0; i < rows.length; i++) {
+      var tot = (rows[i].inV || 0) + (rows[i].outV || 0);
+      if (tot > max) max = tot;
+    }
+    var plotW = W - padL - padR;
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" width="100%" preserveAspectRatio="xMidYMin meet" role="img">';
+    svg += '<text x="' + padL + '" y="16" font-size="10" fill="#8294c4" font-weight="800" letter-spacing="1">TOKENS IN (cyan) / OUT (magenta)</text>';
+    for (var j = 0; j < rows.length; j++) {
+      var r = rows[j];
+      var y = top + j * (rowH + gap);
+      var inW = (r.inV / max) * plotW;
+      var outW = (r.outV / max) * plotW;
+      svg += '<text x="' + (padL - 6) + '" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="#dce6ff" text-anchor="end">' + escXml(truncate(r.label, 18)) + '</text>';
+      svg += '<rect x="' + padL + '" y="' + y + '" width="' + nx(inW) + '" height="' + rowH + '" fill="#39d7ff" rx="2"/>';
+      svg += '<rect x="' + nx(padL + inW) + '" y="' + y + '" width="' + nx(outW) + '" height="' + rowH + '" fill="#ff3df0" rx="2"/>';
+      var lblTot = fmtTokens((r.inV || 0) + (r.outV || 0));
+      svg += '<text x="' + nx(padL + inW + outW + 6) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="#8294c4">' + escXml(lblTot) + '</text>';
+    }
+    if (!rows.length) {
+      svg += '<text x="' + padL + '" y="' + (top + 18) + '" font-size="11" fill="#4d5d8a">No token usage yet.</text>';
+    }
+    svg += '</svg>';
+    var wrap = el('div', 'metrics-chart');
+    wrap.innerHTML = svg;
+    return wrap;
+  }
+
+  // Cost bar chart (single value per row), inline SVG. rows:[{label,cost,color}].
+  function buildCostBarSvg(rows, accent) {
+    var W = 560, rowH = 22, gap = 7, padL = 130, padR = 60, top = 22, bottom = 12;
+    var H = top + bottom + Math.max(rows.length, 1) * (rowH + gap);
+    var max = 0;
+    for (var i = 0; i < rows.length; i++) if (rows[i].cost > max) max = rows[i].cost;
+    if (max <= 0) max = 1;
+    var plotW = W - padL - padR;
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" width="100%" preserveAspectRatio="xMidYMin meet" role="img">';
+    for (var j = 0; j < rows.length; j++) {
+      var r = rows[j];
+      var y = top + j * (rowH + gap);
+      var w = (r.cost / max) * plotW;
+      var col = r.color || accent || '#5dff9b';
+      svg += '<text x="' + (padL - 6) + '" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="#dce6ff" text-anchor="end">' + escXml(truncate(r.label, 18)) + '</text>';
+      svg += '<rect x="' + padL + '" y="' + y + '" width="' + nx(Math.max(w, 1)) + '" height="' + rowH + '" fill="' + escXml(col) + '" opacity="0.85" rx="2"/>';
+      svg += '<text x="' + nx(padL + Math.max(w, 1) + 6) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="#5dff9b">' + escXml(fmtUSD(r.cost)) + '</text>';
+    }
+    if (!rows.length) {
+      svg += '<text x="' + padL + '" y="' + (top + 16) + '" font-size="11" fill="#4d5d8a">No spend yet.</text>';
+    }
+    svg += '</svg>';
+    var wrap = el('div', 'metrics-chart');
+    wrap.innerHTML = svg;
+    return wrap;
+  }
+
+  // Color a trace event type to a neon accent.
+  function traceColor(type) {
+    switch (type) {
+      case 'task_start': return '#4d7cff';
+      case 'task_done': return '#5dff9b';
+      case 'delegate': return '#9b5cff';
+      case 'tool_call': return '#39d7ff';
+      case 'retry': return '#ffc24d';
+      case 'debate': return '#ff8c42';
+      case 'replan': return '#ff3df0';
+      case 'build': return '#5dff9b';
+      case 'repair': return '#ff4d6d';
+      case 'synth': return '#39d7ff';
+      default: return '#8294c4';
+    }
+  }
+
+  function traceArr() {
+    var s = STATE();
+    return (s && Array.isArray(s.trace)) ? s.trace : [];
+  }
+
+  function retriesWaste(trace) {
+    var n = 0;
+    for (var i = 0; i < trace.length; i++) {
+      var ty = trace[i] && trace[i].type;
+      if (ty === 'retry' || ty === 'repair') n++;
+    }
+    return n;
+  }
+
+  UI.openMetrics = function () {
+    var m = mountModal('modal-metrics', '📊 ' + T('metrics.title', 'OBSERVABILITY'));
+    if (!m) { UI.toast('Metrics unavailable'); return; }
+    m.modal.classList.add('modal-files-wide');
+    stopMetricsReplay();
+
+    var c = computeCost();
+    var trace = traceArr().slice();
+    var perTask = tasksWithTokens();
+
+    // ---- SUMMARY ----
+    var totalTokens = 0;
+    for (var i = 0; i < c.byAgent.length; i++) totalTokens += (c.byAgent[i].tokensIn + c.byAgent[i].tokensOut);
+    var waste = retriesWaste(trace);
+    var summary = el('div', 'metrics-summary');
+    summary.appendChild(metricStat(T('metrics.totalCost', 'Total cost'), fmtUSD(c.total), '#5dff9b'));
+    summary.appendChild(metricStat(T('metrics.totalTokens', 'Total tokens'), fmtTokens(totalTokens), '#39d7ff'));
+    summary.appendChild(metricStat(T('metrics.events', 'Trace events'), String(trace.length), '#9b5cff'));
+    summary.appendChild(metricStat(T('metrics.waste', 'Retries / repairs'), String(waste), '#ffc24d'));
+    m.body.appendChild(summary);
+
+    // ---- TOKENS BY AGENT ----
+    m.body.appendChild(el('div', 'field-label metrics-h', T('metrics.tokensByAgent', 'TOKENS BY AGENT')));
+    var agentTokenRows = c.byAgent.map(function (r) {
+      return { label: r.name, inV: r.tokensIn, outV: r.tokensOut };
+    });
+    m.body.appendChild(buildStackedTokenSvg(agentTokenRows));
+
+    // ---- COST BY AGENT ----
+    m.body.appendChild(el('div', 'field-label metrics-h', T('metrics.costByAgent', 'COST BY AGENT')));
+    m.body.appendChild(buildCostBarSvg(c.byAgent.map(function (r) {
+      return { label: r.name, cost: r.cost, color: r.color };
+    })));
+
+    // ---- COST BY TASK (per-task tokens × the task role/agent model price) ----
+    m.body.appendChild(el('div', 'field-label metrics-h', T('metrics.costByTask', 'TOKENS / COST BY TASK')));
+    if (!perTask.length) {
+      m.body.appendChild(el('div', 'cost-empty', T('metrics.noTaskTokens', 'No per-task token data yet.')));
+    } else {
+      m.body.appendChild(buildStackedTokenSvg(perTask.map(function (t) {
+        return { label: t.title, inV: t.tokensIn, outV: t.tokensOut };
+      })));
+    }
+
+    // ---- TIMELINE + REPLAY ----
+    m.body.appendChild(el('div', 'field-label metrics-h', T('metrics.timeline', 'TIMELINE & REPLAY')));
+    var timelineWrap = el('div', 'metrics-timeline-wrap');
+    timelineWrap.id = 'metrics-timeline-wrap';
+    m.body.appendChild(timelineWrap);
+
+    // scrubber + play
+    var ctrl = el('div', 'metrics-replay-ctrl');
+    var playBtn = el('button', 'btn btn-sq', '▶');
+    playBtn.type = 'button';
+    playBtn.id = 'metrics-play';
+    playBtn.title = T('metrics.play', 'Play / pause replay');
+    var slider = document.createElement('input');
+    slider.type = 'range';
+    slider.id = 'metrics-scrubber';
+    slider.className = 'metrics-scrubber';
+    slider.min = '0';
+    slider.max = '100';
+    slider.value = '100';
+    slider.step = '1';
+    var timeLbl = el('span', 'metrics-time', '');
+    timeLbl.id = 'metrics-time';
+    ctrl.appendChild(playBtn); ctrl.appendChild(slider); ctrl.appendChild(timeLbl);
+    m.body.appendChild(ctrl);
+
+    var logWrap = el('div', 'metrics-replay-log');
+    logWrap.id = 'metrics-replay-log';
+    m.body.appendChild(logWrap);
+
+    // time bounds
+    var t0 = trace.length ? Number(trace[0].t) || 0 : 0;
+    var t1 = trace.length ? Number(trace[trace.length - 1].t) || t0 : t0;
+    if (t1 <= t0) t1 = t0 + 1;
+
+    var renderAt = function (frac) {
+      var cut = t0 + (t1 - t0) * clamp(frac, 0, 1);
+      renderTimeline(timelineWrap, trace, t0, t1, cut);
+      renderReplayLog(logWrap, trace, cut);
+      var dt = Math.max(0, cut - t0);
+      setText(timeLbl, fmtDur(dt) + ' / ' + fmtDur(t1 - t0));
+    };
+
+    on(slider, 'input', function () {
+      stopMetricsReplay();
+      playBtn.textContent = '▶';
+      renderAt((Number(slider.value) || 0) / 100);
+    });
+    on(playBtn, 'click', function () {
+      if (_metricsState.raf) {
+        stopMetricsReplay(); playBtn.textContent = '▶'; return;
+      }
+      playBtn.textContent = '⏸';
+      var startVal = (Number(slider.value) || 0);
+      if (startVal >= 100) startVal = 0;
+      var startTs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      var durMs = 6000;
+      var step = function () {
+        var now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        var p = Math.min(1, (now - startTs) / durMs + startVal / 100);
+        slider.value = String(Math.round(p * 100));
+        renderAt(p);
+        if (p >= 1) { stopMetricsReplay(); playBtn.textContent = '▶'; return; }
+        _metricsState.raf = requestAnimationFrame(step);
+      };
+      _metricsState.raf = requestAnimationFrame(step);
+    });
+
+    if (!trace.length) {
+      timelineWrap.appendChild(el('div', 'cost-empty', T('metrics.noTrace', 'No run trace yet — dispatch the Boss to populate the timeline.')));
+      logWrap.appendChild(el('div', 'cost-empty', T('metrics.noTrace2', 'Replay will appear once events are recorded.')));
+      slider.disabled = true;
+      playBtn.disabled = true;
+    } else {
+      renderAt(1);
+    }
+
+    var note = el('div', 'cost-note',
+      T('metrics.note', 'Tokens & cost are estimated from agent.stats and per-task counters × model price. Drag the scrubber or press play to replay the run.'));
+    m.body.appendChild(note);
+
+    var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', function () { stopMetricsReplay(); m.close(); });
+    m.foot.appendChild(close);
+
+    // closing via scrim/✕ should also stop the replay loop
+    var scrim = m.modal.querySelector('.modal-scrim');
+    if (scrim) on(scrim, 'click', stopMetricsReplay);
+    var xBtn = m.modal.querySelector('.panel-x');
+    if (xBtn) on(xBtn, 'click', stopMetricsReplay);
+
+    applyI18n(m.modal);
+  };
+
+  function stopMetricsReplay() {
+    if (_metricsState.raf) { cancelAnimationFrame(_metricsState.raf); _metricsState.raf = 0; }
+  }
+
+  function metricStat(label, value, color) {
+    var box = el('div', 'metric-stat');
+    var v = el('div', 'metric-val', value);
+    if (color) { v.style.color = color; v.style.textShadow = '0 0 8px ' + color; }
+    box.appendChild(v);
+    box.appendChild(el('div', 'metric-key', label));
+    return box;
+  }
+
+  function fmtDur(ms) {
+    ms = Number(ms) || 0;
+    if (ms < 1000) return Math.round(ms) + 'ms';
+    var s = ms / 1000;
+    if (s < 60) return s.toFixed(1) + 's';
+    var mn = Math.floor(s / 60), rem = Math.round(s % 60);
+    return mn + 'm' + (rem < 10 ? '0' : '') + rem + 's';
+  }
+
+  // Waterfall: rows grouped by role (or task), bars positioned by t and ms.
+  function renderTimeline(host, trace, t0, t1, cut) {
+    if (!host) return;
+    clear(host);
+    if (!trace.length) return;
+    var span = (t1 - t0) || 1;
+
+    // group rows by role (fallback to taskId / 'system')
+    var order = [];
+    var groups = {};
+    for (var i = 0; i < trace.length; i++) {
+      var ev = trace[i]; if (!ev) continue;
+      var key = ev.role || ev.taskId || 'system';
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(ev);
+    }
+
+    var W = 620, padL = 92, padR = 12, top = 6, rowH = 20, gap = 5;
+    var plotW = W - padL - padR;
+    var H = top + order.length * (rowH + gap) + 18;
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" width="100%" preserveAspectRatio="xMidYMin meet" role="img">';
+
+    // the replay cut line
+    var cutX = padL + ((clamp(cut, t0, t1) - t0) / span) * plotW;
+
+    for (var g = 0; g < order.length; g++) {
+      var rk = order[g];
+      var y = top + g * (rowH + gap);
+      svg += '<text x="' + (padL - 6) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="#8294c4" text-anchor="end">' + escXml(truncate(rk, 12)) + '</text>';
+      svg += '<rect x="' + padL + '" y="' + y + '" width="' + plotW + '" height="' + rowH + '" fill="#0a0f20" stroke="#1a2647" rx="3"/>';
+      var evs = groups[rk];
+      for (var e = 0; e < evs.length; e++) {
+        var ev2 = evs[e];
+        var et = Number(ev2.t) || t0;
+        var ex = padL + ((et - t0) / span) * plotW;
+        var dur = Number(ev2.ms) || 0;
+        var ew = dur > 0 ? Math.max(2, (dur / span) * plotW) : 4;
+        if (ex + ew > padL + plotW) ew = (padL + plotW) - ex;
+        if (ew < 2) ew = 2;
+        var active = et <= cut;
+        var col = traceColor(ev2.type);
+        var op = active ? '0.95' : '0.18';
+        var title = (ev2.type || '') + (ev2.name ? ' ' + ev2.name : '') + (dur ? ' ' + Math.round(dur) + 'ms' : '');
+        svg += '<rect x="' + nx(ex) + '" y="' + (y + 3) + '" width="' + nx(ew) + '" height="' + (rowH - 6) +
+          '" fill="' + col + '" opacity="' + op + '" rx="2"><title>' + escXml(title) + '</title></rect>';
+      }
+    }
+    // cut line
+    svg += '<line x1="' + nx(cutX) + '" y1="' + top + '" x2="' + nx(cutX) + '" y2="' + (top + order.length * (rowH + gap)) +
+      '" stroke="#ffc24d" stroke-width="1.5" opacity="0.9"/>';
+    svg += '</svg>';
+    var wrap = el('div', 'metrics-chart');
+    wrap.innerHTML = svg;
+    host.appendChild(wrap);
+
+    // legend
+    var legend = el('div', 'metrics-legend');
+    var types = ['task_start', 'task_done', 'delegate', 'tool_call', 'retry', 'repair', 'replan', 'synth'];
+    for (var L = 0; L < types.length; L++) {
+      var item = el('span', 'metrics-leg-item');
+      var sw = el('span', 'metrics-leg-dot');
+      sw.style.background = traceColor(types[L]);
+      sw.style.boxShadow = '0 0 5px ' + traceColor(types[L]);
+      item.appendChild(sw);
+      item.appendChild(document.createTextNode(types[L]));
+      legend.appendChild(item);
+    }
+    host.appendChild(legend);
+  }
+
+  // Replay log: trace events up to the cut timestamp, newest at bottom.
+  function renderReplayLog(host, trace, cut) {
+    if (!host) return;
+    clear(host);
+    var shown = [];
+    for (var i = 0; i < trace.length; i++) {
+      var ev = trace[i];
+      if (!ev) continue;
+      if ((Number(ev.t) || 0) <= cut) shown.push(ev);
+    }
+    if (!shown.length) {
+      host.appendChild(el('div', 'cost-empty', T('metrics.noEventsYet', 'No events at this point.')));
+      return;
+    }
+    var t0 = trace.length ? (Number(trace[0].t) || 0) : 0;
+    var tail = shown.slice(Math.max(0, shown.length - 60));
+    for (var j = 0; j < tail.length; j++) {
+      var e2 = tail[j];
+      var row = el('div', 'metrics-log-line');
+      var dot = el('span', 'metrics-log-dot');
+      dot.style.background = traceColor(e2.type);
+      row.appendChild(dot);
+      var ts = el('span', 'metrics-log-t', '+' + fmtDur((Number(e2.t) || 0) - t0));
+      row.appendChild(ts);
+      var ty = el('span', 'metrics-log-type', String(e2.type || 'evt'));
+      ty.style.color = traceColor(e2.type);
+      row.appendChild(ty);
+      var bits = [];
+      if (e2.role) bits.push(e2.role);
+      if (e2.name) bits.push(e2.name);
+      if (e2.status) bits.push(e2.status);
+      if (e2.ms) bits.push(Math.round(e2.ms) + 'ms');
+      if (e2.text) bits.push(truncate(String(e2.text), 60));
+      row.appendChild(document.createTextNode(' ' + bits.join(' · ')));
+      host.appendChild(row);
+    }
+    host.scrollTop = host.scrollHeight;
   }
 
   // ===========================================================================

@@ -329,6 +329,53 @@ window.App = window.App || {};
     return { facts: facts, plan: plan, progress: progress, updated: updated };
   }
 
+  // WAVE 3: cap helper for the structured run-event trace (App.state.trace).
+  function traceCap() {
+    var n = cfg().TRACE_CAP;
+    return (typeof n === 'number' && n > 0) ? n : 600;
+  }
+
+  // WAVE 3: sanitize the structured run-event trace -> small {t,type,...} rows.
+  // Each event is coerced field-by-field: numeric fields pass through as numbers,
+  // string fields are coerced + length-clamped (text especially), unknown fields
+  // are dropped. Oversized/garbage rows are skipped. Keeps only the newest
+  // TRACE_CAP events. Never throws. Migrate older saves (missing trace -> []).
+  function normalizeTrace(arr) {
+    if (!Array.isArray(arr)) return [];
+    var TEXT_MAX = 240;     // short summary text only — drop anything huge
+    var NAME_MAX = 80;
+    function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : undefined; }
+    function str(v, max) {
+      if (v == null) return undefined;
+      var s = String(v);
+      if (s.length > max) s = s.slice(0, max);
+      return s;
+    }
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var e = arr[i];
+      if (!e || typeof e !== 'object') continue;
+      var row = {
+        t: (typeof e.t === 'number' && isFinite(e.t)) ? e.t : nowMs(),
+        type: str(e.type, NAME_MAX) || 'event',
+      };
+      // optional, coerced fields (only attached when present/valid)
+      var taskId = str(e.taskId, NAME_MAX); if (taskId !== undefined) row.taskId = taskId;
+      var role = str(e.role, NAME_MAX); if (role !== undefined) row.role = role;
+      var agentId = str(e.agentId, NAME_MAX); if (agentId !== undefined) row.agentId = agentId;
+      var name = str(e.name, NAME_MAX); if (name !== undefined) row.name = name;
+      var ms = num(e.ms); if (ms !== undefined) row.ms = ms;
+      var tIn = num(e.tokensIn); if (tIn !== undefined) row.tokensIn = tIn;
+      var tOut = num(e.tokensOut); if (tOut !== undefined) row.tokensOut = tOut;
+      var status = str(e.status, NAME_MAX); if (status !== undefined) row.status = status;
+      var text = str(e.text, TEXT_MAX); if (text !== undefined) row.text = text;
+      out.push(row);
+    }
+    var cap = traceCap();
+    if (out.length > cap) out = out.slice(out.length - cap);   // keep newest
+    return out;
+  }
+
   // v5: detect a file's language from its extension (mirror of
   // Workspace.detectLang; kept here so the store can normalize standalone).
   function detectLangFor(path) {
@@ -426,6 +473,7 @@ window.App = window.App || {};
       tasks: [],
       log: [],
       artifacts: [],          // v3: Artifact[] (persisted, capped at ARTIFACT_MAX)
+      trace: [],              // WAVE 3: structured run-event trace (persisted, capped at TRACE_CAP)
       files: {},              // v5: project workspace (path -> {content,lang,updatedBy,t}); persisted, capped at MAX_PROJECT_FILES
       camera: defaultCamera(),
       layout: emptyLayout(),
@@ -460,6 +508,7 @@ window.App = window.App || {};
     if (!Array.isArray(s.tasks)) s.tasks = [];
     if (!Array.isArray(s.log)) s.log = [];
     if (!Array.isArray(s.artifacts)) s.artifacts = [];
+    if (!Array.isArray(s.trace)) s.trace = [];                   // WAVE 3: run-event trace
     if (!s.files || typeof s.files !== 'object') s.files = {};   // v5: project workspace map
     if (!s.camera || typeof s.camera !== 'object') s.camera = def.camera;
     if (!s.layout || typeof s.layout !== 'object') s.layout = def.layout;
@@ -602,6 +651,13 @@ window.App = window.App || {};
       role: t.role || 'generalist',
       needsWeb: !!t.needsWeb,
       verify: !!t.verify,   // v3: keep the QA-gate flag so it survives reload (DAG dep order is lossy on mid-run reload — acceptable)
+      // WAVE 3: per-task token accounting (Orchestrator accumulates _tokensIn/_tokensOut
+      // as a worker streams). Persist as non-underscore numeric fields so per-task cost
+      // survives reload; rebuildTask reads these back onto task._tokensIn/_tokensOut.
+      tokensIn: (typeof t._tokensIn === 'number' && isFinite(t._tokensIn)) ? t._tokensIn
+                : ((typeof t.tokensIn === 'number' && isFinite(t.tokensIn)) ? t.tokensIn : 0),
+      tokensOut: (typeof t._tokensOut === 'number' && isFinite(t._tokensOut)) ? t._tokensOut
+                : ((typeof t.tokensOut === 'number' && isFinite(t.tokensOut)) ? t.tokensOut : 0),
       // STRIPPED: _ctrl and any _*
     };
   }
@@ -645,6 +701,9 @@ window.App = window.App || {};
     // v3: artifacts — normalize + cap (deep cloned via normalize copy)
     var artifacts = normalizeArtifacts(s.artifacts);
 
+    // WAVE 3: structured run-event trace — coerce/clamp + cap newest TRACE_CAP
+    var trace = normalizeTrace(s.trace);
+
     // v5: project workspace — normalize + cap (fresh plain map, no live refs)
     var files = normalizeFiles(s.files);
 
@@ -665,6 +724,7 @@ window.App = window.App || {};
       tasks: tasks,
       log: log,
       artifacts: artifacts,
+      trace: trace,           // WAVE 3: structured run-event trace
       files: files,           // v5: project workspace
       layout: layout,
       settings: settings,
@@ -718,6 +778,12 @@ window.App = window.App || {};
       if (!rt || typeof rt !== 'object') continue;
       var st = validStatus[rt.status] ? rt.status : 'queued';
       if (st === 'running') st = 'queued';
+      // WAVE 3: restore per-task token accounting onto the runtime task. Accept
+      // both the persisted non-underscore fields and any legacy _-prefixed ones.
+      var rtIn = (typeof rt.tokensIn === 'number' && isFinite(rt.tokensIn)) ? rt.tokensIn
+                 : ((typeof rt._tokensIn === 'number' && isFinite(rt._tokensIn)) ? rt._tokensIn : 0);
+      var rtOut = (typeof rt.tokensOut === 'number' && isFinite(rt.tokensOut)) ? rt.tokensOut
+                 : ((typeof rt._tokensOut === 'number' && isFinite(rt._tokensOut)) ? rt._tokensOut : 0);
       newTasks.push({
         id: rt.id || uid('t'),
         title: rt.title || '',
@@ -732,6 +798,10 @@ window.App = window.App || {};
         role: rt.role || 'generalist',
         needsWeb: !!rt.needsWeb,
         verify: !!rt.verify,   // v3: restore QA-gate flag
+        // WAVE 3: per-task tokens live on _-prefixed runtime fields (Orchestrator
+        // accumulates them); seed from the persisted values so cost-per-task carries.
+        _tokensIn: rtIn,
+        _tokensOut: rtOut,
         _ctrl: null,
       });
     }
@@ -752,6 +822,12 @@ window.App = window.App || {};
     if (!Array.isArray(s.artifacts)) s.artifacts = [];
     s.artifacts.length = 0;
     for (var aj = 0; aj < rebuiltArtifacts.length; aj++) s.artifacts.push(rebuiltArtifacts[aj]);
+
+    // --- WAVE 3: run-event trace (coerce/clamp + cap; migrate missing -> []) ---
+    var rebuiltTrace = normalizeTrace(blob.trace);
+    if (!Array.isArray(s.trace)) s.trace = [];
+    s.trace.length = 0;
+    for (var tj = 0; tj < rebuiltTrace.length; tj++) s.trace.push(rebuiltTrace[tj]);
 
     // --- files: project workspace (normalize + cap) ---
     var rebuiltFiles = normalizeFiles(blob.files);
@@ -885,6 +961,14 @@ window.App = window.App || {};
         }
         // blob.ledger absent -> normalizeLedger yields null (no ledger). Forward no-op.
         v = 5;
+      }
+      // v5 -> current (WAVE 3): structured run-event trace (blob.trace). Filled with
+      // safe defaults by normalizeTrace on load (missing -> []), so this step only
+      // ensures the shape exists; everything else is a forward no-op. Defensive: run
+      // whenever v<6 regardless of whether SCHEMA_VERSION was bumped.
+      if (v < 6) {
+        if (!Array.isArray(blob.trace)) blob.trace = [];
+        v = 6;
       }
       // Always stamp to current after running known steps.
       blob.v = target;

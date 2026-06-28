@@ -593,6 +593,11 @@ window.App = window.App || {};
     // v3: artifact store cap (oldest dropped past this).
     ARTIFACT_MAX: 200,
 
+    // WAVE 3: structured run-event trace cap (App.state.trace; newest kept).
+    // Drives the metrics dashboard timeline + replay scrubber. Store persists
+    // App.state.trace capped to this many newest events; oldest dropped past it.
+    TRACE_CAP: 600,
+
     // v3: watercooler chatter cooldown (ms between idle banter events).
     CHATTER_COOLDOWN_MS: 25000,
 

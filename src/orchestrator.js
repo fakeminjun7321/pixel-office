@@ -57,6 +57,35 @@ window.App = window.App || {};
   function refreshBoard() {
     try { if (App.UI && App.UI.refreshBoard) App.UI.refreshBoard(); } catch (e) {}
   }
+
+  // ===========================================================================
+  // TRACE (Wave 3) — additive run telemetry. Pushes small, timestamped events onto
+  //   App.state.trace (capped) so the metrics dashboard can draw a timeline + replay.
+  //   Bounded and fully guarded: NEVER throws (called from inside the run loop).
+  //   Event shape: { t, type, taskId?, role?, agentId?, name?, ms?, tokensIn?,
+  //                  tokensOut?, status?, text? }. Keep events SMALL.
+  // ===========================================================================
+  function traceEvt(evt) {
+    try {
+      var s = STATE();
+      if (!s || !evt || typeof evt !== 'object') return;
+      if (!Array.isArray(s.trace)) s.trace = [];
+      var cap = (CFG().TRACE_CAP != null) ? CFG().TRACE_CAP : 600;
+      // coerce + bound the event so nothing huge lands in the trace.
+      var e = { t: nowMs(), type: String(evt.type || 'event') };
+      if (evt.taskId != null) e.taskId = String(evt.taskId);
+      if (evt.role != null) e.role = String(evt.role);
+      if (evt.agentId != null) e.agentId = String(evt.agentId);
+      if (evt.name != null) e.name = truncate(String(evt.name), 40);
+      if (typeof evt.ms === 'number' && isFinite(evt.ms)) e.ms = Math.max(0, evt.ms | 0);
+      if (typeof evt.tokensIn === 'number' && isFinite(evt.tokensIn)) e.tokensIn = evt.tokensIn | 0;
+      if (typeof evt.tokensOut === 'number' && isFinite(evt.tokensOut)) e.tokensOut = evt.tokensOut | 0;
+      if (evt.status != null) e.status = String(evt.status);
+      if (evt.text != null) e.text = truncate(String(evt.text), 80);
+      s.trace.push(e);
+      if (s.trace.length > cap) s.trace.splice(0, s.trace.length - cap);
+    } catch (e2) {}
+  }
   function saveSoon() {
     try {
       if (App.Store && App.Store.saveDebounced) App.Store.saveDebounced();
@@ -173,6 +202,7 @@ window.App = window.App || {};
   Orchestrator.PLAN_SCHEMA_VERSION = 1;
   Orchestrator.adjustAffinity = adjustAffinity;
   Orchestrator.bondParticipants = bondParticipants;
+  Orchestrator.trace = traceEvt;   // Wave 3: structured-event emitter (capped, never throws)
 
   // ===========================================================================
   // TASK LEDGER (Wave 1) — App.state._ledger = {facts, plan, progress, updated}.
@@ -361,6 +391,7 @@ window.App = window.App || {};
           r = r || {};
           var label = (agent && agent.name) || (agent && agent.role) || 'agent';
           try { log(label, 'tool', 'tool', '🔧 ' + (blk.name || 'tool') + (r.ok ? ' ✓' : ' ✗')); } catch (e) {}
+          try { traceEvt({ type: 'tool_call', name: blk.name || 'tool', role: agent && agent.role, agentId: agent && agent.id, status: r.ok ? 'ok' : 'error' }); } catch (e) {}
           // surface in the agent transcript if the UI supports it.
           try {
             if (App.UI && App.UI.appendTranscript && agent) {
@@ -762,6 +793,7 @@ window.App = window.App || {};
           var roleLabel = (ROLES()[t.role] && ROLES()[t.role].label) || t.role;
           if (boss) ag.say(boss, '@' + roleLabel + ': ' + t.title, 3000);
           log('Boss', roleLabel, 'msg', '@' + roleLabel + ': ' + t.title);
+          try { traceEvt({ type: 'delegate', role: t.role, taskId: t.id, text: t.title }); } catch (e) {}
           refreshBoard();
         }, stagger * idx);
       })(items[i], i);
@@ -962,6 +994,13 @@ window.App = window.App || {};
     task.assignee = agent.id;
     task.status = 'running';
 
+    // TRACE (Wave 3): record start time + tokens baseline; emit a task_start event.
+    //   _startedAt only set on the FIRST start (preserve across QA retries' re-assigns).
+    if (typeof task._startedAt !== 'number') task._startedAt = nowMs();
+    if (typeof task._tokensIn !== 'number') task._tokensIn = 0;
+    if (typeof task._tokensOut !== 'number') task._tokensOut = 0;
+    try { traceEvt({ type: 'task_start', role: task.role, taskId: task.id, agentId: agent.id, text: task.title }); } catch (e) {}
+
     // (re)assignment clears any prior attention flag on this agent.
     clearAttention(agent);
 
@@ -1091,6 +1130,9 @@ window.App = window.App || {};
         if (res && res.usage) {
           agent.stats.tokensIn += (res.usage.input_tokens || 0);
           agent.stats.tokensOut += (res.usage.output_tokens || 0);
+          // PER-TASK TOKENS (Wave 3): accumulate across every tool-loop iteration.
+          task._tokensIn = (task._tokensIn || 0) + (res.usage.input_tokens || 0);
+          task._tokensOut = (task._tokensOut || 0) + (res.usage.output_tokens || 0);
         }
         task._acc += acc;
 
@@ -1317,6 +1359,7 @@ window.App = window.App || {};
             task._retries = (task._retries || 0) + 1;
             task._feedback = feedback;
             log('QA', (worker ? worker.name : task.role), 'msg', '✗ FAIL → revise (' + task._retries + '): ' + truncate(feedback, 60));
+            try { traceEvt({ type: 'retry', role: task.role, taskId: task.id, status: 'fail', text: truncate(feedback, 60) }); } catch (e) {}
             // release the worker and re-queue for another attempt.
             if (worker) {
               try {
@@ -1406,6 +1449,17 @@ window.App = window.App || {};
     task.result = text;
     task.error = null;
 
+    // TRACE (Wave 3): task_done with duration + the task's accumulated tokens.
+    try {
+      traceEvt({
+        type: 'task_done', role: task.role, taskId: task.id, agentId: task.assignee,
+        status: 'done',
+        ms: (typeof task._startedAt === 'number') ? (nowMs() - task._startedAt) : undefined,
+        tokensIn: task._tokensIn || 0, tokensOut: task._tokensOut || 0,
+        text: task.title,
+      });
+    } catch (e) {}
+
     var agent = ag.byId(task.assignee);
     if (agent) {
       agent.busy = false;
@@ -1435,6 +1489,17 @@ window.App = window.App || {};
     var ag = AGENTS();
     task.status = 'error';
     task.error = msg || 'error';
+
+    // TRACE (Wave 3): task_done (error) with duration + the task's accumulated tokens.
+    try {
+      traceEvt({
+        type: 'task_done', role: task.role, taskId: task.id, agentId: task.assignee,
+        status: 'error',
+        ms: (typeof task._startedAt === 'number') ? (nowMs() - task._startedAt) : undefined,
+        tokensIn: task._tokensIn || 0, tokensOut: task._tokensOut || 0,
+        text: truncate(msg || 'error', 60),
+      });
+    } catch (e) {}
 
     var agent = ag.byId(task.assignee);
     if (agent) {
@@ -1866,6 +1931,7 @@ window.App = window.App || {};
     var done = false;
     function finish(added) { if (done) return; done = true; cb(added || 0); }
     try { log('Boss', 'system', 'system', '🔄 reviewing results (replan)…'); } catch (e) {}
+    try { traceEvt({ type: 'replan', role: 'boss', taskId: root.id }); } catch (e) {}
 
     var handle = App.API.stream({
       apiKey: settings.apiKey,
@@ -1985,6 +2051,7 @@ window.App = window.App || {};
     var done = false;
     function finish() { if (done) return; done = true; cb(); }
     try { log('Boss', 'all', 'system', '💬 team critique round…'); } catch (e) {}
+    try { traceEvt({ type: 'debate', role: 'boss', taskId: root.id }); } catch (e) {}
 
     var handle = App.API.stream({
       apiKey: settings.apiKey,
@@ -2099,6 +2166,7 @@ window.App = window.App || {};
     // sparse friendly banter from one participant during the sync.
     if (participants.length > 1) maybeBanter(participants[1], 'meeting');
     log('Boss', 'all', 'system', 'Synthesizing ' + kids.length + ' results…');
+    try { traceEvt({ type: 'synth', role: 'boss', taskId: rootTask.id, text: 'synthesizing ' + kids.length + ' results' }); } catch (e) {}
     refreshBoard();
 
     // Build synth content and stream.
@@ -2318,6 +2386,7 @@ window.App = window.App || {};
     };
     s.tasks.push(root);
     log('user', 'Boss', 'msg', '🔨 build: ' + truncate(goalText, 110));
+    try { traceEvt({ type: 'build', role: 'boss', taskId: root.id, text: truncate(goalText, 60) }); } catch (e) {}
     // TASK LEDGER: seed facts from the build goal.
     initLedger(goalText);
     refreshBoard();
@@ -3058,6 +3127,7 @@ window.App = window.App || {};
           }
           round++;
           try { log('Boss', 'all', 'system', '🔧 self-repair round ' + round); } catch (e) {}
+          try { traceEvt({ type: 'repair', role: 'engineer', status: 'round', text: 'round ' + round + ' (' + errs.length + ' error' + (errs.length === 1 ? '' : 's') + ')' }); } catch (e) {}
           refreshBoard();
           dispatchRepair(errs).then(function () {
             try { if (App.UI && App.UI.refreshFiles) App.UI.refreshFiles(); } catch (e) {}

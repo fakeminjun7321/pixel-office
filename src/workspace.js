@@ -987,6 +987,234 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // PROJECT IMPORT INGEST -- importFiles(entries[{path,content}])
+  //   Normalize each path + write() each into the workspace. Respects caps (the
+  //   write() helper enforces per-file size + total-file count). Skips binaries
+  //   (NUL bytes) and oversized/invalid entries gracefully. Never throws.
+  //   -> { ok:Bool, count:Number, skipped:Number }
+  // ===========================================================================
+  function looksBinary(str) {
+    try {
+      var s = String(str == null ? '' : str);
+      // sample up to first ~64k chars; a NUL byte strongly implies binary
+      var lim = s.length < 65536 ? s.length : 65536;
+      for (var i = 0; i < lim; i++) {
+        if (s.charCodeAt(i) === 0) return true;
+      }
+      return false;
+    } catch (e) {
+      return true; // be conservative on failure -> skip
+    }
+  }
+
+  function importFiles(entries) {
+    var count = 0, skipped = 0;
+    try {
+      if (!entries || typeof entries.length !== 'number') {
+        return { ok: false, count: 0, skipped: 0 };
+      }
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        if (!e || typeof e !== 'object') { skipped++; continue; }
+        var rawPath = e.path;
+        var content = (e.content == null) ? '' : String(e.content);
+        var p = normalizePath(rawPath);
+        if (!p) { skipped++; continue; }              // empty/dir-like path
+        if (/\/$/.test(String(rawPath))) { skipped++; continue; } // explicit dir
+        if (looksBinary(content)) { skipped++; continue; }        // binary -> skip
+        var wrote = write(p, content, 'import');
+        if (wrote) count++; else skipped++;           // cap-rejected -> skipped
+      }
+      return { ok: count > 0, count: count, skipped: skipped };
+    } catch (err) {
+      return { ok: count > 0, count: count, skipped: skipped };
+    }
+  }
+
+  // ===========================================================================
+  // ZIP READ (best-effort) -- readZip(arrayBuffer) -> Promise<[{path,content}]>
+  //   Parse a .zip via its central directory; for STORED (method 0) entries
+  //   slice bytes; for DEFLATED (method 8) inflate via DecompressionStream
+  //   ('deflate-raw') when available, else skip that entry. UTF-8 decode; skip
+  //   directories + binary (NUL) entries. Resolve [] on failure; NEVER throws.
+  //   Pairs with the makeStoreZip()/buildZip() writer above.
+  // ===========================================================================
+  function readU16(view, off) {
+    try { return view[off] | (view[off + 1] << 8); } catch (e) { return 0; }
+  }
+  function readU32(view, off) {
+    try {
+      return (view[off] | (view[off + 1] << 8) | (view[off + 2] << 16) | (view[off + 3] << 24)) >>> 0;
+    } catch (e) { return 0; }
+  }
+
+  function utf8Decode(bytes) {
+    try {
+      if (typeof TextDecoder !== 'undefined') {
+        return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      }
+    } catch (e) {}
+    // manual UTF-8 decode fallback
+    var out = '';
+    try {
+      var i = 0, len = bytes.length;
+      while (i < len) {
+        var c = bytes[i++];
+        if (c < 0x80) { out += String.fromCharCode(c); }
+        else if (c >= 0xC0 && c < 0xE0) {
+          out += String.fromCharCode(((c & 0x1F) << 6) | (bytes[i++] & 0x3F));
+        } else if (c >= 0xE0 && c < 0xF0) {
+          out += String.fromCharCode(((c & 0x0F) << 12) | ((bytes[i++] & 0x3F) << 6) | (bytes[i++] & 0x3F));
+        } else if (c >= 0xF0) {
+          var cp = ((c & 0x07) << 18) | ((bytes[i++] & 0x3F) << 12) | ((bytes[i++] & 0x3F) << 6) | (bytes[i++] & 0x3F);
+          cp -= 0x10000;
+          out += String.fromCharCode(0xD800 + (cp >> 10), 0xDC00 + (cp & 0x3FF));
+        }
+      }
+    } catch (e) {}
+    return out;
+  }
+
+  // Inflate raw DEFLATE bytes via DecompressionStream('deflate-raw').
+  // Returns Promise<Uint8Array|null> (null if unavailable / on failure).
+  function inflateRaw(bytes) {
+    return new Promise(function (resolve) {
+      try {
+        if (typeof DecompressionStream === 'undefined' || typeof Response === 'undefined') {
+          return resolve(null);
+        }
+        var ds = new DecompressionStream('deflate-raw');
+        var blob;
+        try { blob = new Blob([bytes]); } catch (e) { blob = null; }
+        var stream = blob && blob.stream ? blob.stream() : null;
+        if (!stream) {
+          // fall back to constructing a ReadableStream manually
+          if (typeof ReadableStream === 'undefined') return resolve(null);
+          stream = new ReadableStream({
+            start: function (controller) { controller.enqueue(bytes); controller.close(); }
+          });
+        }
+        var out = stream.pipeThrough(ds);
+        new Response(out).arrayBuffer().then(function (ab) {
+          try { resolve(new Uint8Array(ab)); } catch (e) { resolve(null); }
+        }).catch(function () { resolve(null); });
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  function readZip(arrayBuffer) {
+    return new Promise(function (resolve) {
+      try {
+        if (!arrayBuffer) return resolve([]);
+        var bytes;
+        try {
+          bytes = (arrayBuffer instanceof Uint8Array) ? arrayBuffer : new Uint8Array(arrayBuffer);
+        } catch (e) { return resolve([]); }
+        var len = bytes.length;
+        if (len < 22) return resolve([]); // smaller than minimal EOCD record
+
+        // 1) Locate End Of Central Directory (EOCD) signature 0x06054b50,
+        //    scanning backwards from the end (comment may follow it).
+        var eocd = -1;
+        var scanFloor = len - 22 - 65535;
+        if (scanFloor < 0) scanFloor = 0;
+        for (var s = len - 22; s >= scanFloor; s--) {
+          if (readU32(bytes, s) === 0x06054b50) { eocd = s; break; }
+        }
+        if (eocd < 0) return resolve([]);
+
+        var total = readU16(bytes, eocd + 10);          // total central dir records
+        var cdSize = readU32(bytes, eocd + 12);         // central dir size
+        var cdOffset = readU32(bytes, eocd + 16);       // central dir offset
+        if (cdOffset > len || cdOffset + cdSize > len) {
+          // tolerate slightly off offsets by clamping
+          if (cdOffset > len) return resolve([]);
+        }
+
+        // 2) Walk the central directory records.
+        var jobs = [];      // { path, async:Bool, content?, bytes?, method }
+        var ptr = cdOffset;
+        var guard = 0;
+        while (ptr + 46 <= len && guard < 100000) {
+          guard++;
+          if (readU32(bytes, ptr) !== 0x02014b50) break; // not a central header
+          var method = readU16(bytes, ptr + 10);
+          var compSize = readU32(bytes, ptr + 20);
+          var nameLen = readU16(bytes, ptr + 28);
+          var extraLen = readU16(bytes, ptr + 30);
+          var commentLen = readU16(bytes, ptr + 32);
+          var localOff = readU32(bytes, ptr + 42);
+          var nameBytes = bytes.subarray(ptr + 46, ptr + 46 + nameLen);
+          var name = utf8Decode(nameBytes);
+          ptr = ptr + 46 + nameLen + extraLen + commentLen;
+
+          if (!name) continue;
+          if (/\/$/.test(name)) continue;               // directory entry -> skip
+
+          // 3) Resolve the local header to find the data start (extra field
+          //    length can differ from the central record).
+          if (localOff + 30 > len) continue;
+          if (readU32(bytes, localOff) !== 0x04034b50) continue; // not a local header
+          var lNameLen = readU16(bytes, localOff + 26);
+          var lExtraLen = readU16(bytes, localOff + 28);
+          var dataStart = localOff + 30 + lNameLen + lExtraLen;
+          if (dataStart > len) continue;
+          var dataEnd = dataStart + compSize;
+          if (dataEnd > len) dataEnd = len;
+          var raw = bytes.subarray(dataStart, dataEnd);
+
+          if (method === 0) {
+            // STORED -> raw bytes are the content
+            jobs.push({ path: name, async: false, bytes: raw });
+          } else if (method === 8) {
+            // DEFLATED -> needs inflate (may be unavailable)
+            jobs.push({ path: name, async: true, bytes: raw });
+          } else {
+            // unsupported method -> skip
+            continue;
+          }
+        }
+
+        // 4) Materialize each job (inflate as needed), then build results.
+        var results = [];
+        function finalizeBytes(name, decompressed) {
+          try {
+            if (!decompressed) return; // skip on inflate failure
+            var text = utf8Decode(decompressed);
+            if (looksBinary(text)) return;      // binary -> skip
+            var p = normalizePath(name);
+            if (!p) return;
+            results.push({ path: p, content: text });
+          } catch (e) {}
+        }
+
+        function step(idx) {
+          // Drain consecutive synchronous (STORED) jobs in a loop so a zip with
+          // thousands of stored entries can't overflow the call stack; only async
+          // (DEFLATED) jobs break out to a .then() continuation (stack = O(#deflated)).
+          while (idx < jobs.length && !jobs[idx].async) {
+            finalizeBytes(jobs[idx].path, jobs[idx].bytes);
+            idx++;
+          }
+          if (idx >= jobs.length) { return resolve(results); }
+          var job = jobs[idx];
+          inflateRaw(job.bytes).then(function (out) {
+            finalizeBytes(job.path, out);
+            step(idx + 1);
+          }).catch(function () {
+            step(idx + 1);
+          });
+        }
+        step(0);
+      } catch (e) {
+        resolve([]);
+      }
+    });
+  }
+
+  // ===========================================================================
   // ATTACH
   // ===========================================================================
   App.Workspace = {
@@ -1001,6 +1229,9 @@ window.App = window.App || {};
     buildZip: buildZip,
     assembleRunnable: assembleRunnable,
     githubPush: githubPush,
+    // PROJECT IMPORT (Wave 3 builder)
+    importFiles: importFiles,
+    readZip: readZip,
     // VERSION HISTORY (Wave 1 reliability core)
     history: history,
     restore: restore,

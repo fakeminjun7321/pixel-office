@@ -92,6 +92,7 @@ window.App = window.App || {};
       on($('btn-presets'), 'click', function () { UI.openPresets(); });
       on($('btn-sessions'), 'click', function () { UI.openSessions(); });
       on($('btn-cost-meter'), 'click', function () { UI.openCostBreakdown(); });
+      on($('btn-metrics'), 'click', function () { UI.openMetrics(); });
       on($('btn-layout'), 'click', function () { UI.toggleLayoutEdit(); });
       on($('btn-zoom-in'), 'click', function () { UI.zoomIn(); });
       on($('btn-zoom-out'), 'click', function () { UI.zoomOut(); });
@@ -3172,7 +3173,32 @@ window.App = window.App || {};
     var ghBtn = el('button', 'btn', '⇪ ' + T('files.push', 'Push to GitHub'));
     ghBtn.type = 'button';
     on(ghBtn, 'click', function () { pushToGithub(); });
+
+    // PROJECT IMPORT (Wave 3): folder (webkitdirectory) + single .zip.
+    var folderBtn = el('button', 'btn', '📂 ' + T('files.importFolder', 'Import folder'));
+    folderBtn.type = 'button';
+    var folderInput = document.createElement('input');
+    folderInput.type = 'file';
+    folderInput.multiple = true;
+    try { folderInput.setAttribute('webkitdirectory', ''); folderInput.setAttribute('directory', ''); } catch (e) {}
+    folderInput.className = 'hidden';
+    folderInput.id = 'files-import-folder';
+    on(folderInput, 'change', function (e) { importFolderFiles(e); });
+    on(folderBtn, 'click', function () { try { folderInput.value = ''; } catch (e) {} folderInput.click(); });
+
+    var zipInBtn = el('button', 'btn', '🗜 ' + T('files.importZip', 'Import .zip'));
+    zipInBtn.type = 'button';
+    var zipInput = document.createElement('input');
+    zipInput.type = 'file';
+    zipInput.accept = '.zip,application/zip';
+    zipInput.className = 'hidden';
+    zipInput.id = 'files-import-zip';
+    on(zipInput, 'change', function (e) { importZipFile(e); });
+    on(zipInBtn, 'click', function () { try { zipInput.value = ''; } catch (e) {} zipInput.click(); });
+
     bar.appendChild(addBtn); bar.appendChild(runBtn); bar.appendChild(zipBtn); bar.appendChild(ghBtn);
+    bar.appendChild(folderBtn); bar.appendChild(zipInBtn);
+    bar.appendChild(folderInput); bar.appendChild(zipInput);
     m.body.appendChild(bar);
 
     var split = el('div', 'files-split');
@@ -3975,6 +4001,483 @@ window.App = window.App || {};
     close.type = 'button';
     on(close, 'click', m.close);
     m.foot.appendChild(close);
+  }
+
+  // ===========================================================================
+  // WAVE 3 — PROJECT IMPORT (folder via webkitdirectory + single .zip)
+  // Reads File objects -> [{path, content}] -> App.Workspace.importFiles. Skips
+  // binaries/oversized gracefully (Workspace enforces caps). Refresh + toast.
+  // ===========================================================================
+  function readFileText(file) {
+    return new Promise(function (resolve) {
+      try {
+        if (file && typeof file.text === 'function') {
+          file.text().then(function (t) { resolve(t); }, function () { resolve(null); });
+          return;
+        }
+        var fr = new FileReader();
+        fr.onload = function () { resolve(String(fr.result == null ? '' : fr.result)); };
+        fr.onerror = function () { resolve(null); };
+        fr.readAsText(file);
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  // Heuristic: treat as binary if the text contains a NUL byte (skip such files).
+  function looksBinaryText(t) {
+    if (t == null) return true;
+    var probe = String(t).slice(0, 4000);
+    return probe.indexOf(String.fromCharCode(0)) !== -1;
+  }
+
+  function ingestEntries(entries, label) {
+    var ws = WS();
+    if (!ws || !ws.importFiles) { UI.toast(T('files.importUnavailable', 'Import unavailable')); return; }
+    var clean = [];
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      if (!e || e.content == null) continue;
+      if (looksBinaryText(e.content)) continue;
+      clean.push({ path: e.path, content: e.content });
+    }
+    var res = null;
+    try { res = ws.importFiles(clean); } catch (err) { res = null; }
+    UI.refreshFiles();
+    var count = (res && res.count != null) ? res.count : clean.length;
+    var skipped = (res && res.skipped != null) ? res.skipped : (entries.length - count);
+    var msg = T('files.imported', 'Imported ') + count + T('files.importedTail', ' file(s)') +
+      (label ? ' (' + label + ')' : '') + (skipped ? ' · ' + skipped + T('files.skippedTail', ' skipped') : '');
+    UI.toast(msg, count > 0 ? 'ok' : undefined);
+  }
+
+  function importFolderFiles(ev) {
+    try {
+      var files = (ev && ev.target && ev.target.files) ? ev.target.files : [];
+      if (!files || !files.length) return;
+      UI.toast(T('files.importing', 'Importing…'));
+      var arr = Array.prototype.slice.call(files);
+      var jobs = arr.map(function (f) {
+        var rel = f.webkitRelativePath || f.relativePath || f.name || '';
+        return readFileText(f).then(function (txt) { return { path: rel, content: txt }; });
+      });
+      Promise.all(jobs).then(function (entries) {
+        ingestEntries(entries.filter(function (e) { return e && e.content != null; }), T('files.folder', 'folder'));
+      });
+    } catch (e) { UI.toast(T('files.importFailed', 'Import failed')); }
+  }
+
+  function importZipFile(ev) {
+    try {
+      var file = (ev && ev.target && ev.target.files && ev.target.files[0]) ? ev.target.files[0] : null;
+      if (!file) return;
+      var ws = WS();
+      if (!ws || !ws.readZip) { UI.toast(T('files.zipUnavailable', 'ZIP import unavailable')); return; }
+      UI.toast(T('files.importing', 'Importing…'));
+      var getBuf = (file.arrayBuffer ? file.arrayBuffer() : new Promise(function (resolve) {
+        var fr = new FileReader();
+        fr.onload = function () { resolve(fr.result); };
+        fr.onerror = function () { resolve(null); };
+        fr.readAsArrayBuffer(file);
+      }));
+      getBuf.then(function (buf) {
+        if (!buf) { UI.toast(T('files.importFailed', 'Import failed')); return; }
+        Promise.resolve(ws.readZip(buf)).then(function (entries) {
+          ingestEntries(Array.isArray(entries) ? entries : [], file.name || 'zip');
+        }, function () { UI.toast(T('files.importFailed', 'Import failed')); });
+      });
+    } catch (e) { UI.toast(T('files.importFailed', 'Import failed')); }
+  }
+
+  // ===========================================================================
+  // WAVE 3 — METRICS DASHBOARD (tokens/cost charts + timeline + replay)
+  // Reachable from the HUD 📊 button. Inline SVG, mirrors generate_chart styling.
+  // ===========================================================================
+  var _metricsState = { play: 0, raf: 0 };
+
+  // Per-task token accumulators (orchestrator writes task._tokensIn/_tokensOut).
+  function tasksWithTokens() {
+    var s = STATE();
+    var tasks = (s && Array.isArray(s.tasks)) ? s.tasks : [];
+    var out = [];
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i]; if (!t) continue;
+      var tin = Number(t._tokensIn) || 0;
+      var tout = Number(t._tokensOut) || 0;
+      if (tin === 0 && tout === 0) continue;
+      out.push({
+        id: t.id, title: t.title || t.desc || t.id || '(task)', role: t.role || 'generalist',
+        tokensIn: tin, tokensOut: tout
+      });
+    }
+    return out;
+  }
+
+  function escXml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function nx(n) { n = Number(n) || 0; return Math.round(n * 100) / 100; }
+
+  // Stacked horizontal bar chart of in/out tokens per row, as inline SVG string.
+  // rows: [{ label, inV, outV, sub }]. Returns an SVG element.
+  function buildStackedTokenSvg(rows) {
+    var W = 560, rowH = 26, gap = 8, padL = 130, padR = 14, top = 26, bottom = 14;
+    var H = top + bottom + rows.length * (rowH + gap);
+    if (!rows.length) H = top + bottom + 30;
+    var max = 1;
+    for (var i = 0; i < rows.length; i++) {
+      var tot = (rows[i].inV || 0) + (rows[i].outV || 0);
+      if (tot > max) max = tot;
+    }
+    var plotW = W - padL - padR;
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" width="100%" preserveAspectRatio="xMidYMin meet" role="img">';
+    svg += '<text x="' + padL + '" y="16" font-size="10" fill="#8294c4" font-weight="800" letter-spacing="1">TOKENS IN (cyan) / OUT (magenta)</text>';
+    for (var j = 0; j < rows.length; j++) {
+      var r = rows[j];
+      var y = top + j * (rowH + gap);
+      var inW = (r.inV / max) * plotW;
+      var outW = (r.outV / max) * plotW;
+      svg += '<text x="' + (padL - 6) + '" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="#dce6ff" text-anchor="end">' + escXml(truncate(r.label, 18)) + '</text>';
+      svg += '<rect x="' + padL + '" y="' + y + '" width="' + nx(inW) + '" height="' + rowH + '" fill="#39d7ff" rx="2"/>';
+      svg += '<rect x="' + nx(padL + inW) + '" y="' + y + '" width="' + nx(outW) + '" height="' + rowH + '" fill="#ff3df0" rx="2"/>';
+      var lblTot = fmtTokens((r.inV || 0) + (r.outV || 0));
+      svg += '<text x="' + nx(padL + inW + outW + 6) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="#8294c4">' + escXml(lblTot) + '</text>';
+    }
+    if (!rows.length) {
+      svg += '<text x="' + padL + '" y="' + (top + 18) + '" font-size="11" fill="#4d5d8a">No token usage yet.</text>';
+    }
+    svg += '</svg>';
+    var wrap = el('div', 'metrics-chart');
+    wrap.innerHTML = svg;
+    return wrap;
+  }
+
+  // Cost bar chart (single value per row), inline SVG. rows:[{label,cost,color}].
+  function buildCostBarSvg(rows, accent) {
+    var W = 560, rowH = 22, gap = 7, padL = 130, padR = 60, top = 22, bottom = 12;
+    var H = top + bottom + Math.max(rows.length, 1) * (rowH + gap);
+    var max = 0;
+    for (var i = 0; i < rows.length; i++) if (rows[i].cost > max) max = rows[i].cost;
+    if (max <= 0) max = 1;
+    var plotW = W - padL - padR;
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" width="100%" preserveAspectRatio="xMidYMin meet" role="img">';
+    for (var j = 0; j < rows.length; j++) {
+      var r = rows[j];
+      var y = top + j * (rowH + gap);
+      var w = (r.cost / max) * plotW;
+      var col = r.color || accent || '#5dff9b';
+      svg += '<text x="' + (padL - 6) + '" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="#dce6ff" text-anchor="end">' + escXml(truncate(r.label, 18)) + '</text>';
+      svg += '<rect x="' + padL + '" y="' + y + '" width="' + nx(Math.max(w, 1)) + '" height="' + rowH + '" fill="' + escXml(col) + '" opacity="0.85" rx="2"/>';
+      svg += '<text x="' + nx(padL + Math.max(w, 1) + 6) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="#5dff9b">' + escXml(fmtUSD(r.cost)) + '</text>';
+    }
+    if (!rows.length) {
+      svg += '<text x="' + padL + '" y="' + (top + 16) + '" font-size="11" fill="#4d5d8a">No spend yet.</text>';
+    }
+    svg += '</svg>';
+    var wrap = el('div', 'metrics-chart');
+    wrap.innerHTML = svg;
+    return wrap;
+  }
+
+  // Color a trace event type to a neon accent.
+  function traceColor(type) {
+    switch (type) {
+      case 'task_start': return '#4d7cff';
+      case 'task_done': return '#5dff9b';
+      case 'delegate': return '#9b5cff';
+      case 'tool_call': return '#39d7ff';
+      case 'retry': return '#ffc24d';
+      case 'debate': return '#ff8c42';
+      case 'replan': return '#ff3df0';
+      case 'build': return '#5dff9b';
+      case 'repair': return '#ff4d6d';
+      case 'synth': return '#39d7ff';
+      default: return '#8294c4';
+    }
+  }
+
+  function traceArr() {
+    var s = STATE();
+    return (s && Array.isArray(s.trace)) ? s.trace : [];
+  }
+
+  function retriesWaste(trace) {
+    var n = 0;
+    for (var i = 0; i < trace.length; i++) {
+      var ty = trace[i] && trace[i].type;
+      if (ty === 'retry' || ty === 'repair') n++;
+    }
+    return n;
+  }
+
+  UI.openMetrics = function () {
+    var m = mountModal('modal-metrics', '📊 ' + T('metrics.title', 'OBSERVABILITY'));
+    if (!m) { UI.toast('Metrics unavailable'); return; }
+    m.modal.classList.add('modal-files-wide');
+    stopMetricsReplay();
+
+    var c = computeCost();
+    var trace = traceArr().slice();
+    var perTask = tasksWithTokens();
+
+    // ---- SUMMARY ----
+    var totalTokens = 0;
+    for (var i = 0; i < c.byAgent.length; i++) totalTokens += (c.byAgent[i].tokensIn + c.byAgent[i].tokensOut);
+    var waste = retriesWaste(trace);
+    var summary = el('div', 'metrics-summary');
+    summary.appendChild(metricStat(T('metrics.totalCost', 'Total cost'), fmtUSD(c.total), '#5dff9b'));
+    summary.appendChild(metricStat(T('metrics.totalTokens', 'Total tokens'), fmtTokens(totalTokens), '#39d7ff'));
+    summary.appendChild(metricStat(T('metrics.events', 'Trace events'), String(trace.length), '#9b5cff'));
+    summary.appendChild(metricStat(T('metrics.waste', 'Retries / repairs'), String(waste), '#ffc24d'));
+    m.body.appendChild(summary);
+
+    // ---- TOKENS BY AGENT ----
+    m.body.appendChild(el('div', 'field-label metrics-h', T('metrics.tokensByAgent', 'TOKENS BY AGENT')));
+    var agentTokenRows = c.byAgent.map(function (r) {
+      return { label: r.name, inV: r.tokensIn, outV: r.tokensOut };
+    });
+    m.body.appendChild(buildStackedTokenSvg(agentTokenRows));
+
+    // ---- COST BY AGENT ----
+    m.body.appendChild(el('div', 'field-label metrics-h', T('metrics.costByAgent', 'COST BY AGENT')));
+    m.body.appendChild(buildCostBarSvg(c.byAgent.map(function (r) {
+      return { label: r.name, cost: r.cost, color: r.color };
+    })));
+
+    // ---- COST BY TASK (per-task tokens × the task role/agent model price) ----
+    m.body.appendChild(el('div', 'field-label metrics-h', T('metrics.costByTask', 'TOKENS / COST BY TASK')));
+    if (!perTask.length) {
+      m.body.appendChild(el('div', 'cost-empty', T('metrics.noTaskTokens', 'No per-task token data yet.')));
+    } else {
+      m.body.appendChild(buildStackedTokenSvg(perTask.map(function (t) {
+        return { label: t.title, inV: t.tokensIn, outV: t.tokensOut };
+      })));
+    }
+
+    // ---- TIMELINE + REPLAY ----
+    m.body.appendChild(el('div', 'field-label metrics-h', T('metrics.timeline', 'TIMELINE & REPLAY')));
+    var timelineWrap = el('div', 'metrics-timeline-wrap');
+    timelineWrap.id = 'metrics-timeline-wrap';
+    m.body.appendChild(timelineWrap);
+
+    // scrubber + play
+    var ctrl = el('div', 'metrics-replay-ctrl');
+    var playBtn = el('button', 'btn btn-sq', '▶');
+    playBtn.type = 'button';
+    playBtn.id = 'metrics-play';
+    playBtn.title = T('metrics.play', 'Play / pause replay');
+    var slider = document.createElement('input');
+    slider.type = 'range';
+    slider.id = 'metrics-scrubber';
+    slider.className = 'metrics-scrubber';
+    slider.min = '0';
+    slider.max = '100';
+    slider.value = '100';
+    slider.step = '1';
+    var timeLbl = el('span', 'metrics-time', '');
+    timeLbl.id = 'metrics-time';
+    ctrl.appendChild(playBtn); ctrl.appendChild(slider); ctrl.appendChild(timeLbl);
+    m.body.appendChild(ctrl);
+
+    var logWrap = el('div', 'metrics-replay-log');
+    logWrap.id = 'metrics-replay-log';
+    m.body.appendChild(logWrap);
+
+    // time bounds
+    var t0 = trace.length ? Number(trace[0].t) || 0 : 0;
+    var t1 = trace.length ? Number(trace[trace.length - 1].t) || t0 : t0;
+    if (t1 <= t0) t1 = t0 + 1;
+
+    var renderAt = function (frac) {
+      var cut = t0 + (t1 - t0) * clamp(frac, 0, 1);
+      renderTimeline(timelineWrap, trace, t0, t1, cut);
+      renderReplayLog(logWrap, trace, cut);
+      var dt = Math.max(0, cut - t0);
+      setText(timeLbl, fmtDur(dt) + ' / ' + fmtDur(t1 - t0));
+    };
+
+    on(slider, 'input', function () {
+      stopMetricsReplay();
+      playBtn.textContent = '▶';
+      renderAt((Number(slider.value) || 0) / 100);
+    });
+    on(playBtn, 'click', function () {
+      if (_metricsState.raf) {
+        stopMetricsReplay(); playBtn.textContent = '▶'; return;
+      }
+      playBtn.textContent = '⏸';
+      var startVal = (Number(slider.value) || 0);
+      if (startVal >= 100) startVal = 0;
+      var startTs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      var durMs = 6000;
+      var step = function () {
+        var now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        var p = Math.min(1, (now - startTs) / durMs + startVal / 100);
+        slider.value = String(Math.round(p * 100));
+        renderAt(p);
+        if (p >= 1) { stopMetricsReplay(); playBtn.textContent = '▶'; return; }
+        _metricsState.raf = requestAnimationFrame(step);
+      };
+      _metricsState.raf = requestAnimationFrame(step);
+    });
+
+    if (!trace.length) {
+      timelineWrap.appendChild(el('div', 'cost-empty', T('metrics.noTrace', 'No run trace yet — dispatch the Boss to populate the timeline.')));
+      logWrap.appendChild(el('div', 'cost-empty', T('metrics.noTrace2', 'Replay will appear once events are recorded.')));
+      slider.disabled = true;
+      playBtn.disabled = true;
+    } else {
+      renderAt(1);
+    }
+
+    var note = el('div', 'cost-note',
+      T('metrics.note', 'Tokens & cost are estimated from agent.stats and per-task counters × model price. Drag the scrubber or press play to replay the run.'));
+    m.body.appendChild(note);
+
+    var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', function () { stopMetricsReplay(); m.close(); });
+    m.foot.appendChild(close);
+
+    // closing via scrim/✕ should also stop the replay loop
+    var scrim = m.modal.querySelector('.modal-scrim');
+    if (scrim) on(scrim, 'click', stopMetricsReplay);
+    var xBtn = m.modal.querySelector('.panel-x');
+    if (xBtn) on(xBtn, 'click', stopMetricsReplay);
+
+    applyI18n(m.modal);
+  };
+
+  function stopMetricsReplay() {
+    if (_metricsState.raf) { cancelAnimationFrame(_metricsState.raf); _metricsState.raf = 0; }
+  }
+
+  function metricStat(label, value, color) {
+    var box = el('div', 'metric-stat');
+    var v = el('div', 'metric-val', value);
+    if (color) { v.style.color = color; v.style.textShadow = '0 0 8px ' + color; }
+    box.appendChild(v);
+    box.appendChild(el('div', 'metric-key', label));
+    return box;
+  }
+
+  function fmtDur(ms) {
+    ms = Number(ms) || 0;
+    if (ms < 1000) return Math.round(ms) + 'ms';
+    var s = ms / 1000;
+    if (s < 60) return s.toFixed(1) + 's';
+    var mn = Math.floor(s / 60), rem = Math.round(s % 60);
+    return mn + 'm' + (rem < 10 ? '0' : '') + rem + 's';
+  }
+
+  // Waterfall: rows grouped by role (or task), bars positioned by t and ms.
+  function renderTimeline(host, trace, t0, t1, cut) {
+    if (!host) return;
+    clear(host);
+    if (!trace.length) return;
+    var span = (t1 - t0) || 1;
+
+    // group rows by role (fallback to taskId / 'system')
+    var order = [];
+    var groups = {};
+    for (var i = 0; i < trace.length; i++) {
+      var ev = trace[i]; if (!ev) continue;
+      var key = ev.role || ev.taskId || 'system';
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(ev);
+    }
+
+    var W = 620, padL = 92, padR = 12, top = 6, rowH = 20, gap = 5;
+    var plotW = W - padL - padR;
+    var H = top + order.length * (rowH + gap) + 18;
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" width="100%" preserveAspectRatio="xMidYMin meet" role="img">';
+
+    // the replay cut line
+    var cutX = padL + ((clamp(cut, t0, t1) - t0) / span) * plotW;
+
+    for (var g = 0; g < order.length; g++) {
+      var rk = order[g];
+      var y = top + g * (rowH + gap);
+      svg += '<text x="' + (padL - 6) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="#8294c4" text-anchor="end">' + escXml(truncate(rk, 12)) + '</text>';
+      svg += '<rect x="' + padL + '" y="' + y + '" width="' + plotW + '" height="' + rowH + '" fill="#0a0f20" stroke="#1a2647" rx="3"/>';
+      var evs = groups[rk];
+      for (var e = 0; e < evs.length; e++) {
+        var ev2 = evs[e];
+        var et = Number(ev2.t) || t0;
+        var ex = padL + ((et - t0) / span) * plotW;
+        var dur = Number(ev2.ms) || 0;
+        var ew = dur > 0 ? Math.max(2, (dur / span) * plotW) : 4;
+        if (ex + ew > padL + plotW) ew = (padL + plotW) - ex;
+        if (ew < 2) ew = 2;
+        var active = et <= cut;
+        var col = traceColor(ev2.type);
+        var op = active ? '0.95' : '0.18';
+        var title = (ev2.type || '') + (ev2.name ? ' ' + ev2.name : '') + (dur ? ' ' + Math.round(dur) + 'ms' : '');
+        svg += '<rect x="' + nx(ex) + '" y="' + (y + 3) + '" width="' + nx(ew) + '" height="' + (rowH - 6) +
+          '" fill="' + col + '" opacity="' + op + '" rx="2"><title>' + escXml(title) + '</title></rect>';
+      }
+    }
+    // cut line
+    svg += '<line x1="' + nx(cutX) + '" y1="' + top + '" x2="' + nx(cutX) + '" y2="' + (top + order.length * (rowH + gap)) +
+      '" stroke="#ffc24d" stroke-width="1.5" opacity="0.9"/>';
+    svg += '</svg>';
+    var wrap = el('div', 'metrics-chart');
+    wrap.innerHTML = svg;
+    host.appendChild(wrap);
+
+    // legend
+    var legend = el('div', 'metrics-legend');
+    var types = ['task_start', 'task_done', 'delegate', 'tool_call', 'retry', 'repair', 'replan', 'synth'];
+    for (var L = 0; L < types.length; L++) {
+      var item = el('span', 'metrics-leg-item');
+      var sw = el('span', 'metrics-leg-dot');
+      sw.style.background = traceColor(types[L]);
+      sw.style.boxShadow = '0 0 5px ' + traceColor(types[L]);
+      item.appendChild(sw);
+      item.appendChild(document.createTextNode(types[L]));
+      legend.appendChild(item);
+    }
+    host.appendChild(legend);
+  }
+
+  // Replay log: trace events up to the cut timestamp, newest at bottom.
+  function renderReplayLog(host, trace, cut) {
+    if (!host) return;
+    clear(host);
+    var shown = [];
+    for (var i = 0; i < trace.length; i++) {
+      var ev = trace[i];
+      if (!ev) continue;
+      if ((Number(ev.t) || 0) <= cut) shown.push(ev);
+    }
+    if (!shown.length) {
+      host.appendChild(el('div', 'cost-empty', T('metrics.noEventsYet', 'No events at this point.')));
+      return;
+    }
+    var t0 = trace.length ? (Number(trace[0].t) || 0) : 0;
+    var tail = shown.slice(Math.max(0, shown.length - 60));
+    for (var j = 0; j < tail.length; j++) {
+      var e2 = tail[j];
+      var row = el('div', 'metrics-log-line');
+      var dot = el('span', 'metrics-log-dot');
+      dot.style.background = traceColor(e2.type);
+      row.appendChild(dot);
+      var ts = el('span', 'metrics-log-t', '+' + fmtDur((Number(e2.t) || 0) - t0));
+      row.appendChild(ts);
+      var ty = el('span', 'metrics-log-type', String(e2.type || 'evt'));
+      ty.style.color = traceColor(e2.type);
+      row.appendChild(ty);
+      var bits = [];
+      if (e2.role) bits.push(e2.role);
+      if (e2.name) bits.push(e2.name);
+      if (e2.status) bits.push(e2.status);
+      if (e2.ms) bits.push(Math.round(e2.ms) + 'ms');
+      if (e2.text) bits.push(truncate(String(e2.text), 60));
+      row.appendChild(document.createTextNode(' ' + bits.join(' · ')));
+      host.appendChild(row);
+    }
+    host.scrollTop = host.scrollHeight;
   }
 
   // ===========================================================================
