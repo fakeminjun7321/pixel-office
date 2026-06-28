@@ -120,6 +120,7 @@ window.App = window.App || {};
       apiKey: '',
       openaiKey: '',                                   // v2: OpenAI key (for gpt-* models)
       geminiKey: '',                                   // Gemini API key (for gemini-* models)
+      safeMode: false,                                 // SAFE MODE: serialize requests + widen spacing to avoid rate-limit/overload (OFF by default; keeps Opus)
       useCompanion: false,                             // v2: route Claude models through local subscription proxy (OPT-IN; OFF by default)
       companionUrl: c.COMPANION_URL || 'http://localhost:8787/v1/messages',
       defaultModel: c.DEFAULT_MODEL || 'claude-sonnet-4-6',

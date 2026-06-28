@@ -664,6 +664,7 @@ window.App = window.App || {};
     API_MAX_INFLIGHT: 2,          // global cap on simultaneously in-flight API requests (< MAX_CONCURRENT on purpose)
     API_MIN_SPACING_MS: 400,      // minimum ms between request STARTS
     API_COOLDOWN_GROWTH: 1.6,     // spacing multiplier after a 429/529; decays toward API_MIN_SPACING_MS on success
+    SAFE_MODE_SPACING_MS: 1500,   // SAFE MODE floor: minimum ms between request STARTS when settings.safeMode is on (serializes + widens gaps)
 
     // provider resolver — gemini ids start with gemini; OpenAI ids start with
     // gpt/o1/o3/o4/chatgpt; else Anthropic.

@@ -672,6 +672,18 @@ window.App = window.App || {};
     }
     return n;
   }
+
+  // effectiveConcurrency() — max parallel WORKER subtasks. SAFE MODE (opt-in,
+  //   settings.safeMode) forces serial execution (1) to avoid rate-limit/overload;
+  //   otherwise the config cap (CFG().MAX_CONCURRENT, default 3). No-op vs today
+  //   when safeMode is false. Guarded so a missing settings object falls back to
+  //   the config cap. The 4c cooldownActive() throttle is layered on top of this.
+  function effectiveConcurrency() {
+    var s = STATE();
+    if (s && s.settings && s.settings.safeMode) return 1;
+    return CFG().MAX_CONCURRENT || 3;
+  }
+
   // No work pending or in flight (used for light boss-initiated rest).
   function queueIsEmpty() {
     var s = STATE();
@@ -3596,7 +3608,10 @@ window.App = window.App || {};
       if (!s || !Array.isArray(s.tasks)) return;
       if (s.paused) return;
 
-      var maxConc = CFG().MAX_CONCURRENT || 3;
+      // SAFE MODE-aware parallel-worker cap (effectiveConcurrency() === 1 when
+      //   settings.safeMode; else CFG().MAX_CONCURRENT). The 4c cooldownActive()
+      //   overload throttle below is layered on top of this and stays intact.
+      var maxConc = effectiveConcurrency();
 
       // 1) flip blocked → queued when deps satisfied.
       for (var b = 0; b < s.tasks.length; b++) {

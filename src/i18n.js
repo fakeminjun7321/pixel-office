@@ -143,6 +143,12 @@ window.App = window.App || {};
       'set.apikey.ph': 'sk-ant-...  (stored locally only)',
       'set.geminikey': 'GEMINI API KEY',
       'set.geminikey.ph': 'AIza...  (stored locally only)',
+      'set.safeMode': 'SAFE MODE',
+      'set.safeMode.hint': 'Serialize requests + wider gaps to avoid rate-limit/overload (slower, keeps Opus).',
+      'set.distribute': 'Distribute models by role',
+      'set.distribute.hint': 'Keep Boss on Opus; spread workers across Haiku/Sonnet/Gemini/GPT by your keys.',
+      'set.distribute.done': 'Distributed worker models across providers.',
+      'set.distribute.nokey': 'Add an API key first.',
 
       // --- generic actions ---
       'btn.close': 'Close',
@@ -326,6 +332,12 @@ window.App = window.App || {};
       'set.apikey.ph': 'sk-ant-...  (로컬에만 저장됨)',
       'set.geminikey': 'GEMINI API 키',
       'set.geminikey.ph': 'AIza...  (로컬에만 저장됨)',
+      'set.safeMode': '안전 모드',
+      'set.safeMode.hint': '요청을 1개씩 순차 처리하고 간격을 넓혀 rate-limit/과부하를 피합니다 (느려지지만 Opus 유지).',
+      'set.distribute': '역할별 모델 분산',
+      'set.distribute.hint': 'Boss는 Opus 유지, 워커는 보유 키에 따라 Haiku/Sonnet/Gemini/GPT로 분산.',
+      'set.distribute.done': '워커 모델을 프로바이더별로 분산했습니다.',
+      'set.distribute.nokey': 'API 키를 먼저 넣어주세요.',
 
       'btn.close': '닫기',
       'btn.cancel': '취소',

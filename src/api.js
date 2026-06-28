@@ -795,11 +795,23 @@ window.App = window.App || {};
 
   function schedCfg() {
     var cfg = App.config || {};
+    var maxInflight = (typeof cfg.API_MAX_INFLIGHT === 'number' && cfg.API_MAX_INFLIGHT > 0)
+      ? cfg.API_MAX_INFLIGHT : 2;
+    var minSpacing = (typeof cfg.API_MIN_SPACING_MS === 'number' && cfg.API_MIN_SPACING_MS >= 0)
+      ? cfg.API_MIN_SPACING_MS : 400;
+    // SAFE MODE: serialize requests (1 inflight) and widen the spacing floor to
+    // avoid rate-limit/overload. Gated on settings.safeMode (default false) so
+    // the non-safe path is byte-identical to before.
+    var st = (App.state && App.state.settings) || null;
+    if (st && st.safeMode) {
+      maxInflight = 1;
+      var safeFloor = (typeof cfg.SAFE_MODE_SPACING_MS === 'number' && cfg.SAFE_MODE_SPACING_MS >= 0)
+        ? cfg.SAFE_MODE_SPACING_MS : 1500;
+      minSpacing = Math.max(minSpacing, safeFloor);
+    }
     return {
-      maxInflight: (typeof cfg.API_MAX_INFLIGHT === 'number' && cfg.API_MAX_INFLIGHT > 0)
-        ? cfg.API_MAX_INFLIGHT : 2,
-      minSpacing: (typeof cfg.API_MIN_SPACING_MS === 'number' && cfg.API_MIN_SPACING_MS >= 0)
-        ? cfg.API_MIN_SPACING_MS : 400,
+      maxInflight: maxInflight,
+      minSpacing: minSpacing,
       growth: (typeof cfg.API_COOLDOWN_GROWTH === 'number' && cfg.API_COOLDOWN_GROWTH > 1)
         ? cfg.API_COOLDOWN_GROWTH : 1.6,
     };
@@ -835,7 +847,10 @@ window.App = window.App || {};
       if (head.aborted) { Sched.queue.shift(); continue; }
 
       var t = now();
-      var wait = (Sched.lastStartAt + Sched.spacingMs) - t;
+      // Honor the larger of the adaptive spacing and the current config floor so
+      // SAFE MODE's wider gap applies IMMEDIATELY (not only after a 429 grows it).
+      var effSpacing = Math.max(Sched.spacingMs, cfg.minSpacing);
+      var wait = (Sched.lastStartAt + effSpacing) - t;
       if (wait > 0) {
         // Spacing-gated: arm a single timer to retry; do NOT busy-loop.
         Sched.pumpTimer = setTimeout(function () {

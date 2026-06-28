@@ -1049,6 +1049,41 @@ window.App = window.App || {};
     } catch (e) {}
   }
 
+  // Spread worker load off Opus and across whatever providers the user has creds
+  // for, while keeping the Boss on Opus. Mirrors switchModelsToHaiku()'s save/
+  // refresh pattern (write state + App.Store.save directly, then refreshAgentList)
+  // rather than calling saveSettings() (which scrapes the whole Settings form).
+  // The pool is built from available keys only, so we never strand an agent on a
+  // provider it has no credentials for.
+  function distributeModels() {
+    var s = STATE();
+    if (!s) return;
+    var set = s.settings || (s.settings = {});
+    var pool = [];
+    var hasAnthropic = !!set.apiKey || (set.useCompanion && set.companionUrl);
+    if (hasAnthropic) {
+      pool.push('claude-haiku-4-5-20251001');
+      pool.push('claude-sonnet-4-6');
+    }
+    if (set.geminiKey) pool.push('gemini-3.1-flash');
+    if (set.openaiKey) pool.push('gpt-5.4-mini');
+    if (!pool.length) {
+      UI.toast(T('set.distribute.nokey', 'Add an API key first.'), 'warn');
+      return;
+    }
+    var ags = s.agents || [];
+    var i = 0;
+    for (var k = 0; k < ags.length; k++) {
+      var a = ags[k];
+      if (!a) continue;
+      if (a.role === 'boss') continue; // Boss keeps its Opus
+      a.model = pool[i++ % pool.length];
+    }
+    try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
+    try { if (UI.refreshAgentList) UI.refreshAgentList(); } catch (e) {}
+    UI.toast(T('set.distribute.done', 'Distributed worker models across providers.'), 'ok');
+  }
+
   // ===========================================================================
   // AGENT PANEL
   // ===========================================================================
@@ -1772,6 +1807,10 @@ window.App = window.App || {};
     var curl = $('set-companion-url'); if (curl) curl.value = settings.companionUrl || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var dm = $('set-default-model'); if (dm) dm.value = settings.defaultModel || CFG().DEFAULT_MODEL;
     var bm = $('set-boss-model'); if (bm) bm.value = settings.bossModel || CFG().BOSS_MODEL;
+    // Inject (once) + load the SAFE MODE toggle + Distribute-by-role button right
+    // after the model dropdowns. Default OFF -> identical to today when unset.
+    ensureSafeModeField();
+    var safeSw = $('set-safe-mode'); if (safeSw) safeSw.checked = (settings.safeMode === true);
     setWebSearchSwitch(!!settings.webSearch);
     // GitHub push fields (v5).
     var gh = (settings.github && typeof settings.github === 'object') ? settings.github : {};
@@ -1860,6 +1899,77 @@ window.App = window.App || {};
     group.appendChild(bgmRow);
 
     anchorField.parentNode.appendChild(group);
+  }
+
+  // Inject (once) the RATE-LIMIT group right after the model dropdowns: a SAFE
+  // MODE switch (id 'set-safe-mode' -> settings.safeMode, default OFF) and a
+  // 'Distribute models by role' button. Both are additive/gated; with safeMode
+  // OFF behavior is identical to today. Reuses .field / .field-inline / .switch
+  // styling and makeSwitch(). Idempotent; degrades gracefully if the anchor is
+  // missing.
+  function ensureSafeModeField() {
+    if ($('set-safe-mode')) return; // already injected
+    var anchor = $('set-default-model') || $('set-boss-model') || $('set-apikey');
+    if (!anchor || typeof document === 'undefined') return;
+    var anchorField = anchor;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    // climb once more past a .field-2col wrapper if the model selects are paired
+    var insertAfter = anchorField;
+    if (anchorField && anchorField.parentNode && anchorField.parentNode.classList &&
+        anchorField.parentNode.classList.contains('field-2col')) {
+      insertAfter = anchorField.parentNode;
+    }
+    if (!insertAfter || !insertAfter.parentNode) return;
+
+    var group = el('div', 'field');
+    var groupLabel = el('span', 'field-label');
+    groupLabel.setAttribute('data-i18n', 'set.safeMode');
+    groupLabel.textContent = T('set.safeMode', 'SAFE MODE');
+    group.appendChild(groupLabel);
+
+    // --- Safe mode switch (default OFF) ---
+    var safeRow = el('div', 'field field-inline');
+    var safeLbl = el('span', 'field-label');
+    safeLbl.setAttribute('data-i18n', 'set.safeMode');
+    safeLbl.textContent = T('set.safeMode', 'SAFE MODE');
+    var s0 = STATE();
+    var safeOn = !!(s0 && s0.settings && s0.settings.safeMode);
+    var safeSw = makeSwitch('set-safe-mode', safeOn,
+      T('set.safeMode.hint',
+        'Serialize requests + wider gaps to avoid rate-limit/overload (slower, keeps Opus).'));
+    var safeHint = el('span', 'field-hint inline-hint',
+      T('set.safeMode.hint',
+        'Serialize requests + wider gaps to avoid rate-limit/overload (slower, keeps Opus).'));
+    safeHint.setAttribute('data-i18n', 'set.safeMode.hint');
+    safeRow.appendChild(safeLbl);
+    safeRow.appendChild(safeSw);
+    safeRow.appendChild(safeHint);
+    group.appendChild(safeRow);
+
+    // --- Distribute models by role button ---
+    var distRow = el('div', 'field field-inline');
+    var distBtn = el('button', 'btn');
+    distBtn.type = 'button';
+    distBtn.id = 'set-distribute';
+    // Keep the leading glyph as a static text node and i18n only the label span,
+    // so a language switch retranslates the label without dropping the glyph.
+    distBtn.appendChild(document.createTextNode('⚡ '));
+    var distLabelSpan = el('span', '', T('set.distribute', 'Distribute models by role'));
+    distLabelSpan.setAttribute('data-i18n', 'set.distribute');
+    distBtn.appendChild(distLabelSpan);
+    on(distBtn, 'click', function () { distributeModels(); });
+    var distHint = el('span', 'field-hint inline-hint',
+      T('set.distribute.hint',
+        'Keep Boss on Opus; spread workers across Haiku/Sonnet/Gemini/GPT by your keys.'));
+    distHint.setAttribute('data-i18n', 'set.distribute.hint');
+    distRow.appendChild(distBtn);
+    distRow.appendChild(distHint);
+    group.appendChild(distRow);
+
+    if (insertAfter.nextSibling) insertAfter.parentNode.insertBefore(group, insertAfter.nextSibling);
+    else insertAfter.parentNode.appendChild(group);
   }
 
   // Build a neon switch button with a .checked accessor mapped to aria-checked,
@@ -2442,6 +2552,7 @@ window.App = window.App || {};
     var gemI = $('set-gemini-key'); if (gemI) settings.geminiKey = gemI.value.trim();
     var ctog = $('set-companion-toggle'); if (ctog) settings.useCompanion = !!ctog.checked;
     var curl = $('set-companion-url'); if (curl) settings.companionUrl = curl.value.trim() || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
+    var safeSw = $('set-safe-mode'); if (safeSw) settings.safeMode = !!safeSw.checked;
     var prevDefault = settings.defaultModel, prevBoss = settings.bossModel;
     var dm = $('set-default-model'); if (dm) settings.defaultModel = dm.value;
     var bm = $('set-boss-model'); if (bm) settings.bossModel = bm.value;
