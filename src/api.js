@@ -408,6 +408,118 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
+  // Gemini SSE accumulator. Parses the Google Generative Language stream
+  // (streamGenerateContent?alt=sse): lines starting 'data: ' with a JSON
+  // GenerateContentResponse each. Text deltas live at
+  // candidates[0].content.parts[*].text; final token counts at
+  // usageMetadata.{promptTokenCount,candidatesTokenCount}. Text-only: no tools.
+  // There is no '[DONE]' sentinel — the stream simply ends, so finish() fires
+  // from the reader's done path (like the other accumulators' final flush).
+  // ---------------------------------------------------------------------------
+  function GeminiAccumulator(callbacks) {
+    this.onText = callbacks.onText;
+    this.onState = callbacks.onState;
+    this.onDone = callbacks.onDone;
+    this.onError = callbacks.onError;
+
+    this.buffer = '';
+    this.fullText = '';
+    this.usage = { input_tokens: 0, output_tokens: 0 };
+    this.lastChunk = null;            // raw last JSON chunk (for onDone.raw)
+    this.firstTextSeen = false;       // emit onState('text') exactly once
+    this.doneEmitted = false;
+
+    this.toolUses = [];               // text-only path: always empty
+    this.stopReason = null;           // mapped finishReason
+  }
+
+  GeminiAccumulator.prototype.finish = function (announceState) {
+    if (this.doneEmitted) return;
+    this.doneEmitted = true;
+    if (announceState) this.onState('done');
+    this.onDone({
+      text: this.fullText,
+      usage: this.usage,
+      raw: this.lastChunk,
+      toolUses: this.toolUses,
+      stopReason: this.stopReason,
+    });
+  };
+
+  GeminiAccumulator.prototype.feed = function (chunk, final) {
+    if (chunk) this.buffer += chunk;
+    var parts = this.buffer.split('\n\n');
+    this.buffer = final ? '' : parts.pop();
+    for (var i = 0; i < parts.length; i++) {
+      this.handleEvent(parts[i]);
+      if (this.doneEmitted) return;
+    }
+    if (final && this.buffer) {
+      this.handleEvent(this.buffer);
+      this.buffer = '';
+    }
+  };
+
+  GeminiAccumulator.prototype.handleEvent = function (block) {
+    if (!block) return;
+    var lines = block.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (line.indexOf('data:') !== 0) continue;
+      var payload = line.slice(5);
+      if (payload.charAt(0) === ' ') payload = payload.slice(1);
+      payload = payload.trim();
+      if (!payload || payload === '[DONE]') continue;
+
+      var evt;
+      try {
+        evt = JSON.parse(payload);
+      } catch (e) {
+        continue; // ignore malformed data lines
+      }
+      this.dispatch(evt);
+      if (this.doneEmitted) return;
+    }
+  };
+
+  GeminiAccumulator.prototype.dispatch = function (evt) {
+    if (!evt || typeof evt !== 'object') return;
+    this.lastChunk = evt;
+
+    var cands = Array.isArray(evt.candidates) ? evt.candidates : null;
+    if (cands && cands.length) {
+      var cand = cands[0] || {};
+      var content = cand.content || {};
+      var ps = Array.isArray(content.parts) ? content.parts : null;
+      if (ps) {
+        for (var i = 0; i < ps.length; i++) {
+          var part = ps[i];
+          if (part && typeof part.text === 'string' && part.text.length) {
+            if (!this.firstTextSeen) {
+              this.firstTextSeen = true;
+              this.onState('text');
+            }
+            this.fullText += part.text;
+            this.onText(part.text);
+          }
+        }
+      }
+      if (cand.finishReason) this.stopReason = cand.finishReason;
+    }
+
+    // usageMetadata may arrive on any chunk (typically the last). Keep latest.
+    var um = evt.usageMetadata;
+    if (um && typeof um === 'object') {
+      if (typeof um.promptTokenCount === 'number') {
+        this.usage.input_tokens = um.promptTokenCount;
+      }
+      if (typeof um.candidatesTokenCount === 'number') {
+        this.usage.output_tokens = um.candidatesTokenCount;
+      }
+    }
+  };
+
+  // ---------------------------------------------------------------------------
   // OpenAI request shaping (v6 -> Wave 2): translate Anthropic-format tools and
   // Anthropic content-block messages into OpenAI chat-completions shapes.
   // Both helpers are DEFENSIVE -- they never throw; on any unexpected shape they
@@ -537,6 +649,54 @@ window.App = window.App || {};
 
       // Unknown content shape -- never throw; stringify defensively.
       out.push({ role: m.role || 'user', content: toStr(content) });
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Gemini request shaping: translate the (possibly Anthropic-shaped) message
+  // list into Gemini `contents` [{role:'user'|'model', parts:[{text}]}]. Roles
+  // map 'assistant'->'model', everything else->'user' (Gemini has no 'system'
+  // role — system goes in systemInstruction). Array content blocks are FLATTENED
+  // to text: {type:'text'} -> its text, tool_use/tool_result -> stringified, so a
+  // tool-bearing turn from another provider degrades to readable text instead of
+  // breaking the request. Fully defensive — never throws.
+  // ---------------------------------------------------------------------------
+  function flattenToText(content) {
+    if (content == null) return '';
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      var acc = '';
+      for (var i = 0; i < content.length; i++) {
+        var blk = content[i];
+        if (blk == null) continue;
+        if (typeof blk === 'string') { acc += blk; continue; }
+        if (typeof blk !== 'object') { acc += toStr(blk); continue; }
+        if (blk.type === 'text' && typeof blk.text === 'string') {
+          acc += blk.text;
+        } else if (blk.type === 'tool_result') {
+          acc += toStr(blk.content);
+        } else if (blk.type === 'tool_use') {
+          acc += toStr(blk.input || {});
+        } else if (typeof blk.text === 'string') {
+          acc += blk.text;
+        } else {
+          acc += toStr(blk);
+        }
+      }
+      return acc;
+    }
+    return toStr(content);
+  }
+
+  function toGeminiContents(messages) {
+    var out = [];
+    var list = Array.isArray(messages) ? messages : [];
+    for (var i = 0; i < list.length; i++) {
+      var m = list[i];
+      if (!m || typeof m !== 'object') continue;
+      var role = (m.role === 'assistant') ? 'model' : 'user';
+      out.push({ role: role, parts: [{ text: flattenToText(m.content) }] });
     }
     return out;
   }
@@ -805,9 +965,9 @@ window.App = window.App || {};
     var provider =
       (cfg.providerOf ? cfg.providerOf(opts.model)
         : (App.util && App.util.providerOf ? App.util.providerOf(opts.model) : 'anthropic'));
-    return provider === 'openai'
-      ? attemptOpenAI(opts, controller)
-      : attemptAnthropic(opts, controller);
+    if (provider === 'openai') return attemptOpenAI(opts, controller);
+    if (provider === 'gemini') return attemptGemini(opts, controller);
+    return attemptAnthropic(opts, controller);
   }
 
   // Run a fetch-driven attempt body through the global scheduler. `body(status)`
@@ -1162,6 +1322,130 @@ window.App = window.App || {};
     });
   }
 
+  // ---- Gemini streaming attempt (streamGenerateContent?alt=sse; text-only) --
+  function attemptGemini(opts, controller) {
+    var cfg = App.config || {};
+    var GEMINI_URL = cfg.GEMINI_URL ||
+      'https://generativelanguage.googleapis.com/v1beta/models/';
+    var MAX_TOKENS = cfg.MAX_TOKENS || 4096;
+    var URL = GEMINI_URL + opts.model + ':streamGenerateContent?alt=sse';
+
+    var acc = new GeminiAccumulator({
+      onText: safe(opts.onText),
+      onState: safe(opts.onState),
+      onDone: safe(opts.onDone),
+      onError: safe(opts.onError),
+    });
+
+    // Build the request body. systemInstruction is omitted when there's no
+    // system prompt (matching the other providers' "only when present" stance).
+    var body = {
+      contents: toGeminiContents(opts.messages),
+      generationConfig: {
+        maxOutputTokens: opts.maxTokens || MAX_TOKENS,
+      },
+    };
+    if (opts.system) {
+      body.systemInstruction = { parts: [{ text: opts.system }] };
+    }
+    if (typeof opts.temp === 'number') {
+      body.generationConfig.temperature = opts.temp;
+    }
+
+    // Auth via header (NOT the URL) per the Gemini contract.
+    var headers = {
+      'x-goog-api-key': opts.geminiKey,
+      'content-type': 'application/json',
+    };
+
+    acc.onState('thinking');
+
+    return withSchedule(controller, function (reporter) {
+      return fetch(URL, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+      .then(function (resp) {
+        if (!resp.ok) {
+          var retryAfter = retryAfterMsFromResp(resp);
+          reporter.set(resp.status, retryAfter);  // feed scheduler (cooldown on 429/529)
+          return resp.text().then(function (txt) {
+            var parsed = null;
+            try {
+              parsed = txt ? JSON.parse(txt) : null;
+            } catch (e) {
+              parsed = null;
+            }
+            var msg =
+              extractApiErrorMessage(parsed) ||
+              (txt && txt.slice(0, 300)) ||
+              ('HTTP ' + resp.status);
+
+            if (isTransientStatus(resp.status)) {
+              throw transientError(msg, resp.status, retryAfter);
+            }
+            acc.onError({ type: 'http', status: resp.status, message: msg });
+          });
+        }
+
+        reporter.set(resp.status);  // 2xx success => scheduler decays spacing
+
+        if (!resp.body || typeof resp.body.getReader !== 'function') {
+          return resp.text().then(function (txt) {
+            acc.feed(txt, true);
+            acc.finish(false);
+          });
+        }
+
+        var reader = resp.body.getReader();
+        var decoder = new TextDecoder('utf-8');
+
+        function readChunk() {
+          return reader.read().then(function (res) {
+            if (res.done) {
+              acc.feed('', true);   // flush trailing buffered event
+              acc.finish(false);    // no '[DONE]' sentinel — finish on stream end
+              return;
+            }
+            acc.feed(decoder.decode(res.value, { stream: true }), false);
+            if (acc.doneEmitted) {
+              try {
+                reader.cancel();
+              } catch (e) {}
+              return;
+            }
+            return readChunk();
+          });
+        }
+
+        return readChunk();
+      })
+      .catch(function (e) {
+        if (e && e.__transient) throw e;
+        if (acc.doneEmitted) return;
+
+        var aborted =
+          (e && (e.name === 'AbortError' || e.code === 20)) ||
+          (controller.signal && controller.signal.aborted);
+        if (aborted) {
+          acc.onError({ type: 'abort', message: 'request aborted' });
+          return;
+        }
+
+        if (isTransientNetworkError(e, controller) && !acc.firstTextSeen) {
+          throw transientError((e && e.message) || 'Failed to fetch');
+        }
+
+        acc.onError({
+          type: 'network',
+          message: (e && e.message) || 'network error — check connection',
+        });
+      });
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Public: App.API.stream
   // Validates inputs synchronously, then runs attempt() with an exponential
@@ -1191,6 +1475,11 @@ window.App = window.App || {};
     if (provider === 'openai') {
       if (!opts.openaiKey) {
         onError({ type: 'no_key', message: 'Set your OpenAI API key in Settings' });
+        return noopHandle();
+      }
+    } else if (provider === 'gemini') {
+      if (!opts.geminiKey) {
+        onError({ type: 'no_key', message: 'Set your Gemini API key in Settings' });
         return noopHandle();
       }
     } else {

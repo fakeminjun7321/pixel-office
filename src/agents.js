@@ -797,12 +797,14 @@ window.App = window.App || {};
   // DIRECT CHAT — chat(agent, userText) → {abort()}
   // Single agent, NO orchestration. Streams into bubble + UI transcript.
   // ===========================================================================
-  // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
-  // local companion. Mirrors api.js so companion-only / GPT-only direct chat works.
+  // Usable credentials for a model? gemini → geminiKey; openai → openaiKey;
+  // anthropic → apiKey OR the local companion. Mirrors api.js + orchestrator so
+  // gemini-only / companion-only / GPT-only direct chat works.
   function hasCredsFor(model) {
     var set = (STATE() && STATE().settings) || {};
     var prov = (CFG().providerOf ? CFG().providerOf(model)
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
+    if (prov === 'gemini') return !!set.geminiKey;
     if (prov === 'openai') return !!set.openaiKey;
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
   }
@@ -814,6 +816,27 @@ window.App = window.App || {};
     var settings = (s && s.settings) || {};
     userText = String(userText == null ? '' : userText).trim();
     if (!userText) return noop;
+
+    // Per-agent chat file attach: when opts.attachments = [{name, text}] is present,
+    // build a "[첨부 파일]" block (per-file "--- <name> ---\n<text>") that gets
+    // PREPENDED to the message the agent actually receives, so it sees the file
+    // content inline. The transcript still shows the raw userText. Fully
+    // backward-compatible: absent/empty attachments → messageText === userText.
+    var messageText = userText;
+    var atts = (opts && Array.isArray(opts.attachments)) ? opts.attachments : null;
+    if (atts && atts.length) {
+      var blocks = [];
+      for (var ai = 0; ai < atts.length; ai++) {
+        var att = atts[ai];
+        if (!att) continue;
+        var aname = String(att.name == null ? '' : att.name).trim() || 'file';
+        var atext = String(att.text == null ? '' : att.text);
+        blocks.push('--- ' + aname + ' ---\n' + atext);
+      }
+      if (blocks.length) {
+        messageText = '[첨부 파일]\n' + blocks.join('\n\n') + '\n\n' + userText;
+      }
+    }
 
     // Busy guard (config.DIRECT_CHAT_BLOCKS). Default false = allow concurrent.
     if (CFG().DIRECT_CHAT_BLOCKS && agent.busy) {
@@ -833,8 +856,9 @@ window.App = window.App || {};
       return noop;
     }
 
-    // Record the user turn.
-    agent.conversation.push({ role: 'user', content: userText });
+    // Record the user turn. The API/agent sees messageText (attachments inline);
+    // the visible transcript shows the raw userText the human typed.
+    agent.conversation.push({ role: 'user', content: messageText });
     try { if (App.UI && App.UI.appendTranscript) App.UI.appendTranscript(agent.id, 'user', userText); } catch (e) {}
 
     // Decide if this agent should be allowed web search (researcher / global toggle).

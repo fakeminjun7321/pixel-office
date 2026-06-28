@@ -141,6 +141,8 @@ window.App = window.App || {};
       'set.data': 'DATA',
       'set.save': 'SAVE',
       'set.apikey.ph': 'sk-ant-...  (stored locally only)',
+      'set.geminikey': 'GEMINI API KEY',
+      'set.geminikey.ph': 'AIza...  (stored locally only)',
 
       // --- generic actions ---
       'btn.close': 'Close',
@@ -231,11 +233,7 @@ window.App = window.App || {};
       'overload.banner': 'API overloaded - auto-retrying...',
       'overload.retry': 'Retry',
       'overload.useHaiku': 'Switch worker + boss to Haiku',
-      'overload.failed': 'Hit a rate limit / overload. Retry shortly, switch to Haiku, or use a smaller goal.',
-
-      // --- opinion warehouse launcher (v7) ---
-      'opinion.launch': 'Opinion Warehouse',
-      'opinion.launch.hint': 'Collect, classify & summarize classmates opinions'
+      'overload.failed': 'Hit a rate limit / overload. Retry shortly, switch to Haiku, or use a smaller goal.'
     },
 
     ko: {
@@ -326,6 +324,8 @@ window.App = window.App || {};
       'set.data': '데이터',
       'set.save': '저장',
       'set.apikey.ph': 'sk-ant-...  (로컬에만 저장됨)',
+      'set.geminikey': 'GEMINI API 키',
+      'set.geminikey.ph': 'AIza...  (로컬에만 저장됨)',
 
       'btn.close': '닫기',
       'btn.cancel': '취소',
@@ -405,11 +405,7 @@ window.App = window.App || {};
       'overload.banner': 'API 과부하 - 자동 재시도 중...',
       'overload.retry': '재시도',
       'overload.useHaiku': '워커·보스를 Haiku로 전환',
-      'overload.failed': 'API 한도·과부하로 실패했어요. 잠시 후 재시도하거나 Haiku로 바꾸거나 목표를 작게 나눠보세요.',
-
-      // --- opinion warehouse launcher (v7) ---
-      'opinion.launch': '의견 수립 창고',
-      'opinion.launch.hint': '반 친구들의 의견을 수집·분류·요약'
+      'overload.failed': 'API 한도·과부하로 실패했어요. 잠시 후 재시도하거나 Haiku로 바꾸거나 목표를 작게 나눠보세요.'
     }
   };
 

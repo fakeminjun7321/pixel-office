@@ -38,30 +38,44 @@
   <canvas id="world-canvas" tabindex="0" aria-label="The office floor"></canvas>
 
   <!-- ==================================================================
-       TOP BAR (#hud) — logo lockup (left) · boss task input (center) ·
-       control buttons (right). Full width, ~48px tall. (visual §6.1)
+       TOP BAR (#hud) — two-row-friendly layout (visual §6.1).
+       Row 1 (#hud-row1): brand (compact) · LARGE command input (#hud-center,
+       grows to fill) + dispatch · cost meter.
+       Row 2 (#hud-controls): flex-wrap toolbar — every control button wraps to
+       additional lines instead of clipping, so all ids stay reachable.
+       Every element id below is PINNED by SPEC §8 — App.UI binds by id.
        ================================================================== -->
   <header id="hud">
 
-    <!-- Logo lockup: procedural NEON//WORKS hex-node glyph + wordmark. -->
-    <div id="hud-brand">
-      <canvas id="hud-logo-canvas" width="32" height="32" aria-hidden="true"></canvas>
-      <span id="hud-wordmark" aria-label="NEON//WORKS">
-        <span class="wm-neon">NEON</span><span class="wm-slash">//</span><span class="wm-works">WORKS</span>
-      </span>
-      <span id="hud-tagline">AI AGENT COLLECTIVE</span>
+    <!-- ---- Row 1: brand · command input · cost meter ---- -->
+    <div id="hud-row1">
+
+      <!-- Logo lockup: procedural NEON//WORKS hex-node glyph + wordmark. -->
+      <div id="hud-brand">
+        <canvas id="hud-logo-canvas" width="32" height="32" aria-hidden="true"></canvas>
+        <span id="hud-wordmark" aria-label="NEON//WORKS">
+          <span class="wm-neon">NEON</span><span class="wm-slash">//</span><span class="wm-works">WORKS</span>
+        </span>
+        <span id="hud-tagline">AI AGENT COLLECTIVE</span>
+      </div>
+
+      <!-- Center: large "give the Boss a goal" field. Mirrors the board input;
+           App.UI relays it to Orchestrator.runBossTask. Grows to fill the row. -->
+      <div id="hud-center">
+        <input id="hud-task-input" type="text" autocomplete="off" spellcheck="false"
+               data-i18n-ph="hud.task.ph"
+               placeholder="Give the Boss a goal…  (Enter to dispatch)" />
+        <button id="hud-task-dispatch" class="btn btn-primary" type="button" data-i18n="hud.dispatch" data-i18n-title="hud.dispatch.title" title="Dispatch to Boss">DISPATCH</button>
+      </div>
+
+      <!-- Running session cost — kept on Row 1 beside the command input. -->
+      <button id="btn-cost-meter"  class="btn cost-meter" type="button" title="Running session cost — click for breakdown">
+        <span class="btn-ico">$</span><span id="cost-meter-amount" class="cost-amount">0.0000</span>
+      </button>
     </div>
 
-    <!-- Center: quick "give the Boss a goal" field. Mirrors the board input;
-         App.UI relays it to Orchestrator.runBossTask. -->
-    <div id="hud-center">
-      <input id="hud-task-input" type="text" autocomplete="off" spellcheck="false"
-             data-i18n-ph="hud.task.ph"
-             placeholder="Give the Boss a goal…  (Enter to dispatch)" />
-      <button id="hud-task-dispatch" class="btn btn-primary" type="button" data-i18n="hud.dispatch" data-i18n-title="hud.dispatch.title" title="Dispatch to Boss">DISPATCH</button>
-    </div>
-
-    <!-- Right: icon/text control buttons. ids are PINNED by SPEC §8. -->
+    <!-- ---- Row 2: control buttons. ids are PINNED by SPEC §8. ----
+         flex-wrap toolbar: wraps onto extra lines instead of overflowing. -->
     <nav id="hud-controls" aria-label="Controls">
       <!-- Mobile drawer toggles (shown <=820px via styles.css; wired by App.UI). -->
       <button id="btn-rail-crew" class="btn btn-sq btn-mobile" type="button" title="Toggle crew" aria-pressed="false" aria-label="Toggle crew rail">☰</button>
@@ -95,9 +109,6 @@
       </button>
       <button id="btn-sessions"    class="btn"        type="button" title="Save / load company sessions">
         <span class="btn-ico">🗂</span><span class="btn-lbl" data-i18n="hud.sessions">Sessions</span>
-      </button>
-      <button id="btn-cost-meter"  class="btn cost-meter" type="button" title="Running session cost — click for breakdown">
-        <span class="btn-ico">$</span><span id="cost-meter-amount" class="cost-amount">0.0000</span>
       </button>
       <button id="btn-metrics"     class="btn"        type="button" title="Observability: tokens/cost charts, timeline + replay">
         <span class="btn-ico">📊</span><span class="btn-lbl" data-i18n="hud.metrics">Metrics</span>

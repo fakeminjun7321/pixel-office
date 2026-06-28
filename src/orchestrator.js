@@ -349,6 +349,7 @@ window.App = window.App || {};
       var handle = App.API.stream({
         apiKey: settings.apiKey,
         openaiKey: settings.openaiKey,
+        geminiKey: settings.geminiKey,
         model: model,
         system: sys,
         messages: [{ role: 'user', content: content }],
@@ -384,13 +385,15 @@ window.App = window.App || {};
     }
   }
 
-  // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
-  // local companion (subscription proxy needs no key). Mirrors api.js's guard so
-  // companion-only / GPT-only setups aren't blocked before the request is built.
+  // Usable credentials for a model? gemini → geminiKey; openai → openaiKey;
+  // anthropic → apiKey OR the local companion (subscription proxy needs no key).
+  // Mirrors api.js's guard so companion-only / GPT-only / Gemini-only setups aren't
+  // blocked before the request is built.
   function hasCredsFor(model) {
     var set = (STATE() && STATE().settings) || {};
     var prov = (CFG().providerOf ? CFG().providerOf(model)
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
+    if (prov === 'gemini') return !!set.geminiKey;
     if (prov === 'openai') return !!set.openaiKey;
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
   }
@@ -839,6 +842,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,        // GPT-model boss support
+      geminiKey: settings.geminiKey,        // Gemini-model boss support
       model: (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL,
       system: sys,
       messages: [{ role: 'user', content: userMsg }],
@@ -1257,6 +1261,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,        // GPT-model worker support
+      geminiKey: settings.geminiKey,        // Gemini-model worker support
       model: agent.model || settings.defaultModel,
       system: sys,
       messages: messages,
@@ -1487,6 +1492,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: qaModel,
       system: sys,
       messages: [{ role: 'user', content: artifactText }],
@@ -1990,6 +1996,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: (a.model || settings.defaultModel || CFG().FAST_MODEL),
       system: sys,
       messages: [{ role: 'user', content: content }],
@@ -2163,6 +2170,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: model,
       system: sys,
       messages: [{ role: 'user', content: content }],
@@ -2283,6 +2291,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: model,
       system: sys,
       messages: [{ role: 'user', content: content }],
@@ -2407,6 +2416,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,        // GPT-model boss support
+      geminiKey: settings.geminiKey,        // Gemini-model boss support
       model: (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL,
       system: synthSys,
       messages: [{ role: 'user', content: content }],
@@ -2675,6 +2685,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL,
       system: sys,
       messages: [{ role: 'user', content: userMsg }],
@@ -3018,6 +3029,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: model,
       system: sys,
       messages: [{ role: 'user', content: content }],
@@ -3307,6 +3319,7 @@ window.App = window.App || {};
       var handle = App.API.stream({
         apiKey: settings.apiKey,
         openaiKey: settings.openaiKey,
+        geminiKey: settings.geminiKey,
         model: agent.model || settings.defaultModel,
         system: sys,
         messages: messages,
@@ -3431,6 +3444,7 @@ window.App = window.App || {};
       var handle = App.API.stream({
         apiKey: settings.apiKey,
         openaiKey: settings.openaiKey,
+        geminiKey: settings.geminiKey,
         model: agent.model || settings.defaultModel,
         system: sys,
         messages: messages,

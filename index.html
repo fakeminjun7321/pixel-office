@@ -45,7 +45,10 @@
   --glow-red:0 0 12px rgba(255,77,109,.45);
 
   /* geometry */
-  --hud-h:48px;
+  /* --hud-h is the layout offset that chrome below the top bar anchors to.
+     The HUD is now two rows (command input + wrapping toolbar), so this is the
+     realistic desktop two-row height; the mobile query shrinks it back down. */
+  --hud-h:92px;
   --rail-w:210px;
   --radius:6px;
   --mono:"DejaVu Sans Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -111,13 +114,22 @@ body{
    TOP BAR (#hud)  — visual §6.1
    ========================================================================= */
 #hud{
-  position:absolute; top:0; left:0; right:0; height:var(--hud-h);
+  position:absolute; top:0; left:0; right:0; min-height:var(--hud-h);
   z-index:40;
-  display:flex; align-items:center; gap:14px;
-  padding:0 12px;
+  /* two-row-friendly: Row 1 (#hud-row1) + Row 2 (#hud-controls) stack and the
+     toolbar wraps onto extra lines instead of clipping. */
+  display:flex; flex-direction:column; justify-content:center;
+  row-gap:7px;
+  padding:7px 12px;
   background:linear-gradient(90deg, #0a0e1e, #0b1024 60%, #0a0e1e);
   border-bottom:1px solid var(--cyan);
   box-shadow:0 1px 12px rgba(57,215,255,.30), 0 4px 24px rgba(0,0,0,.5);
+}
+
+/* Row 1 — brand · LARGE command input (grows) · cost meter */
+#hud-row1{
+  display:flex; align-items:center; gap:14px;
+  width:100%; min-width:0;
 }
 /* subtle animated data-flow sweep on the bottom edge */
 #hud::after{
@@ -153,26 +165,37 @@ body{
   align-self:center; white-space:nowrap;
 }
 
-/* center boss-task input */
-#hud-center{ flex:1 1 auto; display:flex; gap:8px; max-width:560px; margin:0 auto; }
+/* center boss-task input — LARGE command field that grows to fill Row 1 */
+#hud-center{ flex:1 1 auto; display:flex; gap:9px; min-width:320px; }
 #hud-task-input{
-  flex:1 1 auto; height:30px;
+  flex:1 1 auto; min-width:0; height:39px;
   background:var(--field); color:var(--text);
-  border:1px solid var(--panel-edge); border-radius:5px;
-  padding:0 11px; font-family:var(--mono); font-size:12.5px;
+  border:1px solid var(--panel-edge); border-radius:6px;
+  padding:0 14px; font-family:var(--mono); font-size:13.5px;
 }
 #hud-task-input::placeholder{ color:var(--text-faint); }
 #hud-task-input:focus{
   outline:none; border-color:var(--blue);
   box-shadow:0 0 0 2px rgba(77,124,255,.35), 0 0 12px rgba(77,124,255,.25);
 }
-#hud-task-dispatch{ height:30px; flex:0 0 auto; }
+#hud-task-dispatch{ height:39px; flex:0 0 auto; padding:0 16px; }
 
-/* control cluster */
-#hud-controls{ display:flex; align-items:center; gap:6px; flex:0 0 auto; }
-.hud-sep{ width:1px; height:22px; background:var(--divider); margin:0 3px; }
+/* cost meter sits on Row 1 (kept tall to match the command input) */
+#hud-row1 #btn-cost-meter{ height:39px; flex:0 0 auto; }
 
-/* responsive: hide button text labels / center input when cramped */
+/* control cluster — Row 2 toolbar. Spans the full width and WRAPS to extra
+   lines (flex-wrap + row-gap) so every button stays reachable, never clipped. */
+#hud-controls{
+  display:flex; align-items:center; flex-wrap:wrap;
+  column-gap:5px; row-gap:6px;
+  width:100%; min-width:0; flex:0 0 auto;
+}
+/* slightly tighter button padding on the toolbar so more fit per line */
+#hud-controls .btn{ padding:0 9px; }
+#hud-controls .btn-sq{ padding:0; }
+.hud-sep{ width:1px; height:22px; background:var(--divider); margin:0 3px; flex:0 0 auto; }
+
+/* responsive: hide button text labels / command input when cramped */
 @media (max-width:1180px){ .btn-lbl{ display:none; } }
 @media (max-width:900px){ #hud-center{ display:none; } #hud-tagline{ display:none; } }
 
@@ -1068,19 +1091,23 @@ select option{ background:var(--panel); color:var(--text); }
    keep canvas + modals usable, and grow touch targets.
    ========================================================================= */
 @media (max-width:820px){
+  /* the command input is hidden below 900px, so the HUD is brand + a wrapping
+     toolbar — shrink the layout offset back down so the rails/board sit snug. */
+  :root{ --hud-h:46px; }
+
   /* show drawer toggles, hide a couple of secondary HUD buttons to save room */
   .btn-mobile{ display:inline-flex; }
   #btn-presets, #btn-sessions{ display:none; }
 
-  /* let the HUD wrap so all controls remain reachable */
+  /* compact the HUD chrome on small screens; Row 1 (brand) + Row 2 (controls)
+     already stack via the desktop flex-column layout, and the controls toolbar
+     keeps wrapping so every button stays reachable. */
   #hud{
-    height:auto; min-height:var(--hud-h);
-    flex-wrap:wrap; row-gap:6px; padding:6px 8px;
-    align-items:center;
+    min-height:var(--hud-h);
+    row-gap:6px; padding:6px 8px;
   }
-  /* take the full row (below the brand) so buttons actually WRAP instead of
-     sizing to content width and overflowing off-screen */
-  #hud-controls{ flex:1 1 100%; flex-wrap:wrap; justify-content:flex-start; }
+  #hud-row1{ gap:8px; }
+  #hud-controls{ justify-content:flex-start; }
 
   /* rails become off-canvas drawers; slide in with .rail-open */
   #agent-list, #log{
@@ -1571,30 +1598,44 @@ select option{ background:var(--panel); color:var(--text); }
   <canvas id="world-canvas" tabindex="0" aria-label="The office floor"></canvas>
 
   <!-- ==================================================================
-       TOP BAR (#hud) — logo lockup (left) · boss task input (center) ·
-       control buttons (right). Full width, ~48px tall. (visual §6.1)
+       TOP BAR (#hud) — two-row-friendly layout (visual §6.1).
+       Row 1 (#hud-row1): brand (compact) · LARGE command input (#hud-center,
+       grows to fill) + dispatch · cost meter.
+       Row 2 (#hud-controls): flex-wrap toolbar — every control button wraps to
+       additional lines instead of clipping, so all ids stay reachable.
+       Every element id below is PINNED by SPEC §8 — App.UI binds by id.
        ================================================================== -->
   <header id="hud">
 
-    <!-- Logo lockup: procedural NEON//WORKS hex-node glyph + wordmark. -->
-    <div id="hud-brand">
-      <canvas id="hud-logo-canvas" width="32" height="32" aria-hidden="true"></canvas>
-      <span id="hud-wordmark" aria-label="NEON//WORKS">
-        <span class="wm-neon">NEON</span><span class="wm-slash">//</span><span class="wm-works">WORKS</span>
-      </span>
-      <span id="hud-tagline">AI AGENT COLLECTIVE</span>
+    <!-- ---- Row 1: brand · command input · cost meter ---- -->
+    <div id="hud-row1">
+
+      <!-- Logo lockup: procedural NEON//WORKS hex-node glyph + wordmark. -->
+      <div id="hud-brand">
+        <canvas id="hud-logo-canvas" width="32" height="32" aria-hidden="true"></canvas>
+        <span id="hud-wordmark" aria-label="NEON//WORKS">
+          <span class="wm-neon">NEON</span><span class="wm-slash">//</span><span class="wm-works">WORKS</span>
+        </span>
+        <span id="hud-tagline">AI AGENT COLLECTIVE</span>
+      </div>
+
+      <!-- Center: large "give the Boss a goal" field. Mirrors the board input;
+           App.UI relays it to Orchestrator.runBossTask. Grows to fill the row. -->
+      <div id="hud-center">
+        <input id="hud-task-input" type="text" autocomplete="off" spellcheck="false"
+               data-i18n-ph="hud.task.ph"
+               placeholder="Give the Boss a goal…  (Enter to dispatch)" />
+        <button id="hud-task-dispatch" class="btn btn-primary" type="button" data-i18n="hud.dispatch" data-i18n-title="hud.dispatch.title" title="Dispatch to Boss">DISPATCH</button>
+      </div>
+
+      <!-- Running session cost — kept on Row 1 beside the command input. -->
+      <button id="btn-cost-meter"  class="btn cost-meter" type="button" title="Running session cost — click for breakdown">
+        <span class="btn-ico">$</span><span id="cost-meter-amount" class="cost-amount">0.0000</span>
+      </button>
     </div>
 
-    <!-- Center: quick "give the Boss a goal" field. Mirrors the board input;
-         App.UI relays it to Orchestrator.runBossTask. -->
-    <div id="hud-center">
-      <input id="hud-task-input" type="text" autocomplete="off" spellcheck="false"
-             data-i18n-ph="hud.task.ph"
-             placeholder="Give the Boss a goal…  (Enter to dispatch)" />
-      <button id="hud-task-dispatch" class="btn btn-primary" type="button" data-i18n="hud.dispatch" data-i18n-title="hud.dispatch.title" title="Dispatch to Boss">DISPATCH</button>
-    </div>
-
-    <!-- Right: icon/text control buttons. ids are PINNED by SPEC §8. -->
+    <!-- ---- Row 2: control buttons. ids are PINNED by SPEC §8. ----
+         flex-wrap toolbar: wraps onto extra lines instead of overflowing. -->
     <nav id="hud-controls" aria-label="Controls">
       <!-- Mobile drawer toggles (shown <=820px via styles.css; wired by App.UI). -->
       <button id="btn-rail-crew" class="btn btn-sq btn-mobile" type="button" title="Toggle crew" aria-pressed="false" aria-label="Toggle crew rail">☰</button>
@@ -1628,9 +1669,6 @@ select option{ background:var(--panel); color:var(--text); }
       </button>
       <button id="btn-sessions"    class="btn"        type="button" title="Save / load company sessions">
         <span class="btn-ico">🗂</span><span class="btn-lbl" data-i18n="hud.sessions">Sessions</span>
-      </button>
-      <button id="btn-cost-meter"  class="btn cost-meter" type="button" title="Running session cost — click for breakdown">
-        <span class="btn-ico">$</span><span id="cost-meter-amount" class="cost-amount">0.0000</span>
       </button>
       <button id="btn-metrics"     class="btn"        type="button" title="Observability: tokens/cost charts, timeline + replay">
         <span class="btn-ico">📊</span><span class="btn-lbl" data-i18n="hud.metrics">Metrics</span>
@@ -2573,6 +2611,8 @@ window.App = window.App || {};
     // API
     API_URL: 'https://api.anthropic.com/v1/messages',
     OPENAI_URL: 'https://api.openai.com/v1/chat/completions',   // v2: OpenAI chat-completions endpoint
+    // Gemini generative-language API base. api.js builds <base><model>:streamGenerateContent?alt=sse.
+    GEMINI_URL: 'https://generativelanguage.googleapis.com/v1beta/models/',
     // v2: local subscription proxy (companion.py). The companion is OPT-IN and OFF
     // by default (store defaultSettings().useCompanion === false), so a fresh or
     // migrated company talks to the cloud API directly and never depends on a local
@@ -2582,14 +2622,16 @@ window.App = window.App || {};
     DEFAULT_MODEL: 'claude-sonnet-4-6',          // worker default
     BOSS_MODEL:    'claude-opus-4-8',            // boss default
     FAST_MODEL:    'claude-haiku-4-5-20251001',
-    // v2: provider-tagged model list (Anthropic + OpenAI). provider drives API.stream routing.
+    // v2: provider-tagged model list (Anthropic + OpenAI + Gemini). provider drives API.stream routing.
     MODELS: [
-      { id: 'claude-opus-4-8',           label: 'Opus 4.8',   provider: 'anthropic' },
-      { id: 'claude-sonnet-4-6',         label: 'Sonnet 4.6', provider: 'anthropic' },
-      { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5',  provider: 'anthropic' },
-      { id: 'gpt-4o',                    label: 'GPT-4o',     provider: 'openai' },
-      { id: 'gpt-4o-mini',               label: 'GPT-4o mini', provider: 'openai' },
-      { id: 'gpt-4.1',                   label: 'GPT-4.1',    provider: 'openai' }
+      { id: 'claude-opus-4-8',           label: 'Opus 4.8',        provider: 'anthropic' },
+      { id: 'claude-sonnet-4-6',         label: 'Sonnet 4.6',      provider: 'anthropic' },
+      { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5',       provider: 'anthropic' },
+      { id: 'gpt-5.5',                   label: 'GPT-5.5',         provider: 'openai' },
+      { id: 'gpt-5.4',                   label: 'GPT-5.4',         provider: 'openai' },
+      { id: 'gpt-5.4-mini',              label: 'GPT-5.4 mini',    provider: 'openai' },
+      { id: 'gemini-3.1-pro',            label: 'Gemini 3.1 Pro',  provider: 'gemini' },
+      { id: 'gemini-3.1-flash',          label: 'Gemini 3.1 Flash', provider: 'gemini' }
     ],
     MAX_TOKENS: 4096,
     WEB_SEARCH_TOOL: { type: 'web_search_20250305', name: 'web_search', max_uses: 5 },
@@ -2609,9 +2651,12 @@ window.App = window.App || {};
     API_MIN_SPACING_MS: 400,      // minimum ms between request STARTS
     API_COOLDOWN_GROWTH: 1.6,     // spacing multiplier after a 429/529; decays toward API_MIN_SPACING_MS on success
 
-    // v2: provider resolver — OpenAI ids start with gpt/o1/o3/o4/chatgpt; else Anthropic.
+    // provider resolver — gemini ids start with gemini; OpenAI ids start with
+    // gpt/o1/o3/o4/chatgpt; else Anthropic.
     providerOf: function (modelId) {
-      return /^(gpt|o1|o3|o4|chatgpt)/i.test(String(modelId || '')) ? 'openai' : 'anthropic';
+      var m = String(modelId || '');
+      if (/^gemini/i.test(m)) return 'gemini';
+      return /^(gpt|o1|o3|o4|chatgpt)/i.test(m) ? 'openai' : 'anthropic';
     },
 
     // boss orchestration prompts (section 6.3). BOSS_SYNTH_SYSTEM is read by
@@ -2665,15 +2710,6 @@ window.App = window.App || {};
     // Default UI language. Korean is now the default (store defaults settings.lang
     // to this, and i18n.getLang() falls back to it when settings.lang is unset).
     DEFAULT_LANG: 'ko',
-
-    // ---------------------------------------------------------------------------
-    // v7 section OPINION WAREHOUSE — a ready-to-use Korean goal pre-filled into the
-    // dispatch input by ui.js when the user launches the 'opinion-warehouse' preset
-    // (App.config.PRESETS[0]). The user then attaches/pastes classmates' opinions
-    // via the attach control and dispatches. Single source of truth for the launcher.
-    // ---------------------------------------------------------------------------
-    OPINION_GOAL_TEMPLATE:
-      '아래에 첨부/입력된 반 친구들의 의견을 수집·분류·중복 제거하고, 주제별 표 + 핵심 요약 + 소수의견까지 포함한 정리 리포트를 만들어줘.',
 
     // ---------------------------------------------------------------------------
     // SHARE — hash fragment key for shareable state links. App.Share.exportLink
@@ -2861,29 +2897,6 @@ window.App = window.App || {};
   // ---------------------------------------------------------------------------
   App.config.PRESETS = [
     {
-      id: 'opinion-warehouse',
-      name: '의견 수립 창고',
-      desc: '반 친구들의 의견을 수집·분류·중복 제거하고 요약 리포트로 정리하는 팀.',
-      icon: '🗳️',
-      agents: [
-        // facilitator — runs the discussion as the orchestrator (boss).
-        { name: '진행자', role: 'boss' },
-        // collector — reads the attached/pasted opinions and pulls out every distinct point (generalist).
-        { name: '수집가', role: 'generalist' },
-        // researcher — gathers context/background for the topic.
-        { name: '조사원', role: 'researcher' },
-        // analyst — classifies + structures + de-duplicates the collected opinions (qa role = critical/structured).
-        { name: '분석가', role: 'qa' },
-        // writer — turns the analysis into a clean summary report (themed tables + key summary + minority view).
-        { name: '작성자', role: 'writer' }
-      ],
-      sampleGoals: [
-        '반 친구들의 [수학여행 장소]에 대한 의견을 수집·분류·중복 제거해서 주제별 표 + 요약 리포트로 정리해줘',
-        '학급 회의 안건 [체육대회 종목]에 대한 찬반 의견을 모아 입장별로 정리하고 소수의견도 따로 정리해줘',
-        '[축제 부스 아이디어]에 대한 친구들의 제안을 주제별로 묶고 핵심 요약과 함께 정리해줘'
-      ]
-    },
-    {
       id: 'blog-team',
       name: 'Blog Team',
       desc: 'A writer, a researcher, and an editor that ship polished posts.',
@@ -2931,9 +2944,12 @@ window.App = window.App || {};
     'claude-sonnet-4-6':         { in: 3.00,  out: 15.00 },
     'claude-haiku-4-5-20251001': { in: 1.00,  out: 5.00  },
     // OpenAI (approximate, USD / 1M tokens)
-    'gpt-4o':                    { in: 2.50,  out: 10.00 },
-    'gpt-4o-mini':               { in: 0.15,  out: 0.60  },
-    'gpt-4.1':                   { in: 2.00,  out: 8.00  }
+    'gpt-5.5':                   { in: 5.00,  out: 15.00 },
+    'gpt-5.4':                   { in: 2.50,  out: 10.00 },
+    'gpt-5.4-mini':              { in: 0.30,  out: 1.20  },
+    // Gemini (approximate, USD / 1M tokens)
+    'gemini-3.1-pro':            { in: 2.00,  out: 10.00 },
+    'gemini-3.1-flash':          { in: 0.30,  out: 1.20  }
   };
 
   // ---------------------------------------------------------------------------
@@ -3060,9 +3076,11 @@ window.App = window.App || {};
     },
     firstWords: function (s, n) { return String(s || '').split(/\s+/).slice(0, n).join(' '); },
     truncate: function (s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; },
-    // v2: mirror of App.config.providerOf so callers can resolve provider from either surface.
+    // mirror of App.config.providerOf so callers can resolve provider from either surface.
     providerOf: function (modelId) {
-      return /^(gpt|o1|o3|o4|chatgpt)/i.test(String(modelId || '')) ? 'openai' : 'anthropic';
+      var m = String(modelId || '');
+      if (/^gemini/i.test(m)) return 'gemini';
+      return /^(gpt|o1|o3|o4|chatgpt)/i.test(m) ? 'openai' : 'anthropic';
     }
   };
 
@@ -3212,6 +3230,8 @@ window.App = window.App || {};
       'set.data': 'DATA',
       'set.save': 'SAVE',
       'set.apikey.ph': 'sk-ant-...  (stored locally only)',
+      'set.geminikey': 'GEMINI API KEY',
+      'set.geminikey.ph': 'AIza...  (stored locally only)',
 
       // --- generic actions ---
       'btn.close': 'Close',
@@ -3302,11 +3322,7 @@ window.App = window.App || {};
       'overload.banner': 'API overloaded - auto-retrying...',
       'overload.retry': 'Retry',
       'overload.useHaiku': 'Switch worker + boss to Haiku',
-      'overload.failed': 'Hit a rate limit / overload. Retry shortly, switch to Haiku, or use a smaller goal.',
-
-      // --- opinion warehouse launcher (v7) ---
-      'opinion.launch': 'Opinion Warehouse',
-      'opinion.launch.hint': 'Collect, classify & summarize classmates opinions'
+      'overload.failed': 'Hit a rate limit / overload. Retry shortly, switch to Haiku, or use a smaller goal.'
     },
 
     ko: {
@@ -3397,6 +3413,8 @@ window.App = window.App || {};
       'set.data': '데이터',
       'set.save': '저장',
       'set.apikey.ph': 'sk-ant-...  (로컬에만 저장됨)',
+      'set.geminikey': 'GEMINI API 키',
+      'set.geminikey.ph': 'AIza...  (로컬에만 저장됨)',
 
       'btn.close': '닫기',
       'btn.cancel': '취소',
@@ -3476,11 +3494,7 @@ window.App = window.App || {};
       'overload.banner': 'API 과부하 - 자동 재시도 중...',
       'overload.retry': '재시도',
       'overload.useHaiku': '워커·보스를 Haiku로 전환',
-      'overload.failed': 'API 한도·과부하로 실패했어요. 잠시 후 재시도하거나 Haiku로 바꾸거나 목표를 작게 나눠보세요.',
-
-      // --- opinion warehouse launcher (v7) ---
-      'opinion.launch': '의견 수립 창고',
-      'opinion.launch.hint': '반 친구들의 의견을 수집·분류·요약'
+      'overload.failed': 'API 한도·과부하로 실패했어요. 잠시 후 재시도하거나 Haiku로 바꾸거나 목표를 작게 나눠보세요.'
     }
   };
 
@@ -9924,6 +9938,118 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
+  // Gemini SSE accumulator. Parses the Google Generative Language stream
+  // (streamGenerateContent?alt=sse): lines starting 'data: ' with a JSON
+  // GenerateContentResponse each. Text deltas live at
+  // candidates[0].content.parts[*].text; final token counts at
+  // usageMetadata.{promptTokenCount,candidatesTokenCount}. Text-only: no tools.
+  // There is no '[DONE]' sentinel — the stream simply ends, so finish() fires
+  // from the reader's done path (like the other accumulators' final flush).
+  // ---------------------------------------------------------------------------
+  function GeminiAccumulator(callbacks) {
+    this.onText = callbacks.onText;
+    this.onState = callbacks.onState;
+    this.onDone = callbacks.onDone;
+    this.onError = callbacks.onError;
+
+    this.buffer = '';
+    this.fullText = '';
+    this.usage = { input_tokens: 0, output_tokens: 0 };
+    this.lastChunk = null;            // raw last JSON chunk (for onDone.raw)
+    this.firstTextSeen = false;       // emit onState('text') exactly once
+    this.doneEmitted = false;
+
+    this.toolUses = [];               // text-only path: always empty
+    this.stopReason = null;           // mapped finishReason
+  }
+
+  GeminiAccumulator.prototype.finish = function (announceState) {
+    if (this.doneEmitted) return;
+    this.doneEmitted = true;
+    if (announceState) this.onState('done');
+    this.onDone({
+      text: this.fullText,
+      usage: this.usage,
+      raw: this.lastChunk,
+      toolUses: this.toolUses,
+      stopReason: this.stopReason,
+    });
+  };
+
+  GeminiAccumulator.prototype.feed = function (chunk, final) {
+    if (chunk) this.buffer += chunk;
+    var parts = this.buffer.split('\n\n');
+    this.buffer = final ? '' : parts.pop();
+    for (var i = 0; i < parts.length; i++) {
+      this.handleEvent(parts[i]);
+      if (this.doneEmitted) return;
+    }
+    if (final && this.buffer) {
+      this.handleEvent(this.buffer);
+      this.buffer = '';
+    }
+  };
+
+  GeminiAccumulator.prototype.handleEvent = function (block) {
+    if (!block) return;
+    var lines = block.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (line.indexOf('data:') !== 0) continue;
+      var payload = line.slice(5);
+      if (payload.charAt(0) === ' ') payload = payload.slice(1);
+      payload = payload.trim();
+      if (!payload || payload === '[DONE]') continue;
+
+      var evt;
+      try {
+        evt = JSON.parse(payload);
+      } catch (e) {
+        continue; // ignore malformed data lines
+      }
+      this.dispatch(evt);
+      if (this.doneEmitted) return;
+    }
+  };
+
+  GeminiAccumulator.prototype.dispatch = function (evt) {
+    if (!evt || typeof evt !== 'object') return;
+    this.lastChunk = evt;
+
+    var cands = Array.isArray(evt.candidates) ? evt.candidates : null;
+    if (cands && cands.length) {
+      var cand = cands[0] || {};
+      var content = cand.content || {};
+      var ps = Array.isArray(content.parts) ? content.parts : null;
+      if (ps) {
+        for (var i = 0; i < ps.length; i++) {
+          var part = ps[i];
+          if (part && typeof part.text === 'string' && part.text.length) {
+            if (!this.firstTextSeen) {
+              this.firstTextSeen = true;
+              this.onState('text');
+            }
+            this.fullText += part.text;
+            this.onText(part.text);
+          }
+        }
+      }
+      if (cand.finishReason) this.stopReason = cand.finishReason;
+    }
+
+    // usageMetadata may arrive on any chunk (typically the last). Keep latest.
+    var um = evt.usageMetadata;
+    if (um && typeof um === 'object') {
+      if (typeof um.promptTokenCount === 'number') {
+        this.usage.input_tokens = um.promptTokenCount;
+      }
+      if (typeof um.candidatesTokenCount === 'number') {
+        this.usage.output_tokens = um.candidatesTokenCount;
+      }
+    }
+  };
+
+  // ---------------------------------------------------------------------------
   // OpenAI request shaping (v6 -> Wave 2): translate Anthropic-format tools and
   // Anthropic content-block messages into OpenAI chat-completions shapes.
   // Both helpers are DEFENSIVE -- they never throw; on any unexpected shape they
@@ -10053,6 +10179,54 @@ window.App = window.App || {};
 
       // Unknown content shape -- never throw; stringify defensively.
       out.push({ role: m.role || 'user', content: toStr(content) });
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Gemini request shaping: translate the (possibly Anthropic-shaped) message
+  // list into Gemini `contents` [{role:'user'|'model', parts:[{text}]}]. Roles
+  // map 'assistant'->'model', everything else->'user' (Gemini has no 'system'
+  // role — system goes in systemInstruction). Array content blocks are FLATTENED
+  // to text: {type:'text'} -> its text, tool_use/tool_result -> stringified, so a
+  // tool-bearing turn from another provider degrades to readable text instead of
+  // breaking the request. Fully defensive — never throws.
+  // ---------------------------------------------------------------------------
+  function flattenToText(content) {
+    if (content == null) return '';
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      var acc = '';
+      for (var i = 0; i < content.length; i++) {
+        var blk = content[i];
+        if (blk == null) continue;
+        if (typeof blk === 'string') { acc += blk; continue; }
+        if (typeof blk !== 'object') { acc += toStr(blk); continue; }
+        if (blk.type === 'text' && typeof blk.text === 'string') {
+          acc += blk.text;
+        } else if (blk.type === 'tool_result') {
+          acc += toStr(blk.content);
+        } else if (blk.type === 'tool_use') {
+          acc += toStr(blk.input || {});
+        } else if (typeof blk.text === 'string') {
+          acc += blk.text;
+        } else {
+          acc += toStr(blk);
+        }
+      }
+      return acc;
+    }
+    return toStr(content);
+  }
+
+  function toGeminiContents(messages) {
+    var out = [];
+    var list = Array.isArray(messages) ? messages : [];
+    for (var i = 0; i < list.length; i++) {
+      var m = list[i];
+      if (!m || typeof m !== 'object') continue;
+      var role = (m.role === 'assistant') ? 'model' : 'user';
+      out.push({ role: role, parts: [{ text: flattenToText(m.content) }] });
     }
     return out;
   }
@@ -10321,9 +10495,9 @@ window.App = window.App || {};
     var provider =
       (cfg.providerOf ? cfg.providerOf(opts.model)
         : (App.util && App.util.providerOf ? App.util.providerOf(opts.model) : 'anthropic'));
-    return provider === 'openai'
-      ? attemptOpenAI(opts, controller)
-      : attemptAnthropic(opts, controller);
+    if (provider === 'openai') return attemptOpenAI(opts, controller);
+    if (provider === 'gemini') return attemptGemini(opts, controller);
+    return attemptAnthropic(opts, controller);
   }
 
   // Run a fetch-driven attempt body through the global scheduler. `body(status)`
@@ -10678,6 +10852,130 @@ window.App = window.App || {};
     });
   }
 
+  // ---- Gemini streaming attempt (streamGenerateContent?alt=sse; text-only) --
+  function attemptGemini(opts, controller) {
+    var cfg = App.config || {};
+    var GEMINI_URL = cfg.GEMINI_URL ||
+      'https://generativelanguage.googleapis.com/v1beta/models/';
+    var MAX_TOKENS = cfg.MAX_TOKENS || 4096;
+    var URL = GEMINI_URL + opts.model + ':streamGenerateContent?alt=sse';
+
+    var acc = new GeminiAccumulator({
+      onText: safe(opts.onText),
+      onState: safe(opts.onState),
+      onDone: safe(opts.onDone),
+      onError: safe(opts.onError),
+    });
+
+    // Build the request body. systemInstruction is omitted when there's no
+    // system prompt (matching the other providers' "only when present" stance).
+    var body = {
+      contents: toGeminiContents(opts.messages),
+      generationConfig: {
+        maxOutputTokens: opts.maxTokens || MAX_TOKENS,
+      },
+    };
+    if (opts.system) {
+      body.systemInstruction = { parts: [{ text: opts.system }] };
+    }
+    if (typeof opts.temp === 'number') {
+      body.generationConfig.temperature = opts.temp;
+    }
+
+    // Auth via header (NOT the URL) per the Gemini contract.
+    var headers = {
+      'x-goog-api-key': opts.geminiKey,
+      'content-type': 'application/json',
+    };
+
+    acc.onState('thinking');
+
+    return withSchedule(controller, function (reporter) {
+      return fetch(URL, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+      .then(function (resp) {
+        if (!resp.ok) {
+          var retryAfter = retryAfterMsFromResp(resp);
+          reporter.set(resp.status, retryAfter);  // feed scheduler (cooldown on 429/529)
+          return resp.text().then(function (txt) {
+            var parsed = null;
+            try {
+              parsed = txt ? JSON.parse(txt) : null;
+            } catch (e) {
+              parsed = null;
+            }
+            var msg =
+              extractApiErrorMessage(parsed) ||
+              (txt && txt.slice(0, 300)) ||
+              ('HTTP ' + resp.status);
+
+            if (isTransientStatus(resp.status)) {
+              throw transientError(msg, resp.status, retryAfter);
+            }
+            acc.onError({ type: 'http', status: resp.status, message: msg });
+          });
+        }
+
+        reporter.set(resp.status);  // 2xx success => scheduler decays spacing
+
+        if (!resp.body || typeof resp.body.getReader !== 'function') {
+          return resp.text().then(function (txt) {
+            acc.feed(txt, true);
+            acc.finish(false);
+          });
+        }
+
+        var reader = resp.body.getReader();
+        var decoder = new TextDecoder('utf-8');
+
+        function readChunk() {
+          return reader.read().then(function (res) {
+            if (res.done) {
+              acc.feed('', true);   // flush trailing buffered event
+              acc.finish(false);    // no '[DONE]' sentinel — finish on stream end
+              return;
+            }
+            acc.feed(decoder.decode(res.value, { stream: true }), false);
+            if (acc.doneEmitted) {
+              try {
+                reader.cancel();
+              } catch (e) {}
+              return;
+            }
+            return readChunk();
+          });
+        }
+
+        return readChunk();
+      })
+      .catch(function (e) {
+        if (e && e.__transient) throw e;
+        if (acc.doneEmitted) return;
+
+        var aborted =
+          (e && (e.name === 'AbortError' || e.code === 20)) ||
+          (controller.signal && controller.signal.aborted);
+        if (aborted) {
+          acc.onError({ type: 'abort', message: 'request aborted' });
+          return;
+        }
+
+        if (isTransientNetworkError(e, controller) && !acc.firstTextSeen) {
+          throw transientError((e && e.message) || 'Failed to fetch');
+        }
+
+        acc.onError({
+          type: 'network',
+          message: (e && e.message) || 'network error — check connection',
+        });
+      });
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Public: App.API.stream
   // Validates inputs synchronously, then runs attempt() with an exponential
@@ -10707,6 +11005,11 @@ window.App = window.App || {};
     if (provider === 'openai') {
       if (!opts.openaiKey) {
         onError({ type: 'no_key', message: 'Set your OpenAI API key in Settings' });
+        return noopHandle();
+      }
+    } else if (provider === 'gemini') {
+      if (!opts.geminiKey) {
+        onError({ type: 'no_key', message: 'Set your Gemini API key in Settings' });
         return noopHandle();
       }
     } else {
@@ -11013,6 +11316,7 @@ window.App = window.App || {};
     return {
       apiKey: '',
       openaiKey: '',                                   // v2: OpenAI key (for gpt-* models)
+      geminiKey: '',                                   // Gemini API key (for gemini-* models)
       useCompanion: false,                             // v2: route Claude models through local subscription proxy (OPT-IN; OFF by default)
       companionUrl: c.COMPANION_URL || 'http://localhost:8787/v1/messages',
       defaultModel: c.DEFAULT_MODEL || 'claude-sonnet-4-6',
@@ -13485,12 +13789,14 @@ window.App = window.App || {};
   // DIRECT CHAT — chat(agent, userText) → {abort()}
   // Single agent, NO orchestration. Streams into bubble + UI transcript.
   // ===========================================================================
-  // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
-  // local companion. Mirrors api.js so companion-only / GPT-only direct chat works.
+  // Usable credentials for a model? gemini → geminiKey; openai → openaiKey;
+  // anthropic → apiKey OR the local companion. Mirrors api.js + orchestrator so
+  // gemini-only / companion-only / GPT-only direct chat works.
   function hasCredsFor(model) {
     var set = (STATE() && STATE().settings) || {};
     var prov = (CFG().providerOf ? CFG().providerOf(model)
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
+    if (prov === 'gemini') return !!set.geminiKey;
     if (prov === 'openai') return !!set.openaiKey;
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
   }
@@ -13502,6 +13808,27 @@ window.App = window.App || {};
     var settings = (s && s.settings) || {};
     userText = String(userText == null ? '' : userText).trim();
     if (!userText) return noop;
+
+    // Per-agent chat file attach: when opts.attachments = [{name, text}] is present,
+    // build a "[첨부 파일]" block (per-file "--- <name> ---\n<text>") that gets
+    // PREPENDED to the message the agent actually receives, so it sees the file
+    // content inline. The transcript still shows the raw userText. Fully
+    // backward-compatible: absent/empty attachments → messageText === userText.
+    var messageText = userText;
+    var atts = (opts && Array.isArray(opts.attachments)) ? opts.attachments : null;
+    if (atts && atts.length) {
+      var blocks = [];
+      for (var ai = 0; ai < atts.length; ai++) {
+        var att = atts[ai];
+        if (!att) continue;
+        var aname = String(att.name == null ? '' : att.name).trim() || 'file';
+        var atext = String(att.text == null ? '' : att.text);
+        blocks.push('--- ' + aname + ' ---\n' + atext);
+      }
+      if (blocks.length) {
+        messageText = '[첨부 파일]\n' + blocks.join('\n\n') + '\n\n' + userText;
+      }
+    }
 
     // Busy guard (config.DIRECT_CHAT_BLOCKS). Default false = allow concurrent.
     if (CFG().DIRECT_CHAT_BLOCKS && agent.busy) {
@@ -13521,8 +13848,9 @@ window.App = window.App || {};
       return noop;
     }
 
-    // Record the user turn.
-    agent.conversation.push({ role: 'user', content: userText });
+    // Record the user turn. The API/agent sees messageText (attachments inline);
+    // the visible transcript shows the raw userText the human typed.
+    agent.conversation.push({ role: 'user', content: messageText });
     try { if (App.UI && App.UI.appendTranscript) App.UI.appendTranscript(agent.id, 'user', userText); } catch (e) {}
 
     // Decide if this agent should be allowed web search (researcher / global toggle).
@@ -14129,6 +14457,7 @@ window.App = window.App || {};
       var handle = App.API.stream({
         apiKey: settings.apiKey,
         openaiKey: settings.openaiKey,
+        geminiKey: settings.geminiKey,
         model: model,
         system: sys,
         messages: [{ role: 'user', content: content }],
@@ -14164,13 +14493,15 @@ window.App = window.App || {};
     }
   }
 
-  // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
-  // local companion (subscription proxy needs no key). Mirrors api.js's guard so
-  // companion-only / GPT-only setups aren't blocked before the request is built.
+  // Usable credentials for a model? gemini → geminiKey; openai → openaiKey;
+  // anthropic → apiKey OR the local companion (subscription proxy needs no key).
+  // Mirrors api.js's guard so companion-only / GPT-only / Gemini-only setups aren't
+  // blocked before the request is built.
   function hasCredsFor(model) {
     var set = (STATE() && STATE().settings) || {};
     var prov = (CFG().providerOf ? CFG().providerOf(model)
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
+    if (prov === 'gemini') return !!set.geminiKey;
     if (prov === 'openai') return !!set.openaiKey;
     return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
   }
@@ -14619,6 +14950,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,        // GPT-model boss support
+      geminiKey: settings.geminiKey,        // Gemini-model boss support
       model: (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL,
       system: sys,
       messages: [{ role: 'user', content: userMsg }],
@@ -15037,6 +15369,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,        // GPT-model worker support
+      geminiKey: settings.geminiKey,        // Gemini-model worker support
       model: agent.model || settings.defaultModel,
       system: sys,
       messages: messages,
@@ -15267,6 +15600,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: qaModel,
       system: sys,
       messages: [{ role: 'user', content: artifactText }],
@@ -15770,6 +16104,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: (a.model || settings.defaultModel || CFG().FAST_MODEL),
       system: sys,
       messages: [{ role: 'user', content: content }],
@@ -15943,6 +16278,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: model,
       system: sys,
       messages: [{ role: 'user', content: content }],
@@ -16063,6 +16399,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: model,
       system: sys,
       messages: [{ role: 'user', content: content }],
@@ -16187,6 +16524,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,        // GPT-model boss support
+      geminiKey: settings.geminiKey,        // Gemini-model boss support
       model: (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL,
       system: synthSys,
       messages: [{ role: 'user', content: content }],
@@ -16455,6 +16793,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL,
       system: sys,
       messages: [{ role: 'user', content: userMsg }],
@@ -16798,6 +17137,7 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: model,
       system: sys,
       messages: [{ role: 'user', content: content }],
@@ -17087,6 +17427,7 @@ window.App = window.App || {};
       var handle = App.API.stream({
         apiKey: settings.apiKey,
         openaiKey: settings.openaiKey,
+        geminiKey: settings.geminiKey,
         model: agent.model || settings.defaultModel,
         system: sys,
         messages: messages,
@@ -17211,6 +17552,7 @@ window.App = window.App || {};
       var handle = App.API.stream({
         apiKey: settings.apiKey,
         openaiKey: settings.openaiKey,
+        geminiKey: settings.geminiKey,
         model: agent.model || settings.defaultModel,
         system: sys,
         messages: messages,
@@ -19933,11 +20275,12 @@ window.App = window.App || {};
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); dispatchBoss(boardInput); }
       });
 
-      // Attach-input controls (📎) next to the HUD + board dispatch fields.
+      // Attach-input controls (📎) next to the HUD + board dispatch fields,
+      // and (once the panel exists in the DOM) the per-agent chat attach unit.
       ensureAttachControls();
+      ensureAgentAttachControls();
 
-      // 🗳️ Opinion Warehouse launcher (after the presets button) + overload banner.
-      ensureOpinionButton();
+      // Overload banner + rate-limit poll.
       ensureOverloadBanner();
       startOverloadPoll();
 
@@ -20436,6 +20779,27 @@ window.App = window.App || {};
     refreshAttachChips();
   }
 
+  // Inject the 📎 attach unit into the AGENT panel compose row (scope 'agent'),
+  // so per-agent direct chats can attach files. host = the .panel-compose around
+  // #panel-agent-input; beforeNode = #panel-agent-send. Reuses buildAttachUnit
+  // (shared _attachments store). Idempotent + defensive (missing panel → no-op).
+  function ensureAgentAttachControls() {
+    if (typeof document === 'undefined') return;
+    var sendBtn = $('panel-agent-send');
+    var inputEl = $('panel-agent-input');
+    var host = (sendBtn && sendBtn.parentNode) || null;
+    if (!host && inputEl) {
+      // climb to the enclosing .panel-compose if the send button is absent
+      host = inputEl;
+      while (host && host.classList && !host.classList.contains('panel-compose')) {
+        host = host.parentNode;
+      }
+    }
+    if (!host) return;
+    buildAttachUnit(host, sendBtn, 'agent');
+    refreshAttachChips();
+  }
+
   // The board dispatch row has no id in shell.html — find it via the send button.
   function boardDispatchHost() {
     var send = $('board-send');
@@ -20510,10 +20874,10 @@ window.App = window.App || {};
     }
   }
 
-  // Update both scope chips to reflect the current _attachments count.
+  // Update every scope chip (hud / board / agent) to reflect the current count.
   function refreshAttachChips() {
     var n = _attachments.length;
-    ['hud', 'board'].forEach(function (scope) {
+    ['hud', 'board', 'agent'].forEach(function (scope) {
       var chip = $('attach-chip-' + scope);
       var txt = $('attach-chip-text-' + scope);
       if (txt) txt.textContent = T('attach.count', n + ' file(s) attached', { count: n });
@@ -20592,7 +20956,14 @@ window.App = window.App || {};
     if (!text) return;
     input.value = '';
     var a = AGENTS() && AGENTS().byId ? AGENTS().byId(s.selectedAgentId) : null;
-    if (a && AGENTS().chat) AGENTS().chat(a, text);
+    if (a && AGENTS().chat) {
+      // Per-agent file attach: consume the staged 📎 files (agent-scope chip clears
+      // via the shared consume/clear helper the hud/board dispatch use) and pass
+      // them as opts.attachments so Agents.chat prepends a [첨부 파일] block.
+      var atts = consumeAttachments();
+      if (atts) AGENTS().chat(a, text, { attachments: atts });
+      else AGENTS().chat(a, text);
+    }
   }
 
   // ===========================================================================
@@ -20640,7 +21011,7 @@ window.App = window.App || {};
     return /rate.?limit|overload|429|529|too many requests/i.test(msg);
   }
 
-  // Inject (once) the small CSS the overload/opinion controls need. We can only
+  // Inject (once) the small CSS the overload controls need. We can only
   // edit ui.js, so styles ship here via a created <style> node (no literal tags in
   // strings — built with createElement + textContent). Idempotent by id.
   function ensureOverloadStyles() {
@@ -20745,12 +21116,12 @@ window.App = window.App || {};
       // Live agents carry an explicit agent.model that the orchestrator prefers
       // over settings.* — so the overloaded roster must be rewritten too, or the
       // boss/workers keep using Opus/Sonnet and the button does nothing. Downgrade
-      // only Anthropic agents (leave OpenAI/GPT agents on their provider — Haiku
-      // has no OpenAI creds path).
+      // ONLY Anthropic agents (leave OpenAI/GPT and Gemini agents on their own
+      // provider — Haiku has no creds path for those and would strand the roster).
       var ags = s.agents || [];
       var providerOf = CFG().providerOf || function () { return 'anthropic'; };
       for (var i = 0; i < ags.length; i++) {
-        if (ags[i] && providerOf(ags[i].model) !== 'openai') ags[i].model = HAIKU_MODEL_ID;
+        if (ags[i] && providerOf(ags[i].model) === 'anthropic') ags[i].model = HAIKU_MODEL_ID;
       }
       try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
       try { if (UI.refreshAgentList) UI.refreshAgentList(); } catch (e) {}
@@ -20780,98 +21151,6 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
-  // OPINION WAREHOUSE launcher (🗳️) — apply the 'opinion-warehouse' preset, then
-  // pre-fill the dispatch input with config.OPINION_GOAL_TEMPLATE and nudge the
-  // user toward the 📎 attach control so they just attach/paste opinions + DISPATCH.
-  // Reuses the existing preset-apply path (App.Store.applyPreset). Feature-detects
-  // both the preset and the template so it never throws when either is absent.
-  // ===========================================================================
-  function launchOpinionWarehouse() {
-    var presetId = 'opinion-warehouse';
-    var applied = false;
-    try {
-      if (App.Store && App.Store.applyPreset) applied = !!App.Store.applyPreset(presetId);
-    } catch (e) { applied = false; }
-    if (applied) {
-      UI.closeAgentPanel();
-      UI.refresh();
-      UI.refreshArtifacts();
-      var pname = presetDisplayName(presetId);
-      UI.toast(T('opinion.launch', 'Opinion Warehouse') + ' — ' + pname, 'ok');
-    } else {
-      // Preset missing/failed: still pre-fill the goal so the feature is useful.
-      UI.toast(T('opinion.launch.hint', 'Collect, classify & summarize classmates opinions'));
-    }
-
-    // Pre-fill the goal template into both dispatch inputs.
-    var tpl = (CFG() && CFG().OPINION_GOAL_TEMPLATE) || '';
-    var hud = $('hud-task-input');
-    var board = $('board-input');
-    if (tpl) {
-      if (hud) hud.value = tpl;
-      if (board) board.value = tpl;
-    }
-
-    // Point the user at the 📎 attach control: focus it + a brief pulse hint.
-    var attach = $('attach-btn-hud') || $('attach-btn-board');
-    if (attach) {
-      try { attach.focus(); } catch (e) {}
-      try {
-        attach.classList.add('attn-pulse');
-        setTimeout(function () { try { attach.classList.remove('attn-pulse'); } catch (e) {} }, 2400);
-      } catch (e) {}
-    } else if (hud && hud.focus) {
-      try { hud.focus(); } catch (e) {}
-    }
-  }
-
-  // Inject (once) the 🗳️ Opinion Warehouse launcher into the HUD controls, right
-  // after the presets ("New Co.") button. Mirrors the shell's HUD button markup so
-  // it inherits styling/i18n. No anchor → no-op (defensive). Idempotent by id.
-  function ensureOpinionButton() {
-    if (typeof document === 'undefined') return;
-    ensureOverloadStyles();
-    if ($('btn-opinion')) return;
-    var nav = $('hud-controls');
-    var anchor = $('btn-presets');
-    var host = nav || (anchor && anchor.parentNode);
-    if (!host) return;
-
-    var btn = el('button', 'btn');
-    btn.id = 'btn-opinion';
-    btn.type = 'button';
-    btn.title = T('opinion.launch.hint', 'Collect, classify & summarize classmates opinions');
-    btn.setAttribute('data-i18n-title', 'opinion.launch.hint'); // retranslate tooltip on language switch
-    btn.setAttribute('aria-label', T('opinion.launch', 'Opinion Warehouse'));
-    var ico = el('span', 'btn-ico', '🗳️');
-    ico.setAttribute('aria-hidden', 'true');
-    var lbl = el('span', 'btn-lbl', T('opinion.launch', 'Opinion Warehouse'));
-    lbl.setAttribute('data-i18n', 'opinion.launch');
-    btn.appendChild(ico);
-    btn.appendChild(lbl);
-    on(btn, 'click', function () { launchOpinionWarehouse(); });
-
-    if (anchor && anchor.parentNode === host && anchor.nextSibling) {
-      host.insertBefore(btn, anchor.nextSibling);
-    } else if (anchor && anchor.parentNode === host) {
-      host.appendChild(btn);
-    } else {
-      host.appendChild(btn);
-    }
-  }
-
-  // Look up a preset's display name from config (for the toast). Falls back to id.
-  function presetDisplayName(id) {
-    try {
-      var ps = (CFG() && CFG().PRESETS) || [];
-      for (var i = 0; i < ps.length; i++) {
-        if (ps[i] && ps[i].id === id) return ps[i].name || id;
-      }
-    } catch (e) {}
-    return id;
-  }
-
-  // ===========================================================================
   // AGENT PANEL
   // ===========================================================================
   UI.openAgentPanel = function (agentId) {
@@ -20882,6 +21161,7 @@ window.App = window.App || {};
     var panel = $('panel-agent');
     show(panel);
     ensureBreakButton();
+    ensureAgentAttachControls();  // 📎 attach unit in the compose row (once)
     ensurePanelExtras();          // mood + customize + terminal/log sections (once)
     refreshSelectedPanel();
     refreshPersonaPanel(agentId);
@@ -21580,6 +21860,9 @@ window.App = window.App || {};
     // Inject (once) + load the OpenAI key field next to the Anthropic key.
     ensureOpenAIKeyField();
     var oaiI = $('set-openai-key'); if (oaiI) { oaiI.value = settings.openaiKey || ''; oaiI.type = 'password'; }
+    // Inject (once) + load the Gemini key field next to the OpenAI key.
+    ensureGeminiKeyField();
+    var gemI = $('set-gemini-key'); if (gemI) { gemI.value = settings.geminiKey || ''; gemI.type = 'password'; }
     // Inject (once) + load the local-companion toggle + URL.
     ensureCompanionField();
     // Inject (once) the EN/KO language toggle.
@@ -21873,12 +22156,63 @@ window.App = window.App || {};
     oaiI.type = (oaiI.type === 'password') ? 'text' : 'password';
   }
 
-  // Inject (once) the local-companion controls (checkbox + URL) after the OpenAI
-  // key field, reusing the existing .field styling. Lets Claude-model agents run
+  // Inject (once) a GEMINI-key field (id 'set-gemini-key' + show/hide toggle)
+  // right after the OpenAI-key field, mirroring ensureOpenAIKeyField and reusing
+  // the same .field / .field-row / .btn styling. i18n via set.geminikey /
+  // set.geminikey.ph (data-i18n attrs so they retranslate on language switch).
+  // Idempotent; no anchor → no-op (defensive).
+  function ensureGeminiKeyField() {
+    if ($('set-gemini-key')) return; // already injected
+    var anchorInput = $('set-openai-key');
+    if (!anchorInput || typeof document === 'undefined') return;
+    // climb to the enclosing .field label of the OpenAI key
+    var anchorField = anchorInput;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    if (!anchorField || !anchorField.parentNode) return;
+
+    var field = el('label', 'field');
+    var lbl = el('span', 'field-label', T('set.geminikey', 'GEMINI API KEY'));
+    lbl.setAttribute('data-i18n', 'set.geminikey');
+    var row = el('span', 'field-row');
+    var input = document.createElement('input');
+    input.id = 'set-gemini-key';
+    input.type = 'password';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.placeholder = T('set.geminikey.ph', 'AIza...  (stored locally only)');
+    input.setAttribute('data-i18n-ph', 'set.geminikey.ph');
+    var toggle = el('button', 'btn btn-sq', '👁');
+    toggle.type = 'button';
+    toggle.title = 'Show / hide key';
+    toggle.setAttribute('aria-label', 'Toggle visibility');
+    on(toggle, 'click', function () { toggleGeminiKeyVisible(); });
+    row.appendChild(input);
+    row.appendChild(toggle);
+    var hint = el('span', 'field-hint',
+      'Stored only in your browser (localStorage). Used for Gemini-model agents.');
+    field.appendChild(lbl);
+    field.appendChild(row);
+    field.appendChild(hint);
+
+    // insert directly after the OpenAI-key field
+    if (anchorField.nextSibling) anchorField.parentNode.insertBefore(field, anchorField.nextSibling);
+    else anchorField.parentNode.appendChild(field);
+  }
+
+  function toggleGeminiKeyVisible() {
+    var gemI = $('set-gemini-key');
+    if (!gemI) return;
+    gemI.type = (gemI.type === 'password') ? 'text' : 'password';
+  }
+
+  // Inject (once) the local-companion controls (checkbox + URL) after the API
+  // key fields, reusing the existing .field styling. Lets Claude-model agents run
   // through the local subscription proxy (companion.py) with NO Anthropic key.
   function ensureCompanionField() {
     if ($('set-companion-toggle')) return; // already injected
-    var anchor = $('set-openai-key');
+    var anchor = $('set-gemini-key') || $('set-openai-key');
     if (!anchor || typeof document === 'undefined') return;
     var anchorField = anchor;
     while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
@@ -22206,6 +22540,7 @@ window.App = window.App || {};
     var settings = s.settings || (s.settings = {});
     var keyI = $('set-apikey'); if (keyI) settings.apiKey = keyI.value.trim();
     var oaiI = $('set-openai-key'); if (oaiI) settings.openaiKey = oaiI.value.trim();
+    var gemI = $('set-gemini-key'); if (gemI) settings.geminiKey = gemI.value.trim();
     var ctog = $('set-companion-toggle'); if (ctog) settings.useCompanion = !!ctog.checked;
     var curl = $('set-companion-url'); if (curl) settings.companionUrl = curl.value.trim() || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var prevDefault = settings.defaultModel, prevBoss = settings.bossModel;

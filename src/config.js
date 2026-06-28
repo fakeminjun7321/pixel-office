@@ -625,6 +625,8 @@ window.App = window.App || {};
     // API
     API_URL: 'https://api.anthropic.com/v1/messages',
     OPENAI_URL: 'https://api.openai.com/v1/chat/completions',   // v2: OpenAI chat-completions endpoint
+    // Gemini generative-language API base. api.js builds <base><model>:streamGenerateContent?alt=sse.
+    GEMINI_URL: 'https://generativelanguage.googleapis.com/v1beta/models/',
     // v2: local subscription proxy (companion.py). The companion is OPT-IN and OFF
     // by default (store defaultSettings().useCompanion === false), so a fresh or
     // migrated company talks to the cloud API directly and never depends on a local
@@ -634,14 +636,16 @@ window.App = window.App || {};
     DEFAULT_MODEL: 'claude-sonnet-4-6',          // worker default
     BOSS_MODEL:    'claude-opus-4-8',            // boss default
     FAST_MODEL:    'claude-haiku-4-5-20251001',
-    // v2: provider-tagged model list (Anthropic + OpenAI). provider drives API.stream routing.
+    // v2: provider-tagged model list (Anthropic + OpenAI + Gemini). provider drives API.stream routing.
     MODELS: [
-      { id: 'claude-opus-4-8',           label: 'Opus 4.8',   provider: 'anthropic' },
-      { id: 'claude-sonnet-4-6',         label: 'Sonnet 4.6', provider: 'anthropic' },
-      { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5',  provider: 'anthropic' },
-      { id: 'gpt-4o',                    label: 'GPT-4o',     provider: 'openai' },
-      { id: 'gpt-4o-mini',               label: 'GPT-4o mini', provider: 'openai' },
-      { id: 'gpt-4.1',                   label: 'GPT-4.1',    provider: 'openai' }
+      { id: 'claude-opus-4-8',           label: 'Opus 4.8',        provider: 'anthropic' },
+      { id: 'claude-sonnet-4-6',         label: 'Sonnet 4.6',      provider: 'anthropic' },
+      { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5',       provider: 'anthropic' },
+      { id: 'gpt-5.5',                   label: 'GPT-5.5',         provider: 'openai' },
+      { id: 'gpt-5.4',                   label: 'GPT-5.4',         provider: 'openai' },
+      { id: 'gpt-5.4-mini',              label: 'GPT-5.4 mini',    provider: 'openai' },
+      { id: 'gemini-3.1-pro',            label: 'Gemini 3.1 Pro',  provider: 'gemini' },
+      { id: 'gemini-3.1-flash',          label: 'Gemini 3.1 Flash', provider: 'gemini' }
     ],
     MAX_TOKENS: 4096,
     WEB_SEARCH_TOOL: { type: 'web_search_20250305', name: 'web_search', max_uses: 5 },
@@ -661,9 +665,12 @@ window.App = window.App || {};
     API_MIN_SPACING_MS: 400,      // minimum ms between request STARTS
     API_COOLDOWN_GROWTH: 1.6,     // spacing multiplier after a 429/529; decays toward API_MIN_SPACING_MS on success
 
-    // v2: provider resolver — OpenAI ids start with gpt/o1/o3/o4/chatgpt; else Anthropic.
+    // provider resolver — gemini ids start with gemini; OpenAI ids start with
+    // gpt/o1/o3/o4/chatgpt; else Anthropic.
     providerOf: function (modelId) {
-      return /^(gpt|o1|o3|o4|chatgpt)/i.test(String(modelId || '')) ? 'openai' : 'anthropic';
+      var m = String(modelId || '');
+      if (/^gemini/i.test(m)) return 'gemini';
+      return /^(gpt|o1|o3|o4|chatgpt)/i.test(m) ? 'openai' : 'anthropic';
     },
 
     // boss orchestration prompts (section 6.3). BOSS_SYNTH_SYSTEM is read by
@@ -717,15 +724,6 @@ window.App = window.App || {};
     // Default UI language. Korean is now the default (store defaults settings.lang
     // to this, and i18n.getLang() falls back to it when settings.lang is unset).
     DEFAULT_LANG: 'ko',
-
-    // ---------------------------------------------------------------------------
-    // v7 section OPINION WAREHOUSE — a ready-to-use Korean goal pre-filled into the
-    // dispatch input by ui.js when the user launches the 'opinion-warehouse' preset
-    // (App.config.PRESETS[0]). The user then attaches/pastes classmates' opinions
-    // via the attach control and dispatches. Single source of truth for the launcher.
-    // ---------------------------------------------------------------------------
-    OPINION_GOAL_TEMPLATE:
-      '아래에 첨부/입력된 반 친구들의 의견을 수집·분류·중복 제거하고, 주제별 표 + 핵심 요약 + 소수의견까지 포함한 정리 리포트를 만들어줘.',
 
     // ---------------------------------------------------------------------------
     // SHARE — hash fragment key for shareable state links. App.Share.exportLink
@@ -913,29 +911,6 @@ window.App = window.App || {};
   // ---------------------------------------------------------------------------
   App.config.PRESETS = [
     {
-      id: 'opinion-warehouse',
-      name: '의견 수립 창고',
-      desc: '반 친구들의 의견을 수집·분류·중복 제거하고 요약 리포트로 정리하는 팀.',
-      icon: '🗳️',
-      agents: [
-        // facilitator — runs the discussion as the orchestrator (boss).
-        { name: '진행자', role: 'boss' },
-        // collector — reads the attached/pasted opinions and pulls out every distinct point (generalist).
-        { name: '수집가', role: 'generalist' },
-        // researcher — gathers context/background for the topic.
-        { name: '조사원', role: 'researcher' },
-        // analyst — classifies + structures + de-duplicates the collected opinions (qa role = critical/structured).
-        { name: '분석가', role: 'qa' },
-        // writer — turns the analysis into a clean summary report (themed tables + key summary + minority view).
-        { name: '작성자', role: 'writer' }
-      ],
-      sampleGoals: [
-        '반 친구들의 [수학여행 장소]에 대한 의견을 수집·분류·중복 제거해서 주제별 표 + 요약 리포트로 정리해줘',
-        '학급 회의 안건 [체육대회 종목]에 대한 찬반 의견을 모아 입장별로 정리하고 소수의견도 따로 정리해줘',
-        '[축제 부스 아이디어]에 대한 친구들의 제안을 주제별로 묶고 핵심 요약과 함께 정리해줘'
-      ]
-    },
-    {
       id: 'blog-team',
       name: 'Blog Team',
       desc: 'A writer, a researcher, and an editor that ship polished posts.',
@@ -983,9 +958,12 @@ window.App = window.App || {};
     'claude-sonnet-4-6':         { in: 3.00,  out: 15.00 },
     'claude-haiku-4-5-20251001': { in: 1.00,  out: 5.00  },
     // OpenAI (approximate, USD / 1M tokens)
-    'gpt-4o':                    { in: 2.50,  out: 10.00 },
-    'gpt-4o-mini':               { in: 0.15,  out: 0.60  },
-    'gpt-4.1':                   { in: 2.00,  out: 8.00  }
+    'gpt-5.5':                   { in: 5.00,  out: 15.00 },
+    'gpt-5.4':                   { in: 2.50,  out: 10.00 },
+    'gpt-5.4-mini':              { in: 0.30,  out: 1.20  },
+    // Gemini (approximate, USD / 1M tokens)
+    'gemini-3.1-pro':            { in: 2.00,  out: 10.00 },
+    'gemini-3.1-flash':          { in: 0.30,  out: 1.20  }
   };
 
   // ---------------------------------------------------------------------------
@@ -1112,9 +1090,11 @@ window.App = window.App || {};
     },
     firstWords: function (s, n) { return String(s || '').split(/\s+/).slice(0, n).join(' '); },
     truncate: function (s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; },
-    // v2: mirror of App.config.providerOf so callers can resolve provider from either surface.
+    // mirror of App.config.providerOf so callers can resolve provider from either surface.
     providerOf: function (modelId) {
-      return /^(gpt|o1|o3|o4|chatgpt)/i.test(String(modelId || '')) ? 'openai' : 'anthropic';
+      var m = String(modelId || '');
+      if (/^gemini/i.test(m)) return 'gemini';
+      return /^(gpt|o1|o3|o4|chatgpt)/i.test(m) ? 'openai' : 'anthropic';
     }
   };
 

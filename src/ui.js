@@ -174,11 +174,12 @@ window.App = window.App || {};
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); dispatchBoss(boardInput); }
       });
 
-      // Attach-input controls (📎) next to the HUD + board dispatch fields.
+      // Attach-input controls (📎) next to the HUD + board dispatch fields,
+      // and (once the panel exists in the DOM) the per-agent chat attach unit.
       ensureAttachControls();
+      ensureAgentAttachControls();
 
-      // 🗳️ Opinion Warehouse launcher (after the presets button) + overload banner.
-      ensureOpinionButton();
+      // Overload banner + rate-limit poll.
       ensureOverloadBanner();
       startOverloadPoll();
 
@@ -677,6 +678,27 @@ window.App = window.App || {};
     refreshAttachChips();
   }
 
+  // Inject the 📎 attach unit into the AGENT panel compose row (scope 'agent'),
+  // so per-agent direct chats can attach files. host = the .panel-compose around
+  // #panel-agent-input; beforeNode = #panel-agent-send. Reuses buildAttachUnit
+  // (shared _attachments store). Idempotent + defensive (missing panel → no-op).
+  function ensureAgentAttachControls() {
+    if (typeof document === 'undefined') return;
+    var sendBtn = $('panel-agent-send');
+    var inputEl = $('panel-agent-input');
+    var host = (sendBtn && sendBtn.parentNode) || null;
+    if (!host && inputEl) {
+      // climb to the enclosing .panel-compose if the send button is absent
+      host = inputEl;
+      while (host && host.classList && !host.classList.contains('panel-compose')) {
+        host = host.parentNode;
+      }
+    }
+    if (!host) return;
+    buildAttachUnit(host, sendBtn, 'agent');
+    refreshAttachChips();
+  }
+
   // The board dispatch row has no id in shell.html — find it via the send button.
   function boardDispatchHost() {
     var send = $('board-send');
@@ -751,10 +773,10 @@ window.App = window.App || {};
     }
   }
 
-  // Update both scope chips to reflect the current _attachments count.
+  // Update every scope chip (hud / board / agent) to reflect the current count.
   function refreshAttachChips() {
     var n = _attachments.length;
-    ['hud', 'board'].forEach(function (scope) {
+    ['hud', 'board', 'agent'].forEach(function (scope) {
       var chip = $('attach-chip-' + scope);
       var txt = $('attach-chip-text-' + scope);
       if (txt) txt.textContent = T('attach.count', n + ' file(s) attached', { count: n });
@@ -833,7 +855,14 @@ window.App = window.App || {};
     if (!text) return;
     input.value = '';
     var a = AGENTS() && AGENTS().byId ? AGENTS().byId(s.selectedAgentId) : null;
-    if (a && AGENTS().chat) AGENTS().chat(a, text);
+    if (a && AGENTS().chat) {
+      // Per-agent file attach: consume the staged 📎 files (agent-scope chip clears
+      // via the shared consume/clear helper the hud/board dispatch use) and pass
+      // them as opts.attachments so Agents.chat prepends a [첨부 파일] block.
+      var atts = consumeAttachments();
+      if (atts) AGENTS().chat(a, text, { attachments: atts });
+      else AGENTS().chat(a, text);
+    }
   }
 
   // ===========================================================================
@@ -881,7 +910,7 @@ window.App = window.App || {};
     return /rate.?limit|overload|429|529|too many requests/i.test(msg);
   }
 
-  // Inject (once) the small CSS the overload/opinion controls need. We can only
+  // Inject (once) the small CSS the overload controls need. We can only
   // edit ui.js, so styles ship here via a created <style> node (no literal tags in
   // strings — built with createElement + textContent). Idempotent by id.
   function ensureOverloadStyles() {
@@ -986,12 +1015,12 @@ window.App = window.App || {};
       // Live agents carry an explicit agent.model that the orchestrator prefers
       // over settings.* — so the overloaded roster must be rewritten too, or the
       // boss/workers keep using Opus/Sonnet and the button does nothing. Downgrade
-      // only Anthropic agents (leave OpenAI/GPT agents on their provider — Haiku
-      // has no OpenAI creds path).
+      // ONLY Anthropic agents (leave OpenAI/GPT and Gemini agents on their own
+      // provider — Haiku has no creds path for those and would strand the roster).
       var ags = s.agents || [];
       var providerOf = CFG().providerOf || function () { return 'anthropic'; };
       for (var i = 0; i < ags.length; i++) {
-        if (ags[i] && providerOf(ags[i].model) !== 'openai') ags[i].model = HAIKU_MODEL_ID;
+        if (ags[i] && providerOf(ags[i].model) === 'anthropic') ags[i].model = HAIKU_MODEL_ID;
       }
       try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
       try { if (UI.refreshAgentList) UI.refreshAgentList(); } catch (e) {}
@@ -1021,98 +1050,6 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
-  // OPINION WAREHOUSE launcher (🗳️) — apply the 'opinion-warehouse' preset, then
-  // pre-fill the dispatch input with config.OPINION_GOAL_TEMPLATE and nudge the
-  // user toward the 📎 attach control so they just attach/paste opinions + DISPATCH.
-  // Reuses the existing preset-apply path (App.Store.applyPreset). Feature-detects
-  // both the preset and the template so it never throws when either is absent.
-  // ===========================================================================
-  function launchOpinionWarehouse() {
-    var presetId = 'opinion-warehouse';
-    var applied = false;
-    try {
-      if (App.Store && App.Store.applyPreset) applied = !!App.Store.applyPreset(presetId);
-    } catch (e) { applied = false; }
-    if (applied) {
-      UI.closeAgentPanel();
-      UI.refresh();
-      UI.refreshArtifacts();
-      var pname = presetDisplayName(presetId);
-      UI.toast(T('opinion.launch', 'Opinion Warehouse') + ' — ' + pname, 'ok');
-    } else {
-      // Preset missing/failed: still pre-fill the goal so the feature is useful.
-      UI.toast(T('opinion.launch.hint', 'Collect, classify & summarize classmates opinions'));
-    }
-
-    // Pre-fill the goal template into both dispatch inputs.
-    var tpl = (CFG() && CFG().OPINION_GOAL_TEMPLATE) || '';
-    var hud = $('hud-task-input');
-    var board = $('board-input');
-    if (tpl) {
-      if (hud) hud.value = tpl;
-      if (board) board.value = tpl;
-    }
-
-    // Point the user at the 📎 attach control: focus it + a brief pulse hint.
-    var attach = $('attach-btn-hud') || $('attach-btn-board');
-    if (attach) {
-      try { attach.focus(); } catch (e) {}
-      try {
-        attach.classList.add('attn-pulse');
-        setTimeout(function () { try { attach.classList.remove('attn-pulse'); } catch (e) {} }, 2400);
-      } catch (e) {}
-    } else if (hud && hud.focus) {
-      try { hud.focus(); } catch (e) {}
-    }
-  }
-
-  // Inject (once) the 🗳️ Opinion Warehouse launcher into the HUD controls, right
-  // after the presets ("New Co.") button. Mirrors the shell's HUD button markup so
-  // it inherits styling/i18n. No anchor → no-op (defensive). Idempotent by id.
-  function ensureOpinionButton() {
-    if (typeof document === 'undefined') return;
-    ensureOverloadStyles();
-    if ($('btn-opinion')) return;
-    var nav = $('hud-controls');
-    var anchor = $('btn-presets');
-    var host = nav || (anchor && anchor.parentNode);
-    if (!host) return;
-
-    var btn = el('button', 'btn');
-    btn.id = 'btn-opinion';
-    btn.type = 'button';
-    btn.title = T('opinion.launch.hint', 'Collect, classify & summarize classmates opinions');
-    btn.setAttribute('data-i18n-title', 'opinion.launch.hint'); // retranslate tooltip on language switch
-    btn.setAttribute('aria-label', T('opinion.launch', 'Opinion Warehouse'));
-    var ico = el('span', 'btn-ico', '🗳️');
-    ico.setAttribute('aria-hidden', 'true');
-    var lbl = el('span', 'btn-lbl', T('opinion.launch', 'Opinion Warehouse'));
-    lbl.setAttribute('data-i18n', 'opinion.launch');
-    btn.appendChild(ico);
-    btn.appendChild(lbl);
-    on(btn, 'click', function () { launchOpinionWarehouse(); });
-
-    if (anchor && anchor.parentNode === host && anchor.nextSibling) {
-      host.insertBefore(btn, anchor.nextSibling);
-    } else if (anchor && anchor.parentNode === host) {
-      host.appendChild(btn);
-    } else {
-      host.appendChild(btn);
-    }
-  }
-
-  // Look up a preset's display name from config (for the toast). Falls back to id.
-  function presetDisplayName(id) {
-    try {
-      var ps = (CFG() && CFG().PRESETS) || [];
-      for (var i = 0; i < ps.length; i++) {
-        if (ps[i] && ps[i].id === id) return ps[i].name || id;
-      }
-    } catch (e) {}
-    return id;
-  }
-
-  // ===========================================================================
   // AGENT PANEL
   // ===========================================================================
   UI.openAgentPanel = function (agentId) {
@@ -1123,6 +1060,7 @@ window.App = window.App || {};
     var panel = $('panel-agent');
     show(panel);
     ensureBreakButton();
+    ensureAgentAttachControls();  // 📎 attach unit in the compose row (once)
     ensurePanelExtras();          // mood + customize + terminal/log sections (once)
     refreshSelectedPanel();
     refreshPersonaPanel(agentId);
@@ -1821,6 +1759,9 @@ window.App = window.App || {};
     // Inject (once) + load the OpenAI key field next to the Anthropic key.
     ensureOpenAIKeyField();
     var oaiI = $('set-openai-key'); if (oaiI) { oaiI.value = settings.openaiKey || ''; oaiI.type = 'password'; }
+    // Inject (once) + load the Gemini key field next to the OpenAI key.
+    ensureGeminiKeyField();
+    var gemI = $('set-gemini-key'); if (gemI) { gemI.value = settings.geminiKey || ''; gemI.type = 'password'; }
     // Inject (once) + load the local-companion toggle + URL.
     ensureCompanionField();
     // Inject (once) the EN/KO language toggle.
@@ -2114,12 +2055,63 @@ window.App = window.App || {};
     oaiI.type = (oaiI.type === 'password') ? 'text' : 'password';
   }
 
-  // Inject (once) the local-companion controls (checkbox + URL) after the OpenAI
-  // key field, reusing the existing .field styling. Lets Claude-model agents run
+  // Inject (once) a GEMINI-key field (id 'set-gemini-key' + show/hide toggle)
+  // right after the OpenAI-key field, mirroring ensureOpenAIKeyField and reusing
+  // the same .field / .field-row / .btn styling. i18n via set.geminikey /
+  // set.geminikey.ph (data-i18n attrs so they retranslate on language switch).
+  // Idempotent; no anchor → no-op (defensive).
+  function ensureGeminiKeyField() {
+    if ($('set-gemini-key')) return; // already injected
+    var anchorInput = $('set-openai-key');
+    if (!anchorInput || typeof document === 'undefined') return;
+    // climb to the enclosing .field label of the OpenAI key
+    var anchorField = anchorInput;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    if (!anchorField || !anchorField.parentNode) return;
+
+    var field = el('label', 'field');
+    var lbl = el('span', 'field-label', T('set.geminikey', 'GEMINI API KEY'));
+    lbl.setAttribute('data-i18n', 'set.geminikey');
+    var row = el('span', 'field-row');
+    var input = document.createElement('input');
+    input.id = 'set-gemini-key';
+    input.type = 'password';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.placeholder = T('set.geminikey.ph', 'AIza...  (stored locally only)');
+    input.setAttribute('data-i18n-ph', 'set.geminikey.ph');
+    var toggle = el('button', 'btn btn-sq', '👁');
+    toggle.type = 'button';
+    toggle.title = 'Show / hide key';
+    toggle.setAttribute('aria-label', 'Toggle visibility');
+    on(toggle, 'click', function () { toggleGeminiKeyVisible(); });
+    row.appendChild(input);
+    row.appendChild(toggle);
+    var hint = el('span', 'field-hint',
+      'Stored only in your browser (localStorage). Used for Gemini-model agents.');
+    field.appendChild(lbl);
+    field.appendChild(row);
+    field.appendChild(hint);
+
+    // insert directly after the OpenAI-key field
+    if (anchorField.nextSibling) anchorField.parentNode.insertBefore(field, anchorField.nextSibling);
+    else anchorField.parentNode.appendChild(field);
+  }
+
+  function toggleGeminiKeyVisible() {
+    var gemI = $('set-gemini-key');
+    if (!gemI) return;
+    gemI.type = (gemI.type === 'password') ? 'text' : 'password';
+  }
+
+  // Inject (once) the local-companion controls (checkbox + URL) after the API
+  // key fields, reusing the existing .field styling. Lets Claude-model agents run
   // through the local subscription proxy (companion.py) with NO Anthropic key.
   function ensureCompanionField() {
     if ($('set-companion-toggle')) return; // already injected
-    var anchor = $('set-openai-key');
+    var anchor = $('set-gemini-key') || $('set-openai-key');
     if (!anchor || typeof document === 'undefined') return;
     var anchorField = anchor;
     while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
@@ -2447,6 +2439,7 @@ window.App = window.App || {};
     var settings = s.settings || (s.settings = {});
     var keyI = $('set-apikey'); if (keyI) settings.apiKey = keyI.value.trim();
     var oaiI = $('set-openai-key'); if (oaiI) settings.openaiKey = oaiI.value.trim();
+    var gemI = $('set-gemini-key'); if (gemI) settings.geminiKey = gemI.value.trim();
     var ctog = $('set-companion-toggle'); if (ctog) settings.useCompanion = !!ctog.checked;
     var curl = $('set-companion-url'); if (curl) settings.companionUrl = curl.value.trim() || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var prevDefault = settings.defaultModel, prevBoss = settings.bossModel;
