@@ -807,6 +807,251 @@ window.App = window.App || {};
   }
 
   // ---------------------------------------------------------------------------
+  // generate_image — build a keyless Pollinations image URL and save a workspace
+  // markdown file that embeds it. No API key, no proxy. Best-effort only; never
+  // throws and always returns the URL on success.
+  // ---------------------------------------------------------------------------
+  function generateImage(prompt, width, height) {
+    prompt = String(prompt == null ? '' : prompt).trim();
+    if (!prompt) return fail('prompt is required');
+    if (prompt.length > 2000) prompt = prompt.slice(0, 2000);
+    var base;
+    try {
+      var cfg = App.config || {};
+      base = cfg.POLLINATIONS_URL || 'https://image.pollinations.ai/prompt/';
+    } catch (e) { base = 'https://image.pollinations.ai/prompt/'; }
+    var url;
+    try { url = base + encodeURIComponent(prompt); }
+    catch (e2) { return fail('could not encode prompt'); }
+    var qs = [];
+    var wv = Number(width), hv = Number(height);
+    if (isFinite(wv) && wv > 0) qs.push('width=' + Math.min(Math.round(wv), 4096));
+    if (isFinite(hv) && hv > 0) qs.push('height=' + Math.min(Math.round(hv), 4096));
+    if (qs.length) url += '?' + qs.join('&');
+
+    // Best-effort: write a markdown embed into the workspace; also push artifact.
+    var path = 'images/' + slug(prompt) + '.md';
+    var md = '# Image: ' + prompt + '\n\n![' + prompt.replace(/\]/g, ' ') + '](' + url + ')\n\n' + url + '\n';
+    try {
+      var w = ws();
+      if (w && w.write) w.write(path, md, 'agent');
+    } catch (e3) {}
+    try { createArtifact(slug(prompt) + '.md', md); } catch (e4) {}
+    return ok(url);
+  }
+
+  // ---------------------------------------------------------------------------
+  // lint — read a workspace file and run a lightweight syntax check.
+  //   js/ts/mjs/cjs/jsx/tsx -> new Function(content) inside try/catch (no run)
+  //   json                  -> JSON.parse
+  //   else                  -> 'no linter for <lang>'
+  // Never executes side-effects (new Function compiles but does NOT invoke).
+  // ---------------------------------------------------------------------------
+  function lintFile(path) {
+    var w = ws();
+    if (!w || !w.read) return fail('workspace unavailable');
+    if (!path) return fail('path is required');
+    var content = w.read(path);
+    if (content == null) return fail('not found: ' + path);
+    content = String(content);
+
+    var dot = String(path).lastIndexOf('.');
+    var ext = (dot > -1) ? String(path).slice(dot + 1).toLowerCase() : '';
+
+    var jsLike = { js: 1, mjs: 1, cjs: 1, jsx: 1, ts: 1, tsx: 1 };
+    if (jsLike[ext]) {
+      // TS/JSX cannot be parsed by new Function reliably; only attempt plain JS.
+      if (ext === 'ts' || ext === 'tsx' || ext === 'jsx') {
+        return ok('no linter for ' + ext + ' (type/JSX syntax not checkable in-browser)');
+      }
+      try {
+        // Compile only — never invoke. This catches syntax errors.
+        /* eslint-disable no-new-func */
+        new Function(content);
+        /* eslint-enable no-new-func */
+        return ok('no issues');
+      } catch (err) {
+        var msg = (err && err.message) ? err.message : String(err);
+        var line = '';
+        if (err && typeof err.lineNumber === 'number') line = ' (line ' + err.lineNumber + ')';
+        return ok('syntax error: ' + msg + line);
+      }
+    }
+    if (ext === 'json') {
+      try { JSON.parse(content); return ok('no issues'); }
+      catch (errj) {
+        return ok('JSON parse error: ' + (errj && errj.message ? errj.message : String(errj)));
+      }
+    }
+    return ok('no linter for ' + (ext || 'unknown') + ' files');
+  }
+
+  // ---------------------------------------------------------------------------
+  // package_docs — fetch npm registry metadata for a package (CORS-friendly;
+  // no proxy needed). Degrades gracefully on any network/parse error.
+  // ---------------------------------------------------------------------------
+  function packageDocs(name) {
+    name = String(name == null ? '' : name).trim();
+    if (!name) return Promise.resolve(fail('package name is required'));
+    if (typeof fetch === 'undefined') return Promise.resolve(fail('fetch unavailable'));
+    var url;
+    try { url = 'https://registry.npmjs.org/' + encodeURIComponent(name); }
+    catch (e) { return Promise.resolve(fail('invalid package name')); }
+    return fetch(url).then(function (resp) {
+      if (!resp || !resp.ok) return fail('npm registry returned HTTP ' + (resp ? resp.status : '?'));
+      return resp.text().then(function (text) {
+        var data;
+        try { data = JSON.parse(text); }
+        catch (ep) { return fail('could not parse registry response'); }
+        try {
+          var dist = data['dist-tags'] || {};
+          var latest = dist.latest || '';
+          var ver = (latest && data.versions && data.versions[latest]) ? data.versions[latest] : {};
+          var lines = [];
+          lines.push('name: ' + (data.name || name));
+          if (latest) lines.push('latest: ' + latest);
+          var desc = data.description || ver.description || '';
+          if (desc) lines.push('description: ' + desc);
+          var home = data.homepage || ver.homepage || '';
+          if (home) lines.push('homepage: ' + home);
+          var lic = ver.license || data.license || '';
+          if (lic) lines.push('license: ' + (typeof lic === 'string' ? lic : JSON.stringify(lic)));
+          // dist-tags summary
+          var tagKeys = [];
+          for (var tk in dist) if (Object.prototype.hasOwnProperty.call(dist, tk)) tagKeys.push(tk + '=' + dist[tk]);
+          if (tagKeys.length) lines.push('dist-tags: ' + tagKeys.join(', '));
+          var readme = data.readme || '';
+          if (readme) {
+            readme = String(readme);
+            if (readme.length > 2000) readme = readme.slice(0, 2000) + '\n...(truncated)';
+            lines.push('\nREADME:\n' + readme);
+          }
+          return ok(lines.join('\n'));
+        } catch (es) {
+          return fail('could not summarize package: ' + (es && es.message ? es.message : es));
+        }
+      });
+    }).catch(function (err) {
+      return fail('network error: ' + (err && err.message ? err.message : err));
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // http_request — GET/POST with a strict domain allowlist. The host of the URL
+  // must appear in App.state.settings.httpAllowlist (array or comma string).
+  // Optionally routed through settings.corsProxy. Response chars are capped.
+  // ---------------------------------------------------------------------------
+  function parseAllowlist(raw) {
+    var out = [];
+    if (!raw) return out;
+    var arr;
+    if (Array.isArray(raw)) arr = raw;
+    else arr = String(raw).split(',');
+    for (var i = 0; i < arr.length; i++) {
+      var h = String(arr[i] == null ? '' : arr[i]).trim().toLowerCase();
+      if (h) out.push(h);
+    }
+    return out;
+  }
+
+  function hostOf(url) {
+    var u = String(url == null ? '' : url).trim();
+    // Strip scheme.
+    u = u.replace(/^[a-z][a-z0-9+.\-]*:\/\//i, '');
+    // Take up to the first slash, question mark, or hash.
+    u = u.split('/')[0].split('?')[0].split('#')[0];
+    // Strip userinfo and port.
+    var at = u.lastIndexOf('@');
+    if (at > -1) u = u.slice(at + 1);
+    u = u.split(':')[0];
+    return u.toLowerCase();
+  }
+
+  function hostAllowed(host, list) {
+    for (var i = 0; i < list.length; i++) {
+      var entry = list[i];
+      if (!entry) continue;
+      if (host === entry) return true;
+      // Allow subdomain matches for bare-domain entries.
+      if (host.length > entry.length && host.slice(-(entry.length + 1)) === ('.' + entry)) return true;
+    }
+    return false;
+  }
+
+  function httpRequest(method, url, headers, body, maxChars) {
+    if (!url) return Promise.resolve(fail('url is required'));
+    if (typeof fetch === 'undefined') return Promise.resolve(fail('fetch unavailable'));
+    method = String(method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'POST') return Promise.resolve(fail('method must be GET or POST'));
+
+    var list = parseAllowlist(settings().httpAllowlist);
+    var host = hostOf(url);
+    if (!host) return Promise.resolve(fail('could not parse host from url'));
+    if (!hostAllowed(host, list)) {
+      return Promise.resolve({ ok: false, output: '', error: 'host not in allowlist (add it in Settings)' });
+    }
+
+    var cap = (typeof maxChars === 'number' && maxChars > 0) ? Math.min(maxChars, 50000) : 8000;
+    var proxy = (settings().corsProxy || '');
+    var full;
+    try { full = proxy ? (proxy + encodeURIComponent(String(url))) : String(url); }
+    catch (e) { return Promise.resolve(fail('invalid url')); }
+
+    var opts = { method: method };
+    if (headers && typeof headers === 'object') {
+      var hh = {};
+      try {
+        for (var k in headers) {
+          if (Object.prototype.hasOwnProperty.call(headers, k)) hh[String(k)] = String(headers[k]);
+        }
+        opts.headers = hh;
+      } catch (eh) {}
+    }
+    if (method === 'POST' && body != null) {
+      opts.body = (typeof body === 'string') ? body : (function () { try { return JSON.stringify(body); } catch (eb) { return String(body); } })();
+    }
+
+    return fetch(full, opts).then(function (resp) {
+      var status = resp ? resp.status : '?';
+      return resp.text().then(function (text) {
+        text = String(text == null ? '' : text);
+        if (text.length > cap) text = text.slice(0, cap) + '\n...(truncated)';
+        var head = 'HTTP ' + status + (resp && resp.ok ? '' : ' (error)') + '\n';
+        if (resp && resp.ok) return ok(head + text);
+        return { ok: false, output: head + text, error: 'HTTP ' + status };
+      });
+    }).catch(function (err) {
+      return fail('network error: ' + (err && err.message ? err.message : err));
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // spawn_subtask — recursive decomposition. Delegates to the orchestrator,
+  // which enforces depth/concurrency caps. Resolves with the sub-worker's final
+  // text (or an error string). Never throws.
+  // ---------------------------------------------------------------------------
+  function spawnSubtask(role, instruction) {
+    role = String(role == null ? '' : role).trim();
+    instruction = String(instruction == null ? '' : instruction).trim();
+    if (!instruction) return Promise.resolve(fail('instruction is required'));
+    try {
+      var orch = App.Orchestrator;
+      if (!orch || typeof orch.spawnSubtask !== 'function') {
+        return Promise.resolve(fail('subtask spawning unavailable'));
+      }
+      return Promise.resolve(orch.spawnSubtask(role || 'worker', instruction))
+        .then(function (result) {
+          return ok(result == null ? '' : String(result));
+        })
+        .catch(function (err) {
+          return fail('subtask failed: ' + (err && err.message ? err.message : err));
+        });
+    } catch (e) {
+      return Promise.resolve(fail('subtask error: ' + (e && e.message ? e.message : e)));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // public: enabled()
   // ---------------------------------------------------------------------------
   function enabled() {
@@ -986,6 +1231,67 @@ window.App = window.App || {};
           },
           required: []
         }
+      },
+      {
+        name: 'generate_image',
+        description: 'Generate an image from a text prompt using the keyless Pollinations service. Returns the image URL and saves a markdown file embedding it into the workspace. No API key required.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'A descriptive text prompt for the image to generate.' },
+            width: { type: 'number', description: 'Optional image width in pixels.' },
+            height: { type: 'number', description: 'Optional image height in pixels.' }
+          },
+          required: ['prompt']
+        }
+      },
+      {
+        name: 'lint',
+        description: 'Syntax-check a workspace file without running it. For JavaScript files it reports syntax errors; for JSON it validates parseability. Returns "no issues" when the file is syntactically valid.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'The workspace path to lint, e.g. "src/app.js" or "data.json".' }
+          },
+          required: ['path']
+        }
+      },
+      {
+        name: 'package_docs',
+        description: 'Look up an npm package on the public npm registry and return its name, latest version, description, homepage, license, dist-tags, and a trimmed README. Use to learn how to use a library.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'The npm package name, e.g. "react" or "@scope/pkg".' }
+          },
+          required: ['name']
+        }
+      },
+      {
+        name: 'http_request',
+        description: 'Make an HTTP GET or POST request to a URL whose host is on the Settings HTTP allowlist (otherwise it refuses). Returns the response status and text (capped). Use for calling allowed APIs.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            method: { type: 'string', description: 'HTTP method: "GET" or "POST". Defaults to GET.' },
+            url: { type: 'string', description: 'The absolute URL to request. Its host must be allowlisted in Settings.' },
+            headers: { type: 'object', description: 'Optional request headers as a flat object of string values.' },
+            body: { type: 'string', description: 'Optional request body for POST (string or JSON-stringified).' }
+          },
+          required: ['url']
+        }
+      },
+      {
+        name: 'spawn_subtask',
+        description: 'Delegate a focused subtask to a fresh sub-worker with an isolated context and return its final text result. The sub-worker can read/search/edit/write files but cannot spawn further subtasks. Use to decompose complex work.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            role: { type: 'string', description: 'A short role/title for the sub-worker, e.g. "researcher" or "tester".' },
+            instruction: { type: 'string', description: 'The self-contained instruction for the sub-worker to carry out.' }
+          },
+          required: ['role', 'instruction']
+        }
       }
     ];
   }
@@ -1023,6 +1329,16 @@ window.App = window.App || {};
           return Promise.resolve(generateChart(input.type, input.data, input.title));
         case 'github_push':
           return githubPush({ owner: input.owner, repo: input.repo, branch: input.branch });
+        case 'generate_image':
+          return Promise.resolve(generateImage(input.prompt, input.width, input.height));
+        case 'lint':
+          return Promise.resolve(lintFile(input.path));
+        case 'package_docs':
+          return packageDocs(input.name !== undefined ? input.name : input.package);
+        case 'http_request':
+          return httpRequest(input.method, input.url, input.headers, input.body, input.max_chars);
+        case 'spawn_subtask':
+          return spawnSubtask(input.role, input.instruction);
         default:
           return Promise.resolve(fail('unknown tool: ' + name));
       }
@@ -1044,6 +1360,12 @@ window.App = window.App || {};
     _analyzeData: analyzeData,
     _generateChart: generateChart,
     _stripTags: stripTags,
-    _parseChartData: parseChartData
+    _parseChartData: parseChartData,
+    _generateImage: generateImage,
+    _lintFile: lintFile,
+    _packageDocs: packageDocs,
+    _httpRequest: httpRequest,
+    _hostOf: hostOf,
+    _hostAllowed: hostAllowed
   };
 })();

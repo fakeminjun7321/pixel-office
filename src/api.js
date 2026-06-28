@@ -408,6 +408,140 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
+  // OpenAI request shaping (v6 -> Wave 2): translate Anthropic-format tools and
+  // Anthropic content-block messages into OpenAI chat-completions shapes.
+  // Both helpers are DEFENSIVE -- they never throw; on any unexpected shape they
+  // fall back to stringifying, so a malformed turn can't break the request.
+  // ---------------------------------------------------------------------------
+
+  // Stringify a value for OpenAI string-content slots (content / tool args /
+  // tool_result content). Strings pass through; everything else is JSON.
+  function toStr(v) {
+    if (v == null) return '';
+    if (typeof v === 'string') return v;
+    try {
+      return JSON.stringify(v);
+    } catch (e) {
+      try {
+        return String(v);
+      } catch (e2) {
+        return '';
+      }
+    }
+  }
+
+  // Map Anthropic-format tools [{name,description,input_schema}] to OpenAI
+  // function tools. Drops the server-side 'web_search' tool (OpenAI has no
+  // equivalent in chat-completions). Returns null when nothing usable remains.
+  function toOpenAiTools(tools) {
+    if (!Array.isArray(tools) || !tools.length) return null;
+    var out = [];
+    for (var i = 0; i < tools.length; i++) {
+      var t = tools[i];
+      if (!t || typeof t !== 'object') continue;
+      if (t.name === 'web_search') continue;            // no OpenAI equivalent
+      if (t.type === 'web_search_20250305' || /web_search/.test(String(t.type || ''))) continue;
+      if (!t.name) continue;
+      var params = (t.input_schema && typeof t.input_schema === 'object')
+        ? t.input_schema
+        : { type: 'object', properties: {} };
+      out.push({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description || '',
+          parameters: params,
+        },
+      });
+    }
+    return out.length ? out : null;
+  }
+
+  // Translate the (possibly Anthropic-shaped) message list + system prompt into
+  // an OpenAI messages array. Handles three message kinds:
+  //   1) assistant whose .content is an ARRAY with {type:'text'} and/or
+  //      {type:'tool_use',id,name,input}  -> { role:'assistant', content, tool_calls }
+  //   2) user/any whose .content is an ARRAY of {type:'tool_result',...}
+  //      -> EXPANDED into one { role:'tool', tool_call_id, content } per result
+  //   3) plain string-content messages -> passed through unchanged.
+  // The system prompt is prepended (matching the prior attemptOpenAI behavior).
+  function toOpenAiMessages(messages, system) {
+    var out = [{ role: 'system', content: system || '' }];
+    var list = Array.isArray(messages) ? messages : [];
+    for (var i = 0; i < list.length; i++) {
+      var m = list[i];
+      if (!m || typeof m !== 'object') continue;
+      var content = m.content;
+
+      // (3) Plain string content -- pass through (preserve role).
+      if (typeof content === 'string') {
+        out.push({ role: m.role || 'user', content: content });
+        continue;
+      }
+
+      // Array content: inspect block types.
+      if (Array.isArray(content)) {
+        // (2) tool_result array (typically role 'user') -> one tool msg each.
+        var hasToolResult = false;
+        for (var r = 0; r < content.length; r++) {
+          if (content[r] && content[r].type === 'tool_result') { hasToolResult = true; break; }
+        }
+        if (hasToolResult) {
+          for (var j = 0; j < content.length; j++) {
+            var tr = content[j];
+            if (!tr || typeof tr !== 'object') continue;
+            if (tr.type === 'tool_result') {
+              out.push({
+                role: 'tool',
+                tool_call_id: tr.tool_use_id || tr.id || '',
+                content: toStr(tr.content),
+              });
+            } else if (tr.type === 'text' && typeof tr.text === 'string') {
+              // Stray text alongside tool_results: keep it as a user message.
+              out.push({ role: m.role || 'user', content: tr.text });
+            }
+          }
+          continue;
+        }
+
+        // (1) assistant content-array (text and/or tool_use).
+        var textParts = [];
+        var toolCalls = [];
+        for (var k = 0; k < content.length; k++) {
+          var blk = content[k];
+          if (!blk || typeof blk !== 'object') {
+            if (typeof blk === 'string') textParts.push(blk);
+            continue;
+          }
+          if (blk.type === 'text' && typeof blk.text === 'string') {
+            textParts.push(blk.text);
+          } else if (blk.type === 'tool_use') {
+            toolCalls.push({
+              id: blk.id || '',
+              type: 'function',
+              function: {
+                name: blk.name || '',
+                arguments: toStr(blk.input || {}),
+              },
+            });
+          }
+        }
+        var msg = {
+          role: m.role || 'assistant',
+          content: textParts.length ? textParts.join('') : null,
+        };
+        if (toolCalls.length) msg.tool_calls = toolCalls;
+        out.push(msg);
+        continue;
+      }
+
+      // Unknown content shape -- never throw; stringify defensively.
+      out.push({ role: m.role || 'user', content: toStr(content) });
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
   // Transient-failure classification (the core of the "Failed to fetch" fix).
   // TRANSIENT = a fetch TypeError ('Failed to fetch'/network) that is NOT a user
   // abort, OR an HTTP status in the retryable set. NON-transient (4xx etc.) is
@@ -632,9 +766,9 @@ window.App = window.App || {};
       onError: safe(opts.onError),
     });
 
-    // OpenAI has no server-side web_search here: opts.tools is intentionally ignored.
-    var messages = [{ role: 'system', content: opts.system || '' }]
-      .concat(Array.isArray(opts.messages) ? opts.messages : []);
+    // Translate any Anthropic-shaped turns (assistant tool_use / user tool_result
+    // content-block arrays) into OpenAI shapes; prepend the system prompt.
+    var messages = toOpenAiMessages(opts.messages, opts.system);
 
     var body = {
       model: opts.model,
@@ -643,6 +777,14 @@ window.App = window.App || {};
       max_completion_tokens: opts.maxTokens || MAX_TOKENS,
       stream_options: { include_usage: true },
     };
+
+    // Client tools: Anthropic-format opts.tools -> OpenAI function tools (drop
+    // the server-side web_search tool, which has no chat-completions equivalent).
+    var oaTools = toOpenAiTools(opts.tools);
+    if (oaTools) {
+      body.tools = oaTools;
+      body.tool_choice = 'auto';
+    }
 
     var headers = {
       'Authorization': 'Bearer ' + opts.openaiKey,

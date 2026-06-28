@@ -327,14 +327,16 @@ window.App = window.App || {};
   }
 
   // clientToolsApplicable — true when the Browser-tools integration should expose
-  //   App.Tools specs to a worker: tools module present + enabled + an Anthropic
-  //   model (the only provider whose tool schema we pass through here).
+  //   App.Tools specs to a worker: tools module present + enabled + a provider whose
+  //   tool schema api.js can translate (Anthropic native OR OpenAI — api.js maps the
+  //   Anthropic-format specs + the content-block tool round-trip into OpenAI shape).
   function clientToolsApplicable(agent, settings) {
     try {
       if (!App.Tools || typeof App.Tools.specs !== 'function') return false;
       if (typeof App.Tools.enabled === 'function' && !App.Tools.enabled()) return false;
       var model = (agent && agent.model) || (settings && settings.defaultModel);
-      return providerOf(model) === 'anthropic';
+      var prov = providerOf(model);
+      return prov === 'anthropic' || prov === 'openai';
     } catch (e) { return false; }
   }
 
@@ -3068,6 +3070,196 @@ window.App = window.App || {};
         });
       }
       loop();
+    });
+  };
+
+  // ===========================================================================
+  // RECURSIVE SUBTASK (Wave 2) — App.Orchestrator.spawnSubtask(role, instruction, opts?)
+  //   Spins up a SHORT-LIVED sub-worker with a FRESH, isolated message context and
+  //   runs ONE worker stream (it MAY use read/search/edit/write tools but must NOT
+  //   spawn further — depth is capped at SUBTASK_MAX_DEPTH). A global concurrent cap
+  //   (SUBTASK_MAX_CONCURRENT) bounds fan-out. Resolves with the worker's final text
+  //   or an error string (never rejects). The temp agent is culled when done.
+  //   Mirrors the self-contained runRepairStream mechanics (off the task board) so it
+  //   reuses the existing stream + tool round-trip machinery without touching tick().
+  // ===========================================================================
+  var _subActive = 0;   // module-level concurrent-subtask counter (global cap)
+
+  function cullTempAgent(agent) {
+    try {
+      if (!agent || !agent.temp) return;
+      var ag = AGENTS();
+      // prefer an Agents-owned remover; fall back to splicing state.agents.
+      if (ag && typeof ag.remove === 'function') { ag.remove(agent); }
+      else if (ag && typeof ag.cull === 'function') { ag.cull(agent); }
+      else {
+        var s = STATE();
+        if (s && Array.isArray(s.agents)) {
+          for (var i = 0; i < s.agents.length; i++) {
+            if (s.agents[i] === agent || (agent.id && s.agents[i] && s.agents[i].id === agent.id)) {
+              s.agents.splice(i, 1); break;
+            }
+          }
+        }
+      }
+      try { if (App.UI && App.UI.refreshAgentList) App.UI.refreshAgentList(); } catch (e) {}
+    } catch (e) {}
+  }
+
+  // runSubtaskStream — bounded tool-loop turn dedicated to a recursive subtask. Like
+  //   runRepairStream but accumulates and returns the FINAL TEXT via cb(text|null).
+  //   The sub-worker gets tools (read/search/edit/write etc.) but spawn_subtask is
+  //   gated by depth in tools.js, so no further recursion happens here.
+  function runSubtaskStream(agent, sys, messages, tools, iter, cb) {
+    cb = (typeof cb === 'function') ? cb : function () {};
+    var ag = AGENTS();
+    var settings = (STATE() && STATE().settings) || {};
+    var MAX = (CFG().MAX_TOOL_ITERS != null) ? CFG().MAX_TOOL_ITERS : 2;
+    iter = iter || 0;
+    var acc = '';
+    var doneCalled = false;
+    function done(text) { if (doneCalled) return; doneCalled = true; cb(text); }
+
+    try {
+      var handle = App.API.stream({
+        apiKey: settings.apiKey,
+        openaiKey: settings.openaiKey,
+        model: agent.model || settings.defaultModel,
+        system: sys,
+        messages: messages,
+        tools: tools,
+        onState: function (st) {
+          if (st === 'searching') { try { ag.setState(agent, 'searching'); } catch (e) {} }
+          else if (st === 'text') { try { ag.setState(agent, 'coding'); } catch (e) {} }
+        },
+        onText: function (d) { acc += d; try { markActivity(agent); } catch (e) {} },
+        onDone: function (res) {
+          if (res && res.usage && agent.stats) {
+            agent.stats.tokensIn += (res.usage.input_tokens || 0);
+            agent.stats.tokensOut += (res.usage.output_tokens || 0);
+          }
+          var toolUses = res && Array.isArray(res.toolUses) ? res.toolUses : null;
+          if (toolUses && toolUses.length && tools && tools.length && iter < MAX) {
+            var asstContent = [];
+            if (acc && acc.trim()) asstContent.push({ type: 'text', text: acc });
+            for (var tu = 0; tu < toolUses.length; tu++) {
+              asstContent.push({ type: 'tool_use', id: toolUses[tu].id, name: toolUses[tu].name, input: toolUses[tu].input });
+            }
+            // reset per-iteration text accumulator so re-stream text isn't doubled.
+            var carried = acc;
+            executeToolUses(toolUses, agent).then(function (results) {
+              var next = messages.slice();
+              next.push({ role: 'assistant', content: asstContent });
+              next.push({ role: 'user', content: results });
+              runSubtaskStream(agent, sys, next, tools, iter + 1, cb);
+            }, function () { done(carried || null); });
+            return;
+          }
+          done((res && res.text) || acc || null);
+        },
+        onError: function (err) {
+          var msg = (err && err.message) || (err && err.type) || 'error';
+          done('ERROR: subtask stream failed (' + truncate(String(msg), 80) + ')');
+        },
+      });
+      var s = STATE(); if (s && s._activeStreams) s._activeStreams['__sub_' + agent.id] = handle;
+    } catch (e) { done('ERROR: ' + String((e && e.message) || e)); }
+  }
+
+  // spawnSubtask(role, instruction, opts?) → Promise<String>. Always resolves: with
+  //   the sub-worker's final text, or an error string on cap/exhaustion/failure.
+  Orchestrator.spawnSubtask = function (role, instruction, opts) {
+    opts = opts || {};
+    instruction = String(instruction == null ? '' : instruction).trim();
+    var maxDepth = (CFG().SUBTASK_MAX_DEPTH != null) ? CFG().SUBTASK_MAX_DEPTH : 1;
+    var maxConc = (CFG().SUBTASK_MAX_CONCURRENT != null) ? CFG().SUBTASK_MAX_CONCURRENT : 3;
+    var depth = (typeof opts.depth === 'number' && opts.depth >= 0) ? (opts.depth | 0) : 0;
+
+    return new Promise(function (resolve) {
+      try {
+        if (!instruction) { resolve('ERROR: spawn_subtask needs a non-empty instruction'); return; }
+
+        // DEPTH CAP — no further recursion beyond SUBTASK_MAX_DEPTH.
+        if (depth >= maxDepth) {
+          resolve('ERROR: subtask depth limit reached (' + maxDepth + ') — cannot spawn further');
+          return;
+        }
+        // CONCURRENCY CAP — bound simultaneous subtasks (global).
+        if (_subActive >= maxConc) {
+          resolve('ERROR: too many concurrent subtasks (cap ' + maxConc + ') — try again after others finish');
+          return;
+        }
+
+        var settings = (STATE() && STATE().settings) || {};
+        var ag = AGENTS();
+        var roleName = (ROLES()[role]) ? role : 'generalist';
+        var roleDef = ROLES()[roleName] || ROLES().generalist || {};
+
+        // FRESH sub-worker (temp). Reuse the temp-worker spawner so visualization +
+        //   role wiring match normal workers; mark it culled-on-done below.
+        var agent = spawnTempWorker(roleName);
+        if (!agent) { resolve('ERROR: could not allocate a sub-worker'); return; }
+
+        var model = agent.model || settings.defaultModel;
+        if (!hasCredsFor(model)) { cullTempAgent(agent); resolve('ERROR: NO_KEY — add an API key (or enable the companion) in Settings'); return; }
+
+        _subActive++;
+        var settled = false;
+        function finish(text) {
+          if (settled) return; settled = true;
+          _subActive = Math.max(0, _subActive - 1);
+          try { var s = STATE(); if (s && s._activeStreams) delete s._activeStreams['__sub_' + agent.id]; } catch (e) {}
+          try { ag.setState(agent, 'idle'); } catch (e) {}
+          cullTempAgent(agent);
+          var out = (text == null) ? '(subtask produced no output)' : String(text);
+          resolve(out);
+        }
+
+        // Light visualization: a log line for the spawned subtask.
+        var roleLabel = roleDef.label || roleName;
+        try { log('Boss', agent.name || roleLabel, 'system', '↳ subtask: ' + roleLabel + ' — ' + truncate(instruction, 60)); } catch (e) {}
+        try { ag.say(agent, '↳ ' + truncate(instruction, 36), 3000); } catch (e) {}
+
+        // TOOLS — give the sub-worker the file/util tools (read/search/edit/write/etc.)
+        //   when applicable. DEPTH ENFORCEMENT: the spawn_subtask tool calls back into
+        //   Orchestrator.spawnSubtask WITHOUT a depth arg (depth always resets to 0),
+        //   so depth alone can't stop a sub-worker from recursing. To honor
+        //   SUBTASK_MAX_DEPTH ("sub-workers may NOT spawn further"), STRIP the
+        //   spawn_subtask spec from any sub-worker that has reached the depth ceiling.
+        var tools;
+        try {
+          if (clientToolsApplicable(agent, settings)) {
+            var specs = App.Tools.specs();
+            if (Array.isArray(specs) && specs.length) {
+              if ((depth + 1) >= maxDepth) {
+                var filtered = [];
+                for (var si = 0; si < specs.length; si++) {
+                  if (specs[si] && specs[si].name === 'spawn_subtask') continue;
+                  filtered.push(specs[si]);
+                }
+                tools = filtered;
+              } else {
+                tools = specs;
+              }
+            }
+          }
+        } catch (e) {}
+
+        var sys = agent.systemPrompt || roleDef.system || '';
+
+        // FRESH, ISOLATED message context — just this instruction (no run history).
+        var content = 'YOUR TASK (focused subtask):\n' + instruction +
+          '\n\nComplete it directly and return the result. Do not delegate further.';
+
+        agent.busy = true;
+        try { ag.setState(agent, 'coding'); } catch (e) {}
+        runSubtaskStream(agent, sys, [{ role: 'user', content: content }], tools, 0, function (text) {
+          try { if (agent) agent.busy = false; } catch (e) {}
+          finish(text);
+        });
+      } catch (e) {
+        resolve('ERROR: ' + String((e && e.message) || e));
+      }
     });
   };
 

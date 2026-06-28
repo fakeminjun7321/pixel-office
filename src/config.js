@@ -677,6 +677,20 @@ window.App = window.App || {};
     DEFAULT_LANG: 'en',
 
     // ---------------------------------------------------------------------------
+    // WAVE 2 §IMAGE GEN + RECURSIVE SUBTASKS — keyless Pollinations image endpoint
+    // (tools.generate_image prepends this and appends the encoded prompt) and the
+    // recursion bounds for App.Orchestrator.spawnSubtask / tools.spawn_subtask.
+    //   SUBTASK_MAX_DEPTH      : how deep recursive subtasks may nest (1 = a worker
+    //                            may spawn sub-workers, but those sub-workers may NOT
+    //                            spawn further). Hard cap against infinite recursion.
+    //   SUBTASK_MAX_CONCURRENT : global cap on simultaneously-running subtasks; on
+    //                            exhaustion spawnSubtask resolves with an error string.
+    // ---------------------------------------------------------------------------
+    POLLINATIONS_URL: 'https://image.pollinations.ai/prompt/',
+    SUBTASK_MAX_DEPTH: 1,
+    SUBTASK_MAX_CONCURRENT: 3,
+
+    // ---------------------------------------------------------------------------
     // Wave B/C §MOOD & RELATIONSHIPS — defaults for agent.mood (0..1) and the
     // affinity model (agent.relationships[otherId] in roughly -1..1, 0 = neutral).
     //   MOOD_DEFAULT      : starting/neutral mood for a new agent.

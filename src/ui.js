@@ -1292,6 +1292,7 @@ window.App = window.App || {};
     ensureToolsFields();
     var ten = $('set-tools-enabled'); if (ten) ten.checked = (settings.toolsEnabled !== false);
     var cpx = $('set-cors-proxy'); if (cpx) cpx.value = settings.corsProxy || '';
+    var hal = $('set-http-allowlist'); if (hal) hal.value = settings.httpAllowlist || '';
     var atg = $('set-tool-gh-push'); if (atg) atg.checked = (settings.allowToolGithubPush === true);
     show($('modal-settings'));
   };
@@ -1361,6 +1362,25 @@ window.App = window.App || {};
     proxyRow.appendChild(proxyInput);
     proxyRow.appendChild(proxyHint);
     group.appendChild(proxyRow);
+
+    // --- HTTP allowlist (WAVE 2) — comma-separated hosts the http_request tool
+    // may fetch. Empty (default) blocks all hosts. Bound to settings.httpAllowlist. ---
+    var allowRow = el('div', 'field');
+    var allowLbl = el('span', 'field-label');
+    allowLbl.setAttribute('data-i18n', 'set.httpAllowlist');
+    allowLbl.textContent = T('set.httpAllowlist', 'HTTP ALLOWLIST');
+    var allowInput = document.createElement('input');
+    allowInput.id = 'set-http-allowlist';
+    allowInput.type = 'text';
+    allowInput.autocomplete = 'off';
+    allowInput.spellcheck = false;
+    allowInput.placeholder = 'api.example.com, data.gov  (comma-separated hosts)';
+    var allowHint = el('span', 'field-hint',
+      T('set.httpAllowlist.hint', 'Comma-separated hosts the http_request tool may fetch. Leave blank to block all.'));
+    allowRow.appendChild(allowLbl);
+    allowRow.appendChild(allowInput);
+    allowRow.appendChild(allowHint);
+    group.appendChild(allowRow);
 
     // --- Allow tool GitHub push switch (default OFF) ---
     var pushRow = el('div', 'field field-inline');
@@ -1585,6 +1605,7 @@ window.App = window.App || {};
     // (v6) Agent-tools settings. tools default ON, push default OFF.
     var ten = $('set-tools-enabled'); if (ten) settings.toolsEnabled = (ten.getAttribute('aria-checked') === 'true');
     var cpx = $('set-cors-proxy'); if (cpx) settings.corsProxy = cpx.value.trim();
+    var hal = $('set-http-allowlist'); if (hal) settings.httpAllowlist = hal.value.trim();
     var atg = $('set-tool-gh-push'); if (atg) settings.allowToolGithubPush = (atg.getAttribute('aria-checked') === 'true');
     if (App.Store && App.Store.save) App.Store.save();
     hide($('modal-settings'));
