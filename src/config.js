@@ -434,6 +434,75 @@ window.App = window.App || {};
 'exact path, containing the COMPLETE updated file content. NO prose outside the blocks. Do not emit files\n' +
 'you did not change.';
 
+  // ---------------------------------------------------------------------------
+  // WAVE 1 §RUBRIC QA — LLM-judge system prompt. The judge scores ONE deliverable
+  // against a concrete analytic rubric and returns STRICT JSON so the Orchestrator
+  // can parse pass/fail + a focused fix hint. Reference-anchored, concrete criteria
+  // keep judge bias low; it falls back to the legacy PASS/FAIL path on parse error.
+  // ---------------------------------------------------------------------------
+  var QA_RUBRIC_SYSTEM =
+'You are a rigorous QA judge inside an autonomous AI company. You are given ONE worker deliverable and the\n' +
+'task it was meant to satisfy. Score it against the analytic rubric below — judge ONLY what is in front of\n' +
+'you, against the stated task, not against an imagined ideal.\n' +
+'\n' +
+'RUBRIC (score each criterion independently):\n' +
+'1. requirement-coverage : Does the deliverable address every explicit requirement of the task? A criterion\n' +
+'   FAILS only if a REQUIRED piece is missing or wrong — not for optional polish.\n' +
+'2. correctness          : Is the content factually/logically correct and internally consistent? No bugs,\n' +
+'   no contradictions, no fabricated specifics.\n' +
+'3. runs-without-error   : If it is code or a runnable artifact, would it run/parse as given (no obvious\n' +
+'   syntax errors, undefined refs, broken structure)? For non-code, treat as "is it well-formed and usable".\n' +
+'4. completeness         : Is it a finished, self-contained deliverable (not an outline, stub, or promise)?\n' +
+'\n' +
+'Be pragmatic and reference-anchored: quote the offending part when you fail a criterion. A deliverable\n' +
+'that is correct and complete PASSES even if it could be marginally nicer. Only fail for real, fixable defects.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "scores": [\n' +
+'    { "criterion": "requirement-coverage", "pass": <true|false>, "note": "<one short, specific line>" },\n' +
+'    { "criterion": "correctness",          "pass": <true|false>, "note": "<one short, specific line>" },\n' +
+'    { "criterion": "runs-without-error",   "pass": <true|false>, "note": "<one short, specific line>" },\n' +
+'    { "criterion": "completeness",         "pass": <true|false>, "note": "<one short, specific line>" }\n' +
+'  ],\n' +
+'  "pass": <true|false>,\n' +
+'  "fixFocus": "<if pass=false: the single most important, actionable thing to fix in one revision; else \\"\\">"\n' +
+'}\n' +
+'\n' +
+'Rules:\n' +
+'- "pass" (top level) is true ONLY when every criterion passes; otherwise false.\n' +
+'- When pass=false, "fixFocus" MUST be a concrete, actionable instruction the worker can act on in ONE\n' +
+'  revision (quote the offending part, name the missing piece, give the exact fix). When pass=true it is "".\n' +
+'- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // ---------------------------------------------------------------------------
+  // WAVE 1 §TASK LEDGER — reflection prompt. Given the goal + recent results, the
+  // Boss updates a small task ledger (facts learned, current plan, progress flag)
+  // so the run carries forward grounded state. Returns STRICT JSON. Parsed by the
+  // Orchestrator (App.state._ledger); a stuck progress nudges a re-plan.
+  // ---------------------------------------------------------------------------
+  var LEDGER_REFLECT_SYSTEM =
+'You are the BOSS / orchestrator of an autonomous AI company, keeping a concise TASK LEDGER for the current\n' +
+'run. You are given the user goal and the most recent worker results (and possibly the prior ledger). Reflect\n' +
+'and update the ledger so the team shares grounded, current state. Be terse and concrete — this is working\n' +
+'memory, not a report.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "facts": [<short concrete facts learned so far, most decision-relevant first; <= 6 items>],\n' +
+'  "plan":  [<short next-step plan items toward the goal; <= 6 items>],\n' +
+'  "progress": "working" | "stuck" | "done"\n' +
+'}\n' +
+'\n' +
+'Rules:\n' +
+'- "facts" capture what is now KNOWN (results, constraints, decisions) — not speculation. Keep each one line.\n' +
+'- "plan" is the remaining path to satisfy the goal. If nothing remains, use [] and set progress "done".\n' +
+'- "progress": "done" when the goal is fully met by the results so far; "stuck" when results reveal a blocker\n' +
+'  or repeated failure that needs a different approach (this will trigger a re-plan); else "working".\n' +
+'- Keep arrays small and high-signal. No comments, no trailing commas. Output valid JSON for JSON.parse.';
+
   // §6.3 BOSS_SYNTH_SYSTEM (Boss turn B).
   var BOSS_SYNTH_SYSTEM =
 'You are the BOSS of an autonomous AI company. Your workers have completed their subtasks.\n' +
@@ -669,6 +738,21 @@ window.App = window.App || {};
     WORKER_ARTIFACT_HINT: WORKER_ARTIFACT_HINT,
     QA_REVIEW_SYSTEM: QA_REVIEW_SYSTEM,
 
+    // ---------------------------------------------------------------------------
+    // WAVE 1 §RELIABILITY CORE — version history, self-repair, rubric QA, ledger.
+    //   FILE_HISTORY_CAP   : max prior versions kept per file (Workspace.history).
+    //   ENABLE_SELF_REPAIR : master toggle for Orchestrator.runAndFix loop.
+    //   REPAIR_MAX_ROUNDS  : hard cap on self-repair rounds per run (terminal).
+    //   QA_RUBRIC_SYSTEM   : LLM-judge prompt -> STRICT JSON {scores,pass,fixFocus}.
+    //   LEDGER_REFLECT_SYSTEM : ledger-update prompt -> STRICT JSON {facts,plan,progress}.
+    // All consumed by orchestrator.js / workspace.js; defensive everywhere.
+    // ---------------------------------------------------------------------------
+    FILE_HISTORY_CAP: 20,
+    ENABLE_SELF_REPAIR: true,
+    REPAIR_MAX_ROUNDS: 3,
+    QA_RUBRIC_SYSTEM: QA_RUBRIC_SYSTEM,
+    LEDGER_REFLECT_SYSTEM: LEDGER_REFLECT_SYSTEM,
+
     // v3: watercooler banter pools. Orchestrator picks role-flavored lines (falls
     // back to generic). Short, office-y, non-blocking; used when liveChatter=false.
     CHATTER_LINES: {
@@ -724,7 +808,7 @@ window.App = window.App || {};
 
     // persistence
     STORAGE_KEY: 'pixel_ai_company_v1',
-    SCHEMA_VERSION: 4,   // v3: artifacts/persona/memories/settings; v5: +files workspace + settings.github
+    SCHEMA_VERSION: 5,   // v3: artifacts/persona/memories/settings; v5: +files workspace + settings.github; WAVE1: +files[].history + ledger
 
     // enums + palette + roles
     TILES: TILES,

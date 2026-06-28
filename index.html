@@ -1127,6 +1127,140 @@ select option{ background:var(--panel); color:var(--text); }
   .agent-row{ padding:11px 10px; }
 }
 
+/* =========================================================================
+   WAVE 1 — reliability core UI: file diff/history, run console, task ledger
+   ========================================================================= */
+
+/* amber action button (e.g. "Fix errors") */
+.btn-warn{ color:var(--amber); border-color:rgba(255,194,77,.5); }
+.btn-warn:hover{ background:var(--amber); color:#1c1402; border-color:var(--amber); box-shadow:var(--glow-amber); }
+
+/* ----- File version history + line diff (Files explorer) ----- */
+.fv-history{ margin-top:10px; }
+.fv-history > summary{
+  cursor:pointer; list-style:none;
+  font-size:10px; font-weight:800; letter-spacing:.6px; text-transform:uppercase;
+  color:var(--text-dim); padding:6px 8px;
+  background:var(--field); border:1px solid var(--divider); border-radius:5px;
+  display:flex; align-items:center; gap:8px;
+}
+.fv-history > summary::-webkit-details-marker{ display:none; }
+.fv-history > summary:hover{ color:var(--text); border-color:var(--cyan); }
+.fv-history[open] > summary{ border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); }
+.fv-history-count{ color:var(--cyan); font-weight:800; }
+.fv-history-list{ margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+.fv-hist-row{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:6px 8px; background:rgba(7,11,24,.5);
+  border:1px solid var(--divider); border-radius:5px;
+}
+.fv-hist-row.active{ border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); }
+.fv-hist-when{ font-size:10.5px; color:var(--text); flex:0 0 auto; }
+.fv-hist-by{ font-size:10px; color:var(--text-faint); flex:1 1 auto; }
+.fv-hist-tag{
+  font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase;
+  color:var(--text-dim); padding:1px 6px;
+  border:1px solid var(--divider); border-radius:99px;
+}
+.fv-hist-actions{ display:flex; gap:6px; flex:0 0 auto; }
+.fv-hist-empty{ font-size:10.5px; color:var(--text-faint); padding:6px 2px; }
+
+.fv-diff{
+  margin-top:8px; max-height:34vh; overflow:auto;
+  background:var(--field); border:1px solid var(--divider); border-radius:5px;
+  font-family:var(--mono); font-size:11.5px; line-height:1.5;
+}
+.fv-diff-title{
+  font-size:9.5px; font-weight:800; letter-spacing:.6px; text-transform:uppercase;
+  color:var(--text-faint); padding:6px 10px; border-bottom:1px solid var(--divider);
+}
+.diff-line{ display:block; white-space:pre-wrap; word-break:break-word; padding:0 10px; border-left:3px solid transparent; }
+.diff-ctx{ color:var(--text-dim); }
+.diff-add{ color:var(--lime); background:rgba(93,255,155,.08); border-left-color:var(--lime); }
+.diff-del{ color:var(--red);  background:rgba(255,77,109,.08); border-left-color:var(--red); }
+.diff-line .diff-sign{ display:inline-block; width:1.2em; color:var(--text-faint); user-select:none; }
+.diff-add .diff-sign{ color:var(--lime); }
+.diff-del .diff-sign{ color:var(--red); }
+.diff-empty{ color:var(--text-faint); padding:8px 10px; }
+
+/* ----- Run console pane (Run preview) ----- */
+.run-console{
+  margin-top:10px;
+  background:var(--void, #04060f); border:1px solid var(--divider); border-radius:6px;
+  display:flex; flex-direction:column; min-height:0;
+}
+.run-console-head{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:7px 10px; border-bottom:1px solid var(--divider);
+}
+.run-console-title{
+  font-size:9.5px; font-weight:800; letter-spacing:.7px; text-transform:uppercase;
+  color:var(--text-dim);
+}
+.run-console-stat{ font-size:10px; color:var(--text-faint); }
+.run-console-stat.has-errors{ color:var(--red); font-weight:800; }
+.run-console-spacer{ flex:1 1 auto; }
+.run-console-body{
+  flex:1 1 auto; overflow:auto; max-height:22vh; min-height:64px;
+  padding:6px 0; font-family:var(--mono); font-size:11.5px; line-height:1.5;
+}
+.rc-line{ display:block; white-space:pre-wrap; word-break:break-word; padding:1px 10px; }
+.rc-line .rc-tag{
+  display:inline-block; font-weight:800; margin-right:7px;
+  font-size:9px; letter-spacing:.5px; text-transform:uppercase;
+}
+.rc-log{ color:var(--text-dim); }
+.rc-log .rc-tag{ color:var(--text-faint); }
+.rc-warn{ color:var(--amber); }
+.rc-warn .rc-tag{ color:var(--amber); }
+.rc-error{ color:var(--red); }
+.rc-error .rc-tag{ color:var(--red); }
+.rc-empty{ color:var(--text-faint); padding:8px 10px; font-size:10.5px; }
+
+/* ----- Task ledger panel (board) ----- */
+.ledger-box{
+  flex:0 0 auto; margin:0 12px 4px;
+  background:rgba(7,11,24,.5); border:1px solid var(--divider); border-radius:5px;
+}
+.ledger-summary{
+  cursor:pointer; list-style:none;
+  display:flex; align-items:center; gap:9px;
+  padding:8px 11px;
+  font-size:10.5px; font-weight:800; letter-spacing:1px; text-transform:uppercase;
+  color:var(--text-dim);
+}
+.ledger-summary::-webkit-details-marker{ display:none; }
+.ledger-summary:hover{ color:var(--text); }
+.ledger-summary-lbl{ flex:1 1 auto; }
+.ledger-badge{
+  font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase;
+  color:var(--text-dim); padding:2px 8px;
+  border:1px solid var(--divider); border-radius:99px;
+}
+.ledger-badge.prog-working{ color:var(--cyan);  border-color:rgba(57,215,255,.5);  box-shadow:var(--glow-cyan-soft); }
+.ledger-badge.prog-stuck{   color:var(--red);   border-color:rgba(255,77,109,.5); box-shadow:var(--glow-red); }
+.ledger-badge.prog-done{    color:var(--lime);  border-color:rgba(93,255,155,.5); }
+.ledger-body{ padding:0 11px 11px; }
+.ledger-section{ margin-top:8px; }
+.ledger-key{
+  font-size:9px; font-weight:800; letter-spacing:.6px; text-transform:uppercase;
+  color:var(--text-faint); margin-bottom:4px;
+}
+.ledger-list{ display:flex; flex-direction:column; gap:3px; }
+.ledger-item{
+  font-size:11px; color:var(--text); line-height:1.45;
+  padding-left:12px; position:relative; word-break:break-word;
+}
+.ledger-item::before{ content:"›"; position:absolute; left:0; color:var(--cyan); }
+.ledger-plan .ledger-item::before{ color:var(--purple); }
+.ledger-empty{ font-size:10.5px; color:var(--text-faint); padding:4px 0; }
+.ledger-updated{ font-size:9px; color:var(--text-faint); margin-top:8px; text-align:right; }
+
+@media (max-width:760px){
+  .run-console-body{ max-height:30vh; }
+  .fv-diff{ max-height:40vh; }
+}
+
 /* reduced motion: calm all the loops */
 @media (prefers-reduced-motion:reduce){
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,
@@ -1313,6 +1447,19 @@ select option{ background:var(--panel); color:var(--text); }
                 placeholder="Give a big goal to the Boss — it will decompose &amp; delegate…"></textarea>
       <button id="board-send" class="btn btn-primary btn-dispatch" type="button" data-i18n="hud.dispatch">DISPATCH</button>
     </div>
+
+    <!-- TASK LEDGER (#board-ledger) — collapsible HUD board of the live ledger
+         (facts / plan / progress) maintained by the Orchestrator. App.UI fills
+         the body via App.UI.refreshLedger() from App.state._ledger. -->
+    <details id="board-ledger" class="ledger-box">
+      <summary class="ledger-summary">
+        <span class="ledger-summary-lbl" data-i18n="ledger.title">TASK LEDGER</span>
+        <span id="ledger-progress" class="ledger-badge">—</span>
+      </summary>
+      <div id="board-ledger-body" class="ledger-body">
+        <!-- facts / plan injected by App.UI.refreshLedger() -->
+      </div>
+    </details>
 
     <div class="board-cols">
       <div class="board-col">
@@ -1944,6 +2091,75 @@ window.App = window.App || {};
 'exact path, containing the COMPLETE updated file content. NO prose outside the blocks. Do not emit files\n' +
 'you did not change.';
 
+  // ---------------------------------------------------------------------------
+  // WAVE 1 §RUBRIC QA — LLM-judge system prompt. The judge scores ONE deliverable
+  // against a concrete analytic rubric and returns STRICT JSON so the Orchestrator
+  // can parse pass/fail + a focused fix hint. Reference-anchored, concrete criteria
+  // keep judge bias low; it falls back to the legacy PASS/FAIL path on parse error.
+  // ---------------------------------------------------------------------------
+  var QA_RUBRIC_SYSTEM =
+'You are a rigorous QA judge inside an autonomous AI company. You are given ONE worker deliverable and the\n' +
+'task it was meant to satisfy. Score it against the analytic rubric below — judge ONLY what is in front of\n' +
+'you, against the stated task, not against an imagined ideal.\n' +
+'\n' +
+'RUBRIC (score each criterion independently):\n' +
+'1. requirement-coverage : Does the deliverable address every explicit requirement of the task? A criterion\n' +
+'   FAILS only if a REQUIRED piece is missing or wrong — not for optional polish.\n' +
+'2. correctness          : Is the content factually/logically correct and internally consistent? No bugs,\n' +
+'   no contradictions, no fabricated specifics.\n' +
+'3. runs-without-error   : If it is code or a runnable artifact, would it run/parse as given (no obvious\n' +
+'   syntax errors, undefined refs, broken structure)? For non-code, treat as "is it well-formed and usable".\n' +
+'4. completeness         : Is it a finished, self-contained deliverable (not an outline, stub, or promise)?\n' +
+'\n' +
+'Be pragmatic and reference-anchored: quote the offending part when you fail a criterion. A deliverable\n' +
+'that is correct and complete PASSES even if it could be marginally nicer. Only fail for real, fixable defects.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "scores": [\n' +
+'    { "criterion": "requirement-coverage", "pass": <true|false>, "note": "<one short, specific line>" },\n' +
+'    { "criterion": "correctness",          "pass": <true|false>, "note": "<one short, specific line>" },\n' +
+'    { "criterion": "runs-without-error",   "pass": <true|false>, "note": "<one short, specific line>" },\n' +
+'    { "criterion": "completeness",         "pass": <true|false>, "note": "<one short, specific line>" }\n' +
+'  ],\n' +
+'  "pass": <true|false>,\n' +
+'  "fixFocus": "<if pass=false: the single most important, actionable thing to fix in one revision; else \\"\\">"\n' +
+'}\n' +
+'\n' +
+'Rules:\n' +
+'- "pass" (top level) is true ONLY when every criterion passes; otherwise false.\n' +
+'- When pass=false, "fixFocus" MUST be a concrete, actionable instruction the worker can act on in ONE\n' +
+'  revision (quote the offending part, name the missing piece, give the exact fix). When pass=true it is "".\n' +
+'- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // ---------------------------------------------------------------------------
+  // WAVE 1 §TASK LEDGER — reflection prompt. Given the goal + recent results, the
+  // Boss updates a small task ledger (facts learned, current plan, progress flag)
+  // so the run carries forward grounded state. Returns STRICT JSON. Parsed by the
+  // Orchestrator (App.state._ledger); a stuck progress nudges a re-plan.
+  // ---------------------------------------------------------------------------
+  var LEDGER_REFLECT_SYSTEM =
+'You are the BOSS / orchestrator of an autonomous AI company, keeping a concise TASK LEDGER for the current\n' +
+'run. You are given the user goal and the most recent worker results (and possibly the prior ledger). Reflect\n' +
+'and update the ledger so the team shares grounded, current state. Be terse and concrete — this is working\n' +
+'memory, not a report.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "facts": [<short concrete facts learned so far, most decision-relevant first; <= 6 items>],\n' +
+'  "plan":  [<short next-step plan items toward the goal; <= 6 items>],\n' +
+'  "progress": "working" | "stuck" | "done"\n' +
+'}\n' +
+'\n' +
+'Rules:\n' +
+'- "facts" capture what is now KNOWN (results, constraints, decisions) — not speculation. Keep each one line.\n' +
+'- "plan" is the remaining path to satisfy the goal. If nothing remains, use [] and set progress "done".\n' +
+'- "progress": "done" when the goal is fully met by the results so far; "stuck" when results reveal a blocker\n' +
+'  or repeated failure that needs a different approach (this will trigger a re-plan); else "working".\n' +
+'- Keep arrays small and high-signal. No comments, no trailing commas. Output valid JSON for JSON.parse.';
+
   // §6.3 BOSS_SYNTH_SYSTEM (Boss turn B).
   var BOSS_SYNTH_SYSTEM =
 'You are the BOSS of an autonomous AI company. Your workers have completed their subtasks.\n' +
@@ -2179,6 +2395,21 @@ window.App = window.App || {};
     WORKER_ARTIFACT_HINT: WORKER_ARTIFACT_HINT,
     QA_REVIEW_SYSTEM: QA_REVIEW_SYSTEM,
 
+    // ---------------------------------------------------------------------------
+    // WAVE 1 §RELIABILITY CORE — version history, self-repair, rubric QA, ledger.
+    //   FILE_HISTORY_CAP   : max prior versions kept per file (Workspace.history).
+    //   ENABLE_SELF_REPAIR : master toggle for Orchestrator.runAndFix loop.
+    //   REPAIR_MAX_ROUNDS  : hard cap on self-repair rounds per run (terminal).
+    //   QA_RUBRIC_SYSTEM   : LLM-judge prompt -> STRICT JSON {scores,pass,fixFocus}.
+    //   LEDGER_REFLECT_SYSTEM : ledger-update prompt -> STRICT JSON {facts,plan,progress}.
+    // All consumed by orchestrator.js / workspace.js; defensive everywhere.
+    // ---------------------------------------------------------------------------
+    FILE_HISTORY_CAP: 20,
+    ENABLE_SELF_REPAIR: true,
+    REPAIR_MAX_ROUNDS: 3,
+    QA_RUBRIC_SYSTEM: QA_RUBRIC_SYSTEM,
+    LEDGER_REFLECT_SYSTEM: LEDGER_REFLECT_SYSTEM,
+
     // v3: watercooler banter pools. Orchestrator picks role-flavored lines (falls
     // back to generic). Short, office-y, non-blocking; used when liveChatter=false.
     CHATTER_LINES: {
@@ -2234,7 +2465,7 @@ window.App = window.App || {};
 
     // persistence
     STORAGE_KEY: 'pixel_ai_company_v1',
-    SCHEMA_VERSION: 4,   // v3: artifacts/persona/memories/settings; v5: +files workspace + settings.github
+    SCHEMA_VERSION: 5,   // v3: artifacts/persona/memories/settings; v5: +files workspace + settings.github; WAVE1: +files[].history + ledger
 
     // enums + palette + roles
     TILES: TILES,
@@ -4181,6 +4412,8 @@ window.App = window.App || {};
 
   var App = window.App;
 
+  function CFG() { return App.config || {}; }
+
   // ---- limits ---------------------------------------------------------------
   function maxFiles() {
     try {
@@ -4191,6 +4424,15 @@ window.App = window.App || {};
     return 200;
   }
   var MAX_FILE_BYTES = 200 * 1024; // ~200k per file (chars; conservative)
+
+  // newest-history cap (config.FILE_HISTORY_CAP || 20), bounded defensively.
+  function historyCap() {
+    try {
+      var n = parseInt(CFG().FILE_HISTORY_CAP, 10);
+      if (n > 0 && n < 10000) return n;
+    } catch (e) {}
+    return 20;
+  }
 
   // ---- state accessor (Store owns/seeds; we read defensively) ---------------
   function filesMap() {
@@ -4268,6 +4510,145 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // VERSION HISTORY helpers
+  //   Each file record carries .history = [{content,t,by}] (newest LAST), the
+  //   prior versions recorded BEFORE each overwrite/edit, capped to newest N.
+  // ===========================================================================
+  function carryHistory(rec) {
+    // Return a fresh array of the record's existing history (coerced + capped).
+    var out = [];
+    try {
+      if (rec && typeof rec === 'object' && rec.history && rec.history.length) {
+        for (var i = 0; i < rec.history.length; i++) {
+          var h = rec.history[i];
+          if (!h || typeof h !== 'object') continue;
+          out.push({
+            content: (typeof h.content === 'string') ? h.content : String(h.content == null ? '' : h.content),
+            t: (typeof h.t === 'number') ? h.t : 0,
+            by: h.by ? String(h.by) : 'agent'
+          });
+        }
+      }
+    } catch (e) {}
+    capHistory(out);
+    return out;
+  }
+
+  function priorContentOf(rec) {
+    if (rec && typeof rec === 'object' && typeof rec.content === 'string') return rec.content;
+    if (typeof rec === 'string') return rec; // tolerate legacy shape
+    if (rec && typeof rec === 'object' && rec.content != null) return String(rec.content);
+    return '';
+  }
+
+  function capHistory(arr) {
+    try {
+      var cap = historyCap();
+      while (arr.length > cap) arr.shift(); // drop oldest (front)
+    } catch (e) {}
+    return arr;
+  }
+
+  // Public: snapshots for a file, newest last. Always an array.
+  function history(path) {
+    try {
+      var map = filesMap();
+      if (!map) return [];
+      var p = normalizePath(path);
+      var rec = map[p];
+      if (!rec || typeof rec !== 'object' || !rec.history || !rec.history.length) return [];
+      var out = [];
+      for (var i = 0; i < rec.history.length; i++) {
+        var h = rec.history[i];
+        if (!h || typeof h !== 'object') continue;
+        out.push({
+          content: (typeof h.content === 'string') ? h.content : String(h.content == null ? '' : h.content),
+          t: (typeof h.t === 'number') ? h.t : 0,
+          by: h.by ? String(h.by) : 'agent'
+        });
+      }
+      return out;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // Public: restore a historical version (by index into history(path)) as a
+  // NEW write (by:'user'), which itself snapshots the current content. Returns
+  // the path on success, null otherwise. Never throws.
+  function restore(path, index) {
+    try {
+      var snaps = history(path);
+      var i = parseInt(index, 10);
+      if (!(i >= 0 && i < snaps.length)) return null;
+      var content = snaps[i].content;
+      return write(path, content, 'user');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Public: dependency-free LCS line diff.
+  //   -> [{type:'ctx'|'add'|'del', text:String}]  (old=del, new=add)
+  //   Bounded for large files: above a size threshold, fall back to a coarse
+  //   block diff (all-del then all-add) to avoid an O(n*m) table blowup.
+  function diffLines(oldStr, newStr) {
+    try {
+      var a = splitLines(oldStr);
+      var b = splitLines(newStr);
+      var out = [];
+      // Bound the LCS table: cap on product of line counts.
+      var MAX_CELLS = 1500 * 1500; // ~2.25M cells ceiling (avoid a giant DP table / UI jank)
+      if (a.length * b.length > MAX_CELLS || a.length > 20000 || b.length > 20000) {
+        for (var d = 0; d < a.length; d++) out.push({ type: 'del', text: a[d] });
+        for (var ad = 0; ad < b.length; ad++) out.push({ type: 'add', text: b[ad] });
+        return out;
+      }
+      var n = a.length, m = b.length;
+      // LCS length table (rows 0..n, cols 0..m). Uint arrays where possible.
+      var table = [];
+      for (var r = 0; r <= n; r++) {
+        table.push(new Array(m + 1));
+        table[r][m] = 0;
+      }
+      for (var c = 0; c <= m; c++) table[n][c] = 0;
+      for (var ii = n - 1; ii >= 0; ii--) {
+        var rowI = table[ii], rowI1 = table[ii + 1];
+        for (var jj = m - 1; jj >= 0; jj--) {
+          if (a[ii] === b[jj]) rowI[jj] = rowI1[jj + 1] + 1;
+          else rowI[jj] = (rowI1[jj] >= rowI[jj + 1]) ? rowI1[jj] : rowI[jj + 1];
+        }
+      }
+      // Backtrack to build the edit script.
+      var x = 0, y = 0;
+      while (x < n && y < m) {
+        if (a[x] === b[y]) {
+          out.push({ type: 'ctx', text: a[x] });
+          x++; y++;
+        } else if (table[x + 1][y] >= table[x][y + 1]) {
+          out.push({ type: 'del', text: a[x] });
+          x++;
+        } else {
+          out.push({ type: 'add', text: b[y] });
+          y++;
+        }
+      }
+      while (x < n) { out.push({ type: 'del', text: a[x] }); x++; }
+      while (y < m) { out.push({ type: 'add', text: b[y] }); y++; }
+      return out;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function splitLines(s) {
+    var str = String(s == null ? '' : s);
+    str = str.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (str === '') return [];
+    return str.split('\n');
+  }
+
+  // ===========================================================================
   // WRITE / READ / REMOVE / LIST / CLEAR
   // ===========================================================================
   function write(path, content, by) {
@@ -4280,16 +4661,31 @@ window.App = window.App || {};
       // per-file size cap (defensive truncate rather than reject silently)
       if (str.length > MAX_FILE_BYTES) str = str.slice(0, MAX_FILE_BYTES);
       // total-file cap: allow overwrite of existing, reject NEW over cap
-      if (!Object.prototype.hasOwnProperty.call(map, p)) {
+      var existing = Object.prototype.hasOwnProperty.call(map, p) ? map[p] : null;
+      if (!existing) {
         var count = 0;
         for (var k in map) { if (Object.prototype.hasOwnProperty.call(map, k)) count++; }
         if (count >= maxFiles()) return null;
+      }
+      // VERSION HISTORY: carry forward prior history, and record the PRIOR
+      // content as a snapshot BEFORE overwriting (capped to newest entries).
+      var hist = carryHistory(existing);
+      if (existing) {
+        var priorContent = priorContentOf(existing);
+        var priorT = (existing && typeof existing.t === 'number') ? existing.t : 0;
+        var priorBy = (existing && existing.updatedBy) ? String(existing.updatedBy) : 'agent';
+        // skip a no-op snapshot when content is unchanged (avoid history spam)
+        if (priorContent !== str) {
+          hist.push({ content: priorContent, t: priorT, by: priorBy });
+          capHistory(hist);
+        }
       }
       map[p] = {
         content: str,
         lang: detectLang(p),
         updatedBy: by ? String(by) : 'agent',
-        t: Date.now()
+        t: Date.now(),
+        history: hist
       };
       return p;
     } catch (e) {
@@ -4342,7 +4738,8 @@ window.App = window.App || {};
           content: typeof rec.content === 'string' ? rec.content : String(rec.content == null ? '' : rec.content),
           lang: rec.lang || detectLang(k),
           updatedBy: rec.updatedBy || 'agent',
-          t: typeof rec.t === 'number' ? rec.t : 0
+          t: typeof rec.t === 'number' ? rec.t : 0,
+          history: (rec.history && rec.history.length) ? rec.history.length : 0
         });
       }
       out.sort(function (a, b) { return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0); });
@@ -4724,7 +5121,84 @@ window.App = window.App || {};
     return String(content == null ? '' : content).replace(/<\/(script)/gi, '<\\/$1');
   }
 
-  function assembleRunnable() {
+  // Self-repair capture prelude: override console.* and listen for runtime
+  // errors, forwarding each to the parent via postMessage. Built by SPLITTING
+  // script-tag literals so this source never contains a real closing tag.
+  //   parent.postMessage({source:'neonworks-run', kind:'log'|'error', text}, '*')
+  function capturePrelude() {
+    var SO = '<scr' + 'ipt>';
+    var SC = '</scr' + 'ipt>';
+    var body = [
+      '(function(){',
+      '  try {',
+      '    var send = function(kind, text){',
+      "      try { parent.postMessage({ source:'neonworks-run', kind:kind, text:String(text) }, '*'); } catch(e){}",
+      '    };',
+      '    var fmt = function(args){',
+      '      var parts = [];',
+      '      for (var i=0;i<args.length;i++){',
+      '        var a = args[i];',
+      '        try {',
+      "          if (a && typeof a === 'object') parts.push(JSON.stringify(a));",
+      '          else parts.push(String(a));',
+      '        } catch(e){ parts.push(String(a)); }',
+      '      }',
+      "      return parts.join(' ');",
+      '    };',
+      "    var c = window.console || (window.console = {});",
+      "    ['log','warn','error','info','debug'].forEach(function(name){",
+      '      var orig = c[name];',
+      '      c[name] = function(){',
+      "        send(name === 'error' ? 'error' : 'log', name.toUpperCase() + ': ' + fmt(arguments));",
+      "        try { if (typeof orig === 'function') orig.apply(c, arguments); } catch(e){}",
+      '      };',
+      '    });',
+      "    window.addEventListener('error', function(ev){",
+      '      try {',
+      '        var msg = ev && ev.message ? ev.message : (ev && ev.error ? String(ev.error) : "error");',
+      '        var loc = (ev && ev.filename) ? (" (" + ev.filename + ":" + (ev.lineno||0) + ":" + (ev.colno||0) + ")") : "";',
+      '        var stk = (ev && ev.error && ev.error.stack) ? ("\\n" + ev.error.stack) : "";',
+      "        send('error', msg + loc + stk);",
+      '      } catch(e){}',
+      '    });',
+      "    window.addEventListener('unhandledrejection', function(ev){",
+      '      try {',
+      '        var r = ev && ev.reason;',
+      '        var msg = (r && r.stack) ? r.stack : (r && r.message) ? r.message : String(r);',
+      "        send('error', 'UnhandledRejection: ' + msg);",
+      '      } catch(e){}',
+      '    });',
+      '  } catch(e){}',
+      '})();'
+    ].join('\n');
+    return SO + '\n' + body + '\n' + SC;
+  }
+
+  // Inject the prelude at the TOP of <head> (or <body>, or the document) so it
+  // installs before any project script runs. Defensive; returns html unchanged
+  // on any failure.
+  function injectCapture(html) {
+    try {
+      var prelude = capturePrelude();
+      var headRe = /<head\b[^>]*>/i;
+      if (headRe.test(html)) {
+        return html.replace(headRe, function (tag) { return tag + '\n' + prelude; });
+      }
+      var bodyRe = /<body\b[^>]*>/i;
+      if (bodyRe.test(html)) {
+        return html.replace(bodyRe, function (tag) { return tag + '\n' + prelude; });
+      }
+      var htmlRe = /<html\b[^>]*>/i;
+      if (htmlRe.test(html)) {
+        return html.replace(htmlRe, function (tag) { return tag + '\n' + prelude; });
+      }
+      return prelude + '\n' + html;
+    } catch (e) {
+      return html;
+    }
+  }
+
+  function assembleRunnable(opts) {
     try {
       var map = filesMap();
       if (!map) return null;
@@ -4774,6 +5248,11 @@ window.App = window.App || {};
           return '<scr' + 'ipt' + typeAttr + '>\n' + escScriptClose(js) + '\n</scr' + 'ipt>';
         } catch (e) { return full; }
       });
+
+      // Self-repair console/error capture prelude (opt-in via opts.capture).
+      if (opts && opts.capture) {
+        html = injectCapture(html);
+      }
 
       return html;
     } catch (e) {
@@ -4896,6 +5375,10 @@ window.App = window.App || {};
     buildZip: buildZip,
     assembleRunnable: assembleRunnable,
     githubPush: githubPush,
+    // VERSION HISTORY (Wave 1 reliability core)
+    history: history,
+    restore: restore,
+    diffLines: diffLines,
     // helpers exposed for reuse / testing (additive, non-spec)
     normalizePath: normalizePath,
     toBase64Utf8: toBase64Utf8
@@ -8575,6 +9058,61 @@ window.App = window.App || {};
     return (typeof n === 'number' && n > 0) ? n : 200;
   }
 
+  // WAVE 1: cap helper for per-file version history (files[path].history).
+  function fileHistoryCap() {
+    var n = cfg().FILE_HISTORY_CAP;
+    return (typeof n === 'number' && n > 0) ? n : 20;
+  }
+
+  // WAVE 1: sanitize a persisted file-history array -> [{content,t,by}] (oldest..
+  // newest order preserved). Coerces content to String, caps per-entry size, and
+  // keeps only the newest FILE_HISTORY_CAP entries. Never throws.
+  function normalizeHistory(arr) {
+    if (!Array.isArray(arr)) return [];
+    var PER_ENTRY_MAX = 200 * 1024;   // 200k chars per historical version
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var h = arr[i];
+      if (!h || typeof h !== 'object') continue;
+      var content = (h.content == null) ? '' : String(h.content);
+      if (content.length > PER_ENTRY_MAX) content = content.slice(0, PER_ENTRY_MAX);
+      out.push({
+        content: content,
+        t: (typeof h.t === 'number') ? h.t : nowMs(),
+        by: (h.by == null) ? 'agent' : String(h.by),
+      });
+    }
+    var cap = fileHistoryCap();
+    if (out.length > cap) out = out.slice(out.length - cap);   // keep newest
+    return out;
+  }
+
+  // WAVE 1: sanitize the runtime task ledger -> {facts[],plan[],progress,updated}.
+  // Caps the string arrays, constrains progress to the known enum, coerces every
+  // entry to a string. Returns null when there is nothing meaningful to persist
+  // (so empty saves are not bloated). Never throws.
+  function normalizeLedger(l) {
+    if (!l || typeof l !== 'object') return null;
+    var LIST_CAP = 12;
+    function strList(a) {
+      if (!Array.isArray(a)) return [];
+      var o = [];
+      for (var i = 0; i < a.length && o.length < LIST_CAP; i++) {
+        if (a[i] == null) continue;
+        var s = String(a[i]);
+        if (s) o.push(s);
+      }
+      return o;
+    }
+    var facts = strList(l.facts);
+    var plan = strList(l.plan);
+    var progress = l.progress;
+    if (progress !== 'working' && progress !== 'stuck' && progress !== 'done') progress = 'working';
+    var updated = (typeof l.updated === 'number') ? l.updated : nowMs();
+    if (!facts.length && !plan.length && progress === 'working') return null;   // nothing meaningful
+    return { facts: facts, plan: plan, progress: progress, updated: updated };
+  }
+
   // v5: detect a file's language from its extension (mirror of
   // Workspace.detectLang; kept here so the store can normalize standalone).
   function detectLangFor(path) {
@@ -8599,7 +9137,9 @@ window.App = window.App || {};
   //   - coerce content to String, cap per-file size (200k chars)
   //   - cap total file count (drop oldest by t past MAX_PROJECT_FILES)
   //   - fill lang/updatedBy/t with safe defaults
-  // Returns a fresh plain object. Never throws.
+  //   - WAVE 1: preserve files[path].history -> normalized [{content,t,by}] (capped)
+  // Returns a fresh plain object. Never throws. Migrate older saves (missing
+  // history -> []).
   function normalizeFiles(map) {
     var out = {};
     if (!map || typeof map !== 'object') return out;
@@ -8619,6 +9159,7 @@ window.App = window.App || {};
         lang: (f.lang == null || f.lang === '') ? detectLangFor(path) : String(f.lang),
         updatedBy: (f.updatedBy == null) ? 'agent' : String(f.updatedBy),
         t: (typeof f.t === 'number') ? f.t : nowMs(),
+        history: normalizeHistory(f.history),   // WAVE 1: prior versions (migrate missing -> [])
       });
     }
     // cap total count: keep the most recently updated files.
@@ -8629,7 +9170,7 @@ window.App = window.App || {};
     }
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
-      out[r.path] = { content: r.content, lang: r.lang, updatedBy: r.updatedBy, t: r.t };
+      out[r.path] = { content: r.content, lang: r.lang, updatedBy: r.updatedBy, t: r.t, history: r.history };
     }
     return out;
   }
@@ -8683,6 +9224,10 @@ window.App = window.App || {};
       _activeStreams: {},
       _followId: null,        // v3: agent id the camera follows (runtime-only)
       _buildActive: false,    // v5: true while a project BUILD pipeline is running (runtime-only, NOT persisted)
+      // WAVE 1: task ledger (working memory; PERSISTED under blob.ledger when meaningful)
+      _ledger: null,          // { facts:[], plan:[], progress:'working'|'stuck'|'done', updated }
+      // WAVE 1: last run / self-repair capture — RUNTIME-ONLY, NEVER persisted.
+      _lastRun: null,         // { errors:[], logs:[], t }
     };
   }
 
@@ -8711,6 +9256,8 @@ window.App = window.App || {};
     if (!s._activeStreams || typeof s._activeStreams !== 'object') s._activeStreams = {};
     if (typeof s._followId === 'undefined') s._followId = null;
     if (typeof s._buildActive === 'undefined') s._buildActive = false;   // v5
+    if (typeof s._ledger === 'undefined') s._ledger = null;              // WAVE 1
+    if (typeof s._lastRun === 'undefined') s._lastRun = null;            // WAVE 1 (runtime-only)
     return s;
   }
 
@@ -8892,6 +9439,9 @@ window.App = window.App || {};
     var settings = Object.assign(defaultSettings(), deepClone(s.settings) || {});
     settings.github = normalizeGithub(settings.github);   // v5
 
+    // WAVE 1: task ledger — small runtime working-memory; persist when meaningful.
+    var ledger = normalizeLedger(s._ledger);
+
     var blob = {
       v: schemaVersion(),
       savedAt: nowMs(),
@@ -8904,8 +9454,10 @@ window.App = window.App || {};
       settings: settings,
       selectedAgentId: s.selectedAgentId || null,
       camera: clampCameraValue(s.camera),
-      // NOT persisted: _time,_meetingActive,_activeStreams,_followId, layoutEdit, paused
+      // NOT persisted: _time,_meetingActive,_activeStreams,_followId, layoutEdit, paused,
+      //   _lastRun (WAVE 1: runtime-only self-repair capture — NEVER persisted).
     };
+    if (ledger) blob.ledger = ledger;   // WAVE 1: persisted under a non-underscore key
     return blob;
   }
 
@@ -8996,6 +9548,11 @@ window.App = window.App || {};
       if (Object.prototype.hasOwnProperty.call(rebuiltFiles, nfk)) s.files[nfk] = rebuiltFiles[nfk];
     }
 
+    // --- WAVE 1: task ledger (restore if present; else leave unset/runtime-init) ---
+    var lg = normalizeLedger(blob.ledger);
+    if (lg) { s._ledger = lg; }
+    else if (typeof s._ledger === 'undefined') { s._ledger = null; }
+
     // --- settings (merge over defaults; re-normalize github subobject) ---
     s.settings = Object.assign(defaultSettings(), (blob.settings && typeof blob.settings === 'object') ? blob.settings : {});
     s.settings.github = normalizeGithub(s.settings.github);   // v5
@@ -9023,6 +9580,8 @@ window.App = window.App || {};
     s._activeStreams = {};
     s._followId = null;       // v3: never restore camera-follow from disk
     s._buildActive = false;   // v5: never restore a mid-build flag from disk
+    s._lastRun = null;        // WAVE 1: self-repair capture is runtime-only; never restored
+    // NOTE: s._ledger is set above from blob.ledger when present (it IS persisted).
 
     return s;
   }
@@ -9094,6 +9653,22 @@ window.App = window.App || {};
           }
         }
         v = 4;
+      }
+      // v4 -> v5 (WAVE 1): per-file version history (files[path].history) + the
+      // persisted task ledger (blob.ledger). Both are filled with safe defaults by
+      // normalizeFiles (missing history -> []) / normalizeLedger on load, so this
+      // step only ensures the shapes exist; everything else is a forward no-op.
+      // Defensive: run whenever v<5 regardless of whether SCHEMA_VERSION was bumped.
+      if (v < 5) {
+        if (blob.files && typeof blob.files === 'object') {
+          for (var fp in blob.files) {
+            if (!Object.prototype.hasOwnProperty.call(blob.files, fp)) continue;
+            var ff = blob.files[fp];
+            if (ff && typeof ff === 'object' && !Array.isArray(ff.history)) ff.history = [];
+          }
+        }
+        // blob.ledger absent -> normalizeLedger yields null (no ledger). Forward no-op.
+        v = 5;
       }
       // Always stamp to current after running known steps.
       blob.v = target;
@@ -9224,6 +9799,8 @@ window.App = window.App || {};
       s._activeStreams = {};
       s._followId = null;
       s._buildActive = false;   // v5
+      s._ledger = null;         // WAVE 1: fresh company starts with no ledger
+      s._lastRun = null;        // WAVE 1: runtime-only
 
       // 3) place the 4 default agents at desks (§9: boss, engineer, designer, researcher)
       var collected = collectDeskSeats(s.layout);
@@ -10986,6 +11563,138 @@ window.App = window.App || {};
   Orchestrator.adjustAffinity = adjustAffinity;
   Orchestrator.bondParticipants = bondParticipants;
 
+  // ===========================================================================
+  // TASK LEDGER (Wave 1) — App.state._ledger = {facts, plan, progress, updated}.
+  //   Initialized from the goal at the start of a run; updated by ONE bounded
+  //   LLM reflection between waves / on stall; 'stuck' nudges a re-plan.
+  //   All guarded; never throws. Persistence handled by store.js.
+  // ===========================================================================
+  function refreshLedgerUI() {
+    try { if (App.UI && App.UI.refreshLedger) App.UI.refreshLedger(); } catch (e) {}
+  }
+
+  // initLedger(goal) — seed the ledger facts from the user's goal. Resets per run.
+  function initLedger(goal) {
+    try {
+      var s = STATE();
+      if (!s) return;
+      var g = String(goal == null ? '' : goal).trim();
+      s._ledger = {
+        facts: g ? ['Goal: ' + truncate(g, 240)] : [],
+        plan: [],
+        progress: 'working',
+        updated: nowMs(),
+      };
+      refreshLedgerUI();
+    } catch (e) {}
+  }
+  Orchestrator.initLedger = initLedger;
+
+  // ledger() — current ledger (creates a default working ledger if absent).
+  function ledger() {
+    var s = STATE();
+    if (!s) return null;
+    if (!s._ledger || typeof s._ledger !== 'object') {
+      s._ledger = { facts: [], plan: [], progress: 'working', updated: nowMs() };
+    }
+    return s._ledger;
+  }
+  Orchestrator.ledger = ledger;
+
+  // parseLedgerReflection(raw) → {facts,plan,progress} | null (tolerant JSON).
+  function parseLedgerReflection(raw) {
+    try {
+      if (!raw) return null;
+      var s = String(raw).replace(/^```(?:json|jsonc)?\s*/i, '').replace(/```\s*$/i, '');
+      var first = s.indexOf('{'), last = s.lastIndexOf('}');
+      if (first === -1 || last === -1 || last < first) return null;
+      var body = s.slice(first, last + 1).replace(/,(\s*[}\]])/g, '$1')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+      var obj = null;
+      try { obj = JSON.parse(body); }
+      catch (e) { var bal = braceBalancedPrefix(body); if (bal) { try { obj = JSON.parse(bal); } catch (e2) { obj = null; } } }
+      if (!obj || typeof obj !== 'object') return null;
+      function strList(v) {
+        var out = [];
+        if (Array.isArray(v)) {
+          for (var i = 0; i < v.length; i++) {
+            if (v[i] == null) continue;
+            var t = String(v[i]).trim();
+            if (t) out.push(truncate(t, 240));
+            if (out.length >= 12) break;
+          }
+        }
+        return out;
+      }
+      var progress = (obj.progress === 'stuck' || obj.progress === 'done') ? obj.progress : 'working';
+      return { facts: strList(obj.facts), plan: strList(obj.plan), progress: progress };
+    } catch (e) { return null; }
+  }
+
+  // reflectLedger(root, cb) — ONE bounded LLM call to update the ledger. Guarded by
+  //   root._ledgerBusy so we don't reflect every tick. cb(progress) always called.
+  function reflectLedger(root, cb) {
+    cb = (typeof cb === 'function') ? cb : function () {};
+    try {
+      var settings = (STATE() && STATE().settings) || {};
+      var sys = CFG().LEDGER_REFLECT_SYSTEM;
+      var model = bossModelFor();
+      var lg = ledger();
+      if (!root || !sys || !lg || !hasCredsFor(model)) { cb(lg ? lg.progress : 'working'); return; }
+      if (root._ledgerBusy) { cb(lg.progress); return; }
+      root._ledgerBusy = true;
+
+      var boss = ensureBoss();
+      var content = "USER'S GOAL:\n" + (root.desc || '') +
+        "\n\nCURRENT LEDGER:\n" + JSON.stringify({ facts: lg.facts, plan: lg.plan, progress: lg.progress }) +
+        "\n\nRECENT WORKER RESULTS:\n" + gatherWorkerResults(root) +
+        "\n\nUpdate the ledger. Reply with the strict JSON described in your instructions.";
+      var acc = '';
+      var done = false;
+      function finish(p) {
+        if (done) return; done = true;
+        root._ledgerBusy = false;
+        cb(p || (ledger() ? ledger().progress : 'working'));
+      }
+
+      var handle = App.API.stream({
+        apiKey: settings.apiKey,
+        openaiKey: settings.openaiKey,
+        model: model,
+        system: sys,
+        messages: [{ role: 'user', content: content }],
+        onText: function (d) { acc += d; },
+        onDone: function (res) {
+          var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_ledger'];
+          if (boss && res && res.usage) {
+            boss.stats.tokensIn += (res.usage.input_tokens || 0);
+            boss.stats.tokensOut += (res.usage.output_tokens || 0);
+          }
+          var ref = parseLedgerReflection((res && res.text) || acc);
+          var cur = ledger();
+          if (ref && cur) {
+            if (ref.facts.length) cur.facts = ref.facts;
+            if (ref.plan.length) cur.plan = ref.plan;
+            cur.progress = ref.progress;
+            cur.updated = nowMs();
+            refreshLedgerUI();
+            saveSoon();
+            try { log('Boss', 'system', 'system', '📒 ledger: ' + cur.progress + (cur.plan[0] ? ' — ' + truncate(cur.plan[0], 50) : '')); } catch (e) {}
+          }
+          finish(cur ? cur.progress : 'working');
+        },
+        onError: function () {
+          var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_ledger'];
+          finish(ledger() ? ledger().progress : 'working');
+        },
+      });
+      var s = STATE(); if (s && s._activeStreams) s._activeStreams['__boss_ledger'] = handle;
+    } catch (e) {
+      try { if (root) root._ledgerBusy = false; } catch (e2) {}
+      cb('working');
+    }
+  }
+
   // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
   // local companion (subscription proxy needs no key). Mirrors api.js's guard so
   // companion-only / GPT-only setups aren't blocked before the request is built.
@@ -11300,6 +12009,8 @@ window.App = window.App || {};
     };
     s.tasks.push(root);
     log('user', 'Boss', 'msg', truncate(text, 120));
+    // TASK LEDGER: seed facts from the goal for this run.
+    initLedger(text);
     refreshBoard();
 
     // No key → fail fast, friendly. (§10)
@@ -11926,7 +12637,9 @@ window.App = window.App || {};
     task.result = text;
 
     // 3) QA loop: a verify task isn't terminal until it PASSes (or retries exhaust).
-    if (task.verify && !task._qaDone && CFG().QA_REVIEW_SYSTEM) {
+    //   Runs with the analytic rubric (QA_RUBRIC_SYSTEM) when available, else the
+    //   plain PASS/FAIL reviewer (QA_REVIEW_SYSTEM).
+    if (task.verify && !task._qaDone && (CFG().QA_RUBRIC_SYSTEM || CFG().QA_REVIEW_SYSTEM)) {
       runQAReview(task, text, agent);
       return;
     }
@@ -11947,7 +12660,11 @@ window.App = window.App || {};
     // No creds for QA → skip review gracefully (finalize as-is; never deadlock).
     if (!hasCredsFor(qaModel)) { finishTask(task, text); return; }
 
-    var sys = CFG().QA_REVIEW_SYSTEM;
+    // RUBRIC QA: prefer the analytic rubric judge when configured; fall back to the
+    //   plain PASS/FAIL reviewer. The rubric returns {pass, fixFocus} which we feed
+    //   as the retry feedback; if its JSON is unparseable we use the PASS/FAIL path.
+    var useRubric = !!CFG().QA_RUBRIC_SYSTEM;
+    var sys = useRubric ? CFG().QA_RUBRIC_SYSTEM : CFG().QA_REVIEW_SYSTEM;
     var artifactText = qaReviewContent(task, text);
     log('QA', (worker ? worker.name : task.role), 'msg', '🔍 reviewing: ' + truncate(task.title, 40));
     if (qaAgent) { try { ag.say(qaAgent, '🔍 reviewing…', 3000); } catch (e) {} }
@@ -11963,14 +12680,26 @@ window.App = window.App || {};
       onDone: function (res) {
         var verdict = (res && res.text) || acc || '';
         var line = resultLine(verdict) || verdict;
-        var pass = /\bPASS\b/i.test(line) && !/\bFAIL\b/i.test(line);
+        var pass, rubricFeedback = '';
+        if (useRubric) {
+          var rub = parseRubricVerdict(verdict);
+          if (rub) {
+            pass = !!rub.pass;
+            rubricFeedback = rub.fixFocus || '';
+          } else {
+            // rubric JSON unreadable → fall back to PASS/FAIL detection.
+            pass = /\bPASS\b/i.test(line) && !/\bFAIL\b/i.test(line);
+          }
+        } else {
+          pass = /\bPASS\b/i.test(line) && !/\bFAIL\b/i.test(line);
+        }
         var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__qa_' + task.id];
         if (pass) {
           log('QA', 'Boss', 'result', '✓ PASS: ' + truncate(task.title, 40));
           task._qaDone = true;
           finishTask(task, text);
         } else {
-          var feedback = extractFeedback(line) || extractFeedback(verdict) || 'address correctness/completeness issues';
+          var feedback = rubricFeedback || extractFeedback(line) || extractFeedback(verdict) || 'address correctness/completeness issues';
           if ((task._retries || 0) < (CFG().QA_MAX_RETRIES || 2)) {
             task._retries = (task._retries || 0) + 1;
             task._feedback = feedback;
@@ -12014,6 +12743,38 @@ window.App = window.App || {};
     parts.push('');
     parts.push('WORKER DELIVERABLE TO REVIEW:\n' + String(text || ''));
     return parts.join('\n');
+  }
+
+  // parseRubricVerdict(raw) → {pass, fixFocus, scores} | null. Tolerant JSON parse of
+  //   the QA_RUBRIC_SYSTEM judge output {scores:[...], pass:bool, fixFocus:String}.
+  //   When 'pass' is absent, derive it from every score's .pass (all true → pass).
+  function parseRubricVerdict(raw) {
+    try {
+      if (!raw) return null;
+      var s = String(raw).replace(/^```(?:json|jsonc)?\s*/i, '').replace(/```\s*$/i, '');
+      var first = s.indexOf('{'), last = s.lastIndexOf('}');
+      if (first === -1 || last === -1 || last < first) return null;
+      var body = s.slice(first, last + 1).replace(/,(\s*[}\]])/g, '$1')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+      var obj = null;
+      try { obj = JSON.parse(body); }
+      catch (e) { var bal = braceBalancedPrefix(body); if (bal) { try { obj = JSON.parse(bal); } catch (e2) { obj = null; } } }
+      if (!obj || typeof obj !== 'object') return null;
+      var pass;
+      if (typeof obj.pass === 'boolean') {
+        pass = obj.pass;
+      } else if (Array.isArray(obj.scores) && obj.scores.length) {
+        pass = true;
+        for (var i = 0; i < obj.scores.length; i++) {
+          var sc = obj.scores[i];
+          if (sc && sc.pass === false) { pass = false; break; }
+        }
+      } else {
+        return null;   // no usable signal → let caller fall back
+      }
+      var fixFocus = (typeof obj.fixFocus === 'string') ? obj.fixFocus.trim() : '';
+      return { pass: pass, fixFocus: fixFocus, scores: Array.isArray(obj.scores) ? obj.scores : [] };
+    } catch (e) { return null; }
   }
 
   // extractFeedback — pull the actionable part after "FAIL —" / "FAIL:".
@@ -12424,8 +13185,20 @@ window.App = window.App || {};
     try {
       if (!root || root._synthStarted) return;
       if (root._gating) return;             // a phase async-call is in flight
-      // PHASE 1 — adaptive replan (once).
-      if (CFG().ENABLE_REPLAN && !root._replanned) {
+      // PHASE 0 — TASK LEDGER reflection (once, bounded). Updates facts/plan/progress;
+      //   if it comes back 'stuck', force a re-plan round even when none was planned.
+      if (CFG().LEDGER_REFLECT_SYSTEM && !root._ledgerReflected) {
+        root._gating = true;
+        reflectLedger(root, function (progress) {
+          root._gating = false;
+          root._ledgerReflected = true;
+          if (progress === 'stuck') root._forceReplan = true;  // nudge a re-plan
+          prepareSynthesis(root);
+        });
+        return;
+      }
+      // PHASE 1 — adaptive replan (once). Runs when enabled OR when the ledger said 'stuck'.
+      if ((CFG().ENABLE_REPLAN || root._forceReplan) && !root._replanned) {
         root._gating = true;
         runReplanPhase(root, function (added) {
           root._gating = false;
@@ -12744,6 +13517,8 @@ window.App = window.App || {};
         rootTask.status = 'done';
         rootTask.result = text || '(no synthesis produced)';
         s._meetingActive = false;
+        // TASK LEDGER: mark the run complete.
+        try { var lg = ledger(); if (lg) { lg.progress = 'done'; lg.updated = nowMs(); refreshLedgerUI(); } } catch (e) {}
         // Push the final answer as an Artifact (overwrite per root on re-run).
         try {
           pushArtifacts([{
@@ -12930,6 +13705,8 @@ window.App = window.App || {};
     };
     s.tasks.push(root);
     log('user', 'Boss', 'msg', '🔨 build: ' + truncate(goalText, 110));
+    // TASK LEDGER: seed facts from the build goal.
+    initLedger(goalText);
     refreshBoard();
 
     // No usable credentials → fail fast, friendly (mirrors runBossTask).
@@ -13394,8 +14171,294 @@ window.App = window.App || {};
     try { if (App.UI && App.UI.openFiles) App.UI.openFiles(); } catch (e) {}
     try { if (App.UI && App.UI.notifyDone) App.UI.notifyDone(root); } catch (e) {}
     saveSoon();
+
+    // SELF-REPAIR: when the project has an HTML entry, run it once and auto-fix any
+    //   runtime errors (bounded). Guarded by ENABLE_SELF_REPAIR; never blocks/throws.
+    try {
+      if (CFG().ENABLE_SELF_REPAIR !== false && workspaceHasHtmlEntry()) {
+        setTimeout(function () {
+          try { Orchestrator.runAndFix({}); } catch (e) {}
+        }, 0);
+      }
+    } catch (e) {}
   }
   Orchestrator.finalizeBuild = finalizeBuild;
+
+  // ===========================================================================
+  // SELF-REPAIR (Wave 1) — App.Orchestrator.runAndFix(opts?)
+  //   1) run the assembled project (run_html tool) → capture errors/logs into
+  //      App.state._lastRun (runtime-only, never persisted).
+  //   2) if errors && ENABLE_SELF_REPAIR && round < REPAIR_MAX_ROUNDS: dispatch a
+  //      focused ENGINEER repair task (given the errors + free to read/edit/write
+  //      via the tool loop), then re-run. Bounded; always terminal; never throws.
+  //   Returns a Promise<{errors:[], rounds:Number, fixed:Boolean}>.
+  // ===========================================================================
+  function workspaceHasHtmlEntry() {
+    try {
+      var ws = WS();
+      if (!ws || typeof ws.list !== 'function') return false;
+      var items = ws.list() || [];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i] && /\.html?$/i.test(items[i].path)) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // parseRunErrors(output) — pull the error list out of a run_html tool summary.
+  //   run_html returns 'no errors' OR 'N error(s):\n<lines>\n\nconsole (...)...'.
+  function parseRunErrors(output) {
+    var errs = [], logs = [];
+    try {
+      var s = String(output == null ? '' : output);
+      if (!s) return { errors: errs, logs: logs };
+      // split off the console section if present.
+      var conIdx = s.search(/\nconsole \(\d+\):/);
+      var errSec = (conIdx >= 0) ? s.slice(0, conIdx) : s;
+      var conSec = (conIdx >= 0) ? s.slice(conIdx) : '';
+      if (!/no errors/i.test(errSec)) {
+        var m = errSec.match(/^\s*\d+ error\(s\):\s*\n?([\s\S]*)$/i);
+        var bodyTxt = m ? m[1] : errSec;
+        var lines = bodyTxt.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+          var ln = lines[i].trim();
+          if (ln) errs.push(ln);
+        }
+      }
+      if (conSec) {
+        var clines = conSec.replace(/^\nconsole \(\d+\):\s*\n?/i, '').split('\n');
+        for (var j = 0; j < clines.length; j++) {
+          var cl = clines[j].trim();
+          if (cl) logs.push(cl);
+        }
+      }
+    } catch (e) {}
+    return { errors: errs, logs: logs };
+  }
+
+  // runProjectCapture() → Promise<{errors:[], logs:[]}>. Prefers the run_html tool;
+  //   falls back to a hidden capture iframe (assembleRunnable({capture:true})) and
+  //   collects 'neonworks-run' postMessages for a short timeout. Never rejects.
+  function runProjectCapture() {
+    // Preferred: the run_html tool (already sandboxed + bounded).
+    try {
+      if (App.Tools && typeof App.Tools.run === 'function') {
+        return Promise.resolve(App.Tools.run('run_html', {})).then(function (r) {
+          r = r || {};
+          if (!r.ok) return { errors: [String(r.error || 'run failed')], logs: [] };
+          return parseRunErrors(r.output);
+        }, function (e) {
+          return { errors: ['run failed: ' + String((e && e.message) || e)], logs: [] };
+        });
+      }
+    } catch (e) {}
+    // Fallback: capture iframe via assembleRunnable({capture:true}).
+    return captureViaIframe();
+  }
+
+  // captureViaIframe() → Promise<{errors:[], logs:[]}>. Loads the capture-prelude
+  //   build into a hidden sandboxed iframe and listens for 'neonworks-run' messages.
+  function captureViaIframe() {
+    return new Promise(function (resolve) {
+      var errors = [], logs = [], settled = false, iframe = null, timer = null;
+      function done() {
+        if (settled) return;
+        settled = true;
+        try { window.removeEventListener('message', onMsg); } catch (e) {}
+        if (timer) { try { clearTimeout(timer); } catch (e) {} }
+        if (iframe) { try { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); } catch (e) {} }
+        resolve({ errors: errors, logs: logs });
+      }
+      function onMsg(ev) {
+        try {
+          var d = ev && ev.data;
+          if (!d || d.source !== 'neonworks-run') return;
+          if (d.kind === 'error') errors.push(String(d.text));
+          else logs.push('[' + (d.kind || 'log') + '] ' + String(d.text));
+        } catch (e) {}
+      }
+      try {
+        var ws = WS();
+        if (typeof document === 'undefined' || !ws || typeof ws.assembleRunnable !== 'function') { done(); return; }
+        var html = ws.assembleRunnable({ capture: true });
+        if (html == null) { done(); return; }
+        window.addEventListener('message', onMsg);
+        iframe = document.createElement('iframe');
+        iframe.setAttribute('sandbox', 'allow-scripts');
+        iframe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:800px;height:600px;border:0;visibility:hidden';
+        (document.body || document.documentElement).appendChild(iframe);
+        iframe.setAttribute('srcdoc', html);
+        timer = setTimeout(done, 1800);
+      } catch (e) { done(); }
+    });
+  }
+
+  // recordLastRun(cap) — store the capture into App.state._lastRun (runtime-only).
+  function recordLastRun(cap) {
+    try {
+      var s = STATE();
+      if (!s) return;
+      s._lastRun = {
+        errors: (cap && Array.isArray(cap.errors)) ? cap.errors.slice(0, 50) : [],
+        logs: (cap && Array.isArray(cap.logs)) ? cap.logs.slice(0, 50) : [],
+        t: nowMs(),
+      };
+      try { if (App.UI && App.UI.refreshRunConsole) App.UI.refreshRunConsole(); } catch (e) {}
+    } catch (e) {}
+  }
+
+  // dispatchRepair(errors) → Promise<Boolean done>. Streams ONE focused ENGINEER
+  //   turn with the full tool loop (read_file/search_workspace/edit_file/write_file)
+  //   so it can locate and fix the failing file(s). Bounded by MAX_TOOL_ITERS in
+  //   the loop itself. Resolves true when the turn completes (success or graceful).
+  function dispatchRepair(errors) {
+    return new Promise(function (resolve) {
+      try {
+        var settings = (STATE() && STATE().settings) || {};
+        var ag = AGENTS();
+
+        // pick an engineer (or generalist) agent for the repair.
+        var roleName = ROLES().engineer ? 'engineer' : 'generalist';
+        var agent = (ag && ag.findIdle) ? (ag.findIdle(roleName) || ag.findIdle('generalist')) : null;
+        if (!agent) agent = spawnTempWorker(roleName);
+        if (!agent) { resolve(false); return; }
+
+        var model = agent.model || settings.defaultModel;
+        if (!hasCredsFor(model)) { resolve(false); return; }
+
+        // tools: full App.Tools suite (Anthropic-only round-trip).
+        var tools;
+        try {
+          if (clientToolsApplicable(agent, settings)) {
+            var specs = App.Tools.specs();
+            if (Array.isArray(specs) && specs.length) tools = specs;
+          }
+        } catch (e) {}
+
+        var ws = WS();
+        var fileList = '';
+        try {
+          if (ws && typeof ws.list === 'function') {
+            var items = ws.list() || [];
+            fileList = items.map(function (f) { return f.path; }).join(', ');
+          }
+        } catch (e) {}
+
+        var sys = CFG().REPAIR_SYSTEM ||
+          ('You are a senior engineer fixing runtime errors in a multi-file project. ' +
+           'Use read_file/search_workspace to locate the cause, then edit_file/write_file to FIX it. ' +
+           'Make the minimal correct change. After fixing, optionally call run_html to confirm. ' +
+           'Do not explain at length — just fix the files via tools.');
+
+        var content = 'The project failed at runtime with these errors:\n\n' +
+          errors.slice(0, 20).join('\n') +
+          '\n\nProject files: ' + (fileList || '(none listed)') +
+          '\n\nLocate and FIX the cause using the file tools. Edit/write the affected file(s).';
+
+        if (agent) {
+          try { ag.say(agent, '🔧 self-repair…', 3000); } catch (e) {}
+          agent.busy = true;
+        }
+
+        // Drive a synthetic build-style repair task through the existing tool loop by
+        //   building a minimal task object and reusing startWorkerStream's mechanics
+        //   via a dedicated, self-contained stream + tool round-trip.
+        runRepairStream(agent, sys, [{ role: 'user', content: content }], tools, 0, function () {
+          try { if (agent) { agent.busy = false; ag.setState(agent, 'idle'); } } catch (e) {}
+          resolve(true);
+        });
+      } catch (e) { resolve(false); }
+    });
+  }
+
+  // runRepairStream — bounded tool-loop turn dedicated to self-repair. Mirrors the
+  //   worker tool loop but writes directly to the Workspace via App.Tools and never
+  //   touches the task board. cb() always called (terminal).
+  function runRepairStream(agent, sys, messages, tools, iter, cb) {
+    cb = (typeof cb === 'function') ? cb : function () {};
+    var ag = AGENTS();
+    var settings = (STATE() && STATE().settings) || {};
+    var MAX = (CFG().MAX_TOOL_ITERS != null) ? CFG().MAX_TOOL_ITERS : 2;
+    iter = iter || 0;
+    var acc = '';
+    var doneCalled = false;
+    function done() { if (doneCalled) return; doneCalled = true; cb(); }
+
+    try {
+      var handle = App.API.stream({
+        apiKey: settings.apiKey,
+        openaiKey: settings.openaiKey,
+        model: agent.model || settings.defaultModel,
+        system: sys,
+        messages: messages,
+        tools: tools,
+        onState: function (st) { if (st === 'text') { try { ag.setState(agent, 'coding'); } catch (e) {} } },
+        onText: function (d) { acc += d; try { markActivity(agent); } catch (e) {} },
+        onDone: function (res) {
+          if (res && res.usage && agent.stats) {
+            agent.stats.tokensIn += (res.usage.input_tokens || 0);
+            agent.stats.tokensOut += (res.usage.output_tokens || 0);
+          }
+          var toolUses = res && Array.isArray(res.toolUses) ? res.toolUses : null;
+          if (toolUses && toolUses.length && tools && tools.length && iter < MAX) {
+            var asstContent = [];
+            if (acc && acc.trim()) asstContent.push({ type: 'text', text: acc });
+            for (var tu = 0; tu < toolUses.length; tu++) {
+              asstContent.push({ type: 'tool_use', id: toolUses[tu].id, name: toolUses[tu].name, input: toolUses[tu].input });
+            }
+            executeToolUses(toolUses, agent).then(function (results) {
+              var next = messages.slice();
+              next.push({ role: 'assistant', content: asstContent });
+              next.push({ role: 'user', content: results });
+              runRepairStream(agent, sys, next, tools, iter + 1, cb);
+            }, function () { done(); });
+            return;
+          }
+          done();
+        },
+        onError: function () { done(); },
+      });
+      var s = STATE(); if (s && s._activeStreams) s._activeStreams['__repair'] = handle;
+    } catch (e) { done(); }
+  }
+
+  // runAndFix(opts?) — run → capture → bounded engineer self-repair → re-run.
+  //   opts.maxRounds overrides REPAIR_MAX_ROUNDS. Always resolves; never throws.
+  Orchestrator.runAndFix = function (opts) {
+    opts = opts || {};
+    var maxRounds = (typeof opts.maxRounds === 'number' && opts.maxRounds >= 0)
+      ? opts.maxRounds : (CFG().REPAIR_MAX_ROUNDS != null ? CFG().REPAIR_MAX_ROUNDS : 3);
+    var selfRepair = (CFG().ENABLE_SELF_REPAIR !== false);
+
+    return new Promise(function (resolve) {
+      var round = 0;
+      function loop() {
+        runProjectCapture().then(function (cap) {
+          cap = cap || { errors: [], logs: [] };
+          recordLastRun(cap);
+          var errs = cap.errors || [];
+          if (!errs.length) { resolve({ errors: [], rounds: round, fixed: round > 0 }); return; }
+          if (!selfRepair || round >= maxRounds) {
+            try { log('Boss', 'system', 'system', '⚠ self-repair: ' + errs.length + ' error(s) remain after ' + round + ' round(s)'); } catch (e) {}
+            resolve({ errors: errs, rounds: round, fixed: false });
+            return;
+          }
+          round++;
+          try { log('Boss', 'all', 'system', '🔧 self-repair round ' + round); } catch (e) {}
+          refreshBoard();
+          dispatchRepair(errs).then(function () {
+            try { if (App.UI && App.UI.refreshFiles) App.UI.refreshFiles(); } catch (e) {}
+            loop();   // re-run after the repair attempt
+          }, function () {
+            resolve({ errors: errs, rounds: round, fixed: false });
+          });
+        }, function () {
+          resolve({ errors: [], rounds: round, fixed: false });
+        });
+      }
+      loop();
+    });
+  };
 
   // ===========================================================================
   // tick() — frame-driven queue pump. Cheap & re-entrant-safe.
@@ -14800,6 +15863,7 @@ window.App = window.App || {};
 
       UI.refreshArtifacts();
       UI.refreshFiles();
+      UI.refreshLedger();
       UI.refresh();
     } catch (e) {
       try { console && console.warn && console.warn('[UI.init]', e); } catch (e2) {}
@@ -14985,6 +16049,7 @@ window.App = window.App || {};
     UI.refreshAgentList();
     UI.refreshBoard();
     UI.refreshLog();
+    UI.refreshLedger();
     refreshSelectedPanel();
     refreshHud();
   };
@@ -16279,9 +17344,93 @@ window.App = window.App || {};
   UI.openTaskBoard = function () {
     show($('board'));
     UI.refreshBoard();
+    UI.refreshLedger();
     var input = $('board-input');
     if (input && input.focus) { try { input.focus(); } catch (e) {} }
   };
+
+  // ===========================================================================
+  // TASK LEDGER PANEL (Wave 1)
+  // Renders App.state._ledger (facts / plan / progress) into the collapsible
+  // #board-ledger HUD section. The Orchestrator maintains the ledger between
+  // waves; this is the read-only surface. Safe no-op when nodes/state missing.
+  // ===========================================================================
+  UI.refreshLedger = function () {
+    try {
+      var box = $('board-ledger');
+      var badge = $('ledger-progress');
+      var body = $('board-ledger-body');
+      var s = STATE();
+      var L = (s && s._ledger) || (s && s.ledger) || null;
+
+      // Progress badge (always reflect current state on the summary).
+      var prog = (L && L.progress) || '';
+      if (badge) {
+        badge.className = 'ledger-badge' + (prog ? ' prog-' + prog : '');
+        badge.textContent = prog ? progressLabel(prog) : '—';
+      }
+
+      if (!body) return;
+      clear(body);
+
+      var facts = (L && Array.isArray(L.facts)) ? L.facts : [];
+      var plan  = (L && Array.isArray(L.plan))  ? L.plan  : [];
+
+      if (!facts.length && !plan.length && !prog) {
+        body.appendChild(el('div', 'ledger-empty',
+          T('ledger.empty', 'No ledger yet — dispatch a goal to the Boss.')));
+        return;
+      }
+
+      body.appendChild(ledgerSection(T('ledger.facts', 'Facts'), facts, 'ledger-facts',
+        T('ledger.noFacts', 'No facts recorded.')));
+      body.appendChild(ledgerSection(T('ledger.plan', 'Plan'), plan, 'ledger-plan',
+        T('ledger.noPlan', 'No plan yet.')));
+
+      if (L && L.updated) {
+        var when = el('div', 'ledger-updated', T('ledger.updated', 'updated ') + relTime(L.updated));
+        body.appendChild(when);
+      }
+    } catch (e) {}
+  };
+
+  function progressLabel(p) {
+    if (p === 'working') return T('ledger.working', 'Working');
+    if (p === 'stuck')   return T('ledger.stuck', 'Stuck');
+    if (p === 'done')    return T('ledger.done', 'Done');
+    return String(p);
+  }
+
+  function ledgerSection(label, items, cls, emptyMsg) {
+    var sec = el('div', 'ledger-section ' + cls);
+    sec.appendChild(el('div', 'ledger-key', label));
+    if (!items || !items.length) {
+      sec.appendChild(el('div', 'ledger-empty', emptyMsg));
+      return sec;
+    }
+    var list = el('div', 'ledger-list');
+    for (var i = 0; i < items.length; i++) {
+      var txt = (items[i] == null) ? '' : String(items[i]);
+      if (!txt.trim()) continue;
+      list.appendChild(el('div', 'ledger-item', truncate(txt, 240)));
+    }
+    sec.appendChild(list);
+    return sec;
+  }
+
+  // Compact relative timestamp ("12s ago", "4m ago", "2h ago").
+  function relTime(t) {
+    var n = Number(t);
+    if (!n) return '';
+    var d = Math.max(0, Date.now() - n);
+    var s = Math.floor(d / 1000);
+    if (s < 60) return s + 's ago';
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + 'm ago';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    return Math.floor(h / 24) + 'd ago';
+  }
 
   // ===========================================================================
   // LAYOUT EDIT
@@ -17807,6 +18956,9 @@ window.App = window.App || {};
     v.appendChild(preview);
     renderFilePreview(preview, path, content, lang);
 
+    // version history + diff + undo/restore
+    v.appendChild(buildHistorySection(path, content));
+
     // edit row
     var editWrap = el('div', 'fv-edit');
     var ta = document.createElement('textarea');
@@ -17844,6 +18996,189 @@ window.App = window.App || {};
       for (var i = 0; i < list.length; i++) if (list[i] && list[i].path === path) return list[i];
     } catch (e) {}
     return null;
+  }
+
+  // ----- FILE VERSION HISTORY + DIFF + UNDO/RESTORE (Wave 1) ------------------
+  // Reads App.Workspace.history(path) -> [{content,t,by}] (newest last). Each
+  // historical version offers a Diff view (App.Workspace.diffLines vs current)
+  // and a Restore button (App.Workspace.restore). All Workspace calls guarded.
+  var _diffOpenFor = {};   // path -> history index whose diff is expanded
+
+  function getFileHistory(path) {
+    try {
+      if (WS() && typeof WS().history === 'function') {
+        var h = WS().history(path);
+        return Array.isArray(h) ? h : [];
+      }
+      // Fallback: read the raw state history array if the API isn't present yet.
+      var s = STATE();
+      var f = s && s.files && s.files[path];
+      if (f && Array.isArray(f.history)) return f.history;
+    } catch (e) {}
+    return [];
+  }
+
+  function buildHistorySection(path, currentContent) {
+    var det = document.createElement('details');
+    det.className = 'fv-history';
+    det.id = 'fv-history';
+
+    var hist = getFileHistory(path);
+    var sum = el('summary');
+    sum.appendChild(el('span', null, T('files.history', 'History')));
+    sum.appendChild(el('span', 'fv-history-count', String(hist.length)));
+    det.appendChild(sum);
+
+    var listWrap = el('div', 'fv-history-list');
+    det.appendChild(listWrap);
+    renderHistoryList(listWrap, path, currentContent, hist);
+    return det;
+  }
+
+  function renderHistoryList(host, path, currentContent, hist) {
+    clear(host);
+    if (!hist || !hist.length) {
+      host.appendChild(el('div', 'fv-hist-empty', T('files.noHistory', 'No earlier versions yet.')));
+      return;
+    }
+    // Newest last in storage; show newest first for the user.
+    for (var i = hist.length - 1; i >= 0; i--) {
+      (function (idx) {
+        var v = hist[idx] || {};
+        var row = el('div', 'fv-hist-row');
+        if (_diffOpenFor[path] === idx) row.classList.add('active');
+
+        row.appendChild(el('span', 'fv-hist-when', relTime(v.t) || T('files.histUnknownTime', 'earlier')));
+        row.appendChild(el('span', 'fv-hist-by', '✎ ' + (v.by || 'agent')));
+        // newest snapshot tag
+        if (idx === hist.length - 1) {
+          row.appendChild(el('span', 'fv-hist-tag', T('files.histLatest', 'prev')));
+        }
+
+        var actions = el('div', 'fv-hist-actions');
+        var diffBtn = el('button', 'btn btn-sq', '±');
+        diffBtn.type = 'button';
+        diffBtn.title = T('files.diff', 'Diff vs current');
+        on(diffBtn, 'click', function () {
+          _diffOpenFor[path] = (_diffOpenFor[path] === idx) ? -1 : idx;
+          rerenderHistory(path);
+        });
+        var restoreBtn = el('button', 'btn', '↺ ' + T('files.restore', 'Restore'));
+        restoreBtn.type = 'button';
+        restoreBtn.title = T('files.restoreTitle', 'Restore this version (saved as a new edit)');
+        on(restoreBtn, 'click', function () { restoreFileVersion(path, idx); });
+        actions.appendChild(diffBtn);
+        actions.appendChild(restoreBtn);
+        row.appendChild(actions);
+        host.appendChild(row);
+
+        // Inline diff for the expanded version.
+        if (_diffOpenFor[path] === idx) {
+          host.appendChild(buildDiffBlock(String(v.content || ''), String(currentContent || '')));
+        }
+      })(i);
+    }
+  }
+
+  function rerenderHistory(path) {
+    var det = $('fv-history');
+    if (!det) return;
+    var list = det.querySelector ? det.querySelector('.fv-history-list') : null;
+    if (!list) return;
+    var current = (WS() && WS().read) ? WS().read(path) : '';
+    renderHistoryList(list, path, current, getFileHistory(path));
+  }
+
+  // Render a unified line diff (old -> current) into a styled block.
+  function buildDiffBlock(oldStr, newStr) {
+    var wrap = el('div', 'fv-diff');
+    wrap.appendChild(el('div', 'fv-diff-title', T('files.diffTitle', 'This version → current')));
+    var rows = computeDiff(oldStr, newStr);
+    if (!rows.length) {
+      wrap.appendChild(el('div', 'diff-empty', T('files.diffSame', 'No differences.')));
+      return wrap;
+    }
+    // cap how many diff lines we render to keep the DOM bounded
+    var CAP = 600;
+    var shown = rows.length > CAP ? rows.slice(0, CAP) : rows;
+    for (var i = 0; i < shown.length; i++) {
+      var d = shown[i] || {};
+      var type = d.type || 'ctx';
+      var line = el('span', 'diff-line diff-' + type);
+      var sign = (type === 'add') ? '+' : (type === 'del') ? '-' : ' ';
+      line.appendChild(el('span', 'diff-sign', sign));
+      line.appendChild(document.createTextNode(String(d.text == null ? '' : d.text)));
+      wrap.appendChild(line);
+    }
+    if (rows.length > CAP) {
+      wrap.appendChild(el('div', 'diff-empty',
+        T('files.diffTrunc', '… diff truncated (') + (rows.length - CAP) + T('files.diffMore', ' more lines)')));
+    }
+    return wrap;
+  }
+
+  // Prefer the Workspace LCS diff; fall back to a tiny local line diff so the
+  // feature still works if the API isn't present yet.
+  function computeDiff(oldStr, newStr) {
+    try {
+      if (WS() && typeof WS().diffLines === 'function') {
+        var d = WS().diffLines(oldStr, newStr);
+        if (Array.isArray(d)) return d;
+      }
+    } catch (e) {}
+    return localDiffLines(oldStr, newStr);
+  }
+
+  // Dependency-free LCS line diff (fallback). Returns [{type,text}] ctx/add/del.
+  function localDiffLines(oldStr, newStr) {
+    var a = String(oldStr == null ? '' : oldStr).split('\n');
+    var b = String(newStr == null ? '' : newStr).split('\n');
+    var n = a.length, m = b.length;
+    // Bound the LCS table for very large files (avoid O(n*m) blowups).
+    if (n * m > 1200000) {
+      var out0 = [];
+      for (var i0 = 0; i0 < n; i0++) out0.push({ type: 'del', text: a[i0] });
+      for (var j0 = 0; j0 < m; j0++) out0.push({ type: 'add', text: b[j0] });
+      return out0;
+    }
+    var dp = [];
+    for (var i = 0; i <= n; i++) { dp[i] = []; dp[i][m] = 0; }
+    for (var j = 0; j <= m; j++) dp[n][j] = 0;
+    for (var ii = n - 1; ii >= 0; ii--) {
+      for (var jj = m - 1; jj >= 0; jj--) {
+        if (a[ii] === b[jj]) dp[ii][jj] = dp[ii + 1][jj + 1] + 1;
+        else dp[ii][jj] = Math.max(dp[ii + 1][jj], dp[ii][jj + 1]);
+      }
+    }
+    var out = [];
+    var x = 0, y = 0;
+    while (x < n && y < m) {
+      if (a[x] === b[y]) { out.push({ type: 'ctx', text: a[x] }); x++; y++; }
+      else if (dp[x + 1][y] >= dp[x][y + 1]) { out.push({ type: 'del', text: a[x] }); x++; }
+      else { out.push({ type: 'add', text: b[y] }); y++; }
+    }
+    while (x < n) { out.push({ type: 'del', text: a[x] }); x++; }
+    while (y < m) { out.push({ type: 'add', text: b[y] }); y++; }
+    return out;
+  }
+
+  function restoreFileVersion(path, idx) {
+    var hist = getFileHistory(path);
+    var v = hist[idx];
+    if (!v) { UI.toast(T('files.restoreGone', 'That version is no longer available')); return; }
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm(T('files.restoreAsk', 'Restore this earlier version of ') + path + '?')) return;
+    var ok = false;
+    try {
+      if (WS() && typeof WS().restore === 'function') { WS().restore(path, idx); ok = true; }
+      else if (WS() && WS().write) { WS().write(path, String(v.content || ''), 'user'); ok = true; }
+    } catch (e) { UI.showError('Restore failed: ' + (e && e.message)); return; }
+    if (!ok) { UI.showError(T('files.restoreUnavailable', 'Restore is unavailable.')); return; }
+    if (App.Store && App.Store.save) App.Store.save();
+    _diffOpenFor[path] = -1;
+    UI.toast(T('files.restored', 'Restored ') + path);
+    viewFile(path, false);
+    UI.refreshFiles();
   }
 
   function renderFilePreview(host, path, content, lang) {
@@ -18028,13 +19363,30 @@ window.App = window.App || {};
   // ----- RUN PREVIEW -----------------------------------------------------------
   // runPreview() — assemble the project into one self-contained HTML doc and run
   // it in a sandboxed iframe (scripts allowed, no same-origin). Friendly message
-  // if there's no html entry. Includes a Reload control.
+  // if there's no html entry. Includes a Reload control, a live CONSOLE pane
+  // (capture prelude via assembleRunnable({capture:true}) + 'neonworks-run'
+  // postMessages), and a 'Fix errors' button -> App.Orchestrator.runAndFix.
+  var _runMsgHandler = null;   // window 'message' listener while the Run modal is open
+
+  function assembleForRun() {
+    // Prefer the capture-instrumented build so the console pane gets logs/errors.
+    try {
+      if (WS() && WS().assembleRunnable) {
+        try { return WS().assembleRunnable({ capture: true }); }
+        catch (e) { return WS().assembleRunnable(); } // older signature: no opts
+      }
+    } catch (e) {}
+    return null;
+  }
+
   UI.runPreview = function () {
-    var assembled = null;
-    try { if (WS() && WS().assembleRunnable) assembled = WS().assembleRunnable(); } catch (e) { assembled = null; }
+    var assembled = assembleForRun();
     var m = mountModal('modal-run', '▶ ' + T('run.title', 'RUN PREVIEW'));
     if (!m) { UI.toast('Run unavailable'); return; }
     m.modal.classList.add('modal-files-wide');
+
+    // Fresh capture buffer for this run.
+    var captured = [];   // [{kind:'log'|'warn'|'error', text}]
 
     if (!assembled) {
       m.body.appendChild(el('div', 'files-empty',
@@ -18047,6 +19399,49 @@ window.App = window.App || {};
       frame.setAttribute('title', T('run.title', 'RUN PREVIEW'));
       frame.setAttribute('srcdoc', safeStr(assembled));
       m.body.appendChild(frame);
+
+      // ----- console pane -----
+      var consoleEl = el('div', 'run-console');
+      consoleEl.id = 'run-console';
+      var head = el('div', 'run-console-head');
+      head.appendChild(el('span', 'run-console-title', T('run.console', 'Console')));
+      var stat = el('span', 'run-console-stat'); stat.id = 'run-console-stat';
+      head.appendChild(stat);
+      head.appendChild(el('span', 'run-console-spacer'));
+      var clearBtn = el('button', 'btn btn-sq', '⌦');
+      clearBtn.type = 'button';
+      clearBtn.title = T('run.clearConsole', 'Clear console');
+      on(clearBtn, 'click', function () { captured.length = 0; renderRunConsole(captured); });
+      head.appendChild(clearBtn);
+      consoleEl.appendChild(head);
+      var cbody = el('div', 'run-console-body'); cbody.id = 'run-console-body';
+      consoleEl.appendChild(cbody);
+      m.body.appendChild(consoleEl);
+      renderRunConsole(captured);
+
+      // Listen for the injected capture prelude's postMessages.
+      detachRunMsgHandler();
+      _runMsgHandler = function (ev) {
+        try {
+          var d = ev && ev.data;
+          if (!d || d.source !== 'neonworks-run') return;
+          var kind = (d.kind === 'error') ? 'error' : (d.kind === 'warn' ? 'warn' : 'log');
+          captured.push({ kind: kind, text: String(d.text == null ? '' : d.text) });
+          if (captured.length > 500) captured.splice(0, captured.length - 500);
+          renderRunConsole(captured);
+          // Mirror errors into the shared _lastRun capture for the Fix flow.
+          if (kind === 'error') {
+            var s = STATE();
+            if (s) {
+              s._lastRun = s._lastRun || { errors: [], logs: [], t: Date.now() };
+              if (!Array.isArray(s._lastRun.errors)) s._lastRun.errors = [];
+              s._lastRun.errors.push(String(d.text == null ? '' : d.text));
+              s._lastRun.t = Date.now();
+            }
+          }
+        } catch (e) {}
+      };
+      try { window.addEventListener('message', _runMsgHandler); } catch (e) {}
     }
 
     if (assembled) {
@@ -18055,18 +19450,110 @@ window.App = window.App || {};
       on(reload, 'click', function () {
         var f = $('run-iframe');
         if (!f) return;
-        var fresh = null;
-        try { if (WS() && WS().assembleRunnable) fresh = WS().assembleRunnable(); } catch (e) {}
+        captured.length = 0; renderRunConsole(captured);
+        var fresh = assembleForRun();
         f.setAttribute('srcdoc', safeStr(fresh || assembled));
       });
       m.foot.appendChild(reload);
+
+      var fixBtn = el('button', 'btn btn-warn', '🔧 ' + T('run.fixErrors', 'Fix errors'));
+      fixBtn.type = 'button';
+      fixBtn.title = T('run.fixErrorsTitle', 'Run the project and let an engineer self-repair any errors');
+      on(fixBtn, 'click', function () { runFixErrors(); });
+      m.foot.appendChild(fixBtn);
     }
     var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
     close.type = 'button';
-    on(close, 'click', m.close);
+    on(close, 'click', function () { detachRunMsgHandler(); m.close(); });
     m.foot.appendChild(close);
     applyI18n(m.modal);
   };
+
+  function detachRunMsgHandler() {
+    if (_runMsgHandler) {
+      try { window.removeEventListener('message', _runMsgHandler); } catch (e) {}
+      _runMsgHandler = null;
+    }
+  }
+
+  // Render captured console lines (+ any persisted _lastRun.errors) into the pane.
+  // Exported so the orchestrator's self-repair loop can live-refresh an open Run
+  // console each round (recordLastRun -> App.UI.refreshRunConsole). No-op if closed.
+  UI.refreshRunConsole = function () { try { if ($('run-console-body')) renderRunConsole([]); } catch (e) {} };
+
+  function renderRunConsole(captured) {
+    var body = $('run-console-body');
+    var stat = $('run-console-stat');
+    if (!body) return;
+    clear(body);
+
+    var lines = Array.isArray(captured) ? captured.slice() : [];
+    // Surface stored errors from the last self-repair run, if any aren't shown.
+    var errCount = 0;
+    for (var i = 0; i < lines.length; i++) if (lines[i] && lines[i].kind === 'error') errCount++;
+
+    if (!lines.length) {
+      var s = STATE();
+      var lastErrs = (s && s._lastRun && Array.isArray(s._lastRun.errors)) ? s._lastRun.errors : [];
+      if (lastErrs.length) {
+        for (var k = 0; k < lastErrs.length; k++) {
+          lines.push({ kind: 'error', text: String(lastErrs[k]) });
+          errCount++;
+        }
+      }
+    }
+
+    if (stat) {
+      if (errCount > 0) {
+        stat.className = 'run-console-stat has-errors';
+        stat.textContent = errCount + ' ' + (errCount === 1 ? T('run.error', 'error') : T('run.errors', 'errors'));
+      } else {
+        stat.className = 'run-console-stat';
+        stat.textContent = lines.length ? (lines.length + ' ' + T('run.lines', 'lines')) : '';
+      }
+    }
+
+    if (!lines.length) {
+      body.appendChild(el('div', 'rc-empty', T('run.consoleEmpty', 'No console output yet.')));
+      return;
+    }
+    for (var j = 0; j < lines.length; j++) {
+      var ln = lines[j] || {};
+      var kind = (ln.kind === 'error') ? 'error' : (ln.kind === 'warn' ? 'warn' : 'log');
+      var row = el('span', 'rc-line rc-' + kind);
+      var tag = (kind === 'error') ? 'err' : (kind === 'warn' ? 'warn' : 'log');
+      row.appendChild(el('span', 'rc-tag', tag));
+      row.appendChild(document.createTextNode(String(ln.text == null ? '' : ln.text)));
+      body.appendChild(row);
+    }
+    body.scrollTop = body.scrollHeight;
+  }
+
+  // 'Fix errors' -> kick the Orchestrator self-repair loop, then reflect any
+  // remaining errors back into the console pane. Bounded + non-blocking.
+  function runFixErrors() {
+    var orch = ORCH();
+    if (!orch || typeof orch.runAndFix !== 'function') {
+      UI.showError(T('run.fixUnavailable', 'Self-repair is unavailable.'));
+      return;
+    }
+    UI.toast(T('run.fixing', 'Running self-repair…'));
+    var done = function () {
+      // Reload the preview with a fresh build and surface stored errors.
+      var f = $('run-iframe');
+      var fresh = assembleForRun();
+      if (f && fresh) f.setAttribute('srcdoc', safeStr(fresh));
+      renderRunConsole([]); // re-render; pulls _lastRun.errors when empty
+      var s = STATE();
+      var n = (s && s._lastRun && Array.isArray(s._lastRun.errors)) ? s._lastRun.errors.length : 0;
+      if (n > 0) UI.toast(T('run.fixRemaining', 'Self-repair finished — ') + n + T('run.fixRemainingTail', ' error(s) remain'));
+      else UI.toast(T('run.fixOk', 'Self-repair finished — no errors'), 'ok');
+    };
+    var p;
+    try { p = orch.runAndFix(); } catch (e) { UI.showError('Self-repair failed: ' + (e && e.message)); return; }
+    if (p && typeof p.then === 'function') p.then(done).catch(function (e) { UI.showError('Self-repair failed: ' + (e && e.message)); });
+    else done();
+  }
 
   // ----- ZIP -------------------------------------------------------------------
   function downloadProjectZip() {

@@ -177,6 +177,19 @@
       <button id="board-send" class="btn btn-primary btn-dispatch" type="button" data-i18n="hud.dispatch">DISPATCH</button>
     </div>
 
+    <!-- TASK LEDGER (#board-ledger) — collapsible HUD board of the live ledger
+         (facts / plan / progress) maintained by the Orchestrator. App.UI fills
+         the body via App.UI.refreshLedger() from App.state._ledger. -->
+    <details id="board-ledger" class="ledger-box">
+      <summary class="ledger-summary">
+        <span class="ledger-summary-lbl" data-i18n="ledger.title">TASK LEDGER</span>
+        <span id="ledger-progress" class="ledger-badge">—</span>
+      </summary>
+      <div id="board-ledger-body" class="ledger-body">
+        <!-- facts / plan injected by App.UI.refreshLedger() -->
+      </div>
+    </details>
+
     <div class="board-cols">
       <div class="board-col">
         <div class="board-col-head col-queued"><span data-i18n="board.queued">QUEUED</span> <span class="col-count" data-col="queued">0</span></div>

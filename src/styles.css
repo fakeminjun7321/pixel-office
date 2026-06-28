@@ -1120,6 +1120,140 @@ select option{ background:var(--panel); color:var(--text); }
   .agent-row{ padding:11px 10px; }
 }
 
+/* =========================================================================
+   WAVE 1 — reliability core UI: file diff/history, run console, task ledger
+   ========================================================================= */
+
+/* amber action button (e.g. "Fix errors") */
+.btn-warn{ color:var(--amber); border-color:rgba(255,194,77,.5); }
+.btn-warn:hover{ background:var(--amber); color:#1c1402; border-color:var(--amber); box-shadow:var(--glow-amber); }
+
+/* ----- File version history + line diff (Files explorer) ----- */
+.fv-history{ margin-top:10px; }
+.fv-history > summary{
+  cursor:pointer; list-style:none;
+  font-size:10px; font-weight:800; letter-spacing:.6px; text-transform:uppercase;
+  color:var(--text-dim); padding:6px 8px;
+  background:var(--field); border:1px solid var(--divider); border-radius:5px;
+  display:flex; align-items:center; gap:8px;
+}
+.fv-history > summary::-webkit-details-marker{ display:none; }
+.fv-history > summary:hover{ color:var(--text); border-color:var(--cyan); }
+.fv-history[open] > summary{ border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); }
+.fv-history-count{ color:var(--cyan); font-weight:800; }
+.fv-history-list{ margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+.fv-hist-row{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:6px 8px; background:rgba(7,11,24,.5);
+  border:1px solid var(--divider); border-radius:5px;
+}
+.fv-hist-row.active{ border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); }
+.fv-hist-when{ font-size:10.5px; color:var(--text); flex:0 0 auto; }
+.fv-hist-by{ font-size:10px; color:var(--text-faint); flex:1 1 auto; }
+.fv-hist-tag{
+  font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase;
+  color:var(--text-dim); padding:1px 6px;
+  border:1px solid var(--divider); border-radius:99px;
+}
+.fv-hist-actions{ display:flex; gap:6px; flex:0 0 auto; }
+.fv-hist-empty{ font-size:10.5px; color:var(--text-faint); padding:6px 2px; }
+
+.fv-diff{
+  margin-top:8px; max-height:34vh; overflow:auto;
+  background:var(--field); border:1px solid var(--divider); border-radius:5px;
+  font-family:var(--mono); font-size:11.5px; line-height:1.5;
+}
+.fv-diff-title{
+  font-size:9.5px; font-weight:800; letter-spacing:.6px; text-transform:uppercase;
+  color:var(--text-faint); padding:6px 10px; border-bottom:1px solid var(--divider);
+}
+.diff-line{ display:block; white-space:pre-wrap; word-break:break-word; padding:0 10px; border-left:3px solid transparent; }
+.diff-ctx{ color:var(--text-dim); }
+.diff-add{ color:var(--lime); background:rgba(93,255,155,.08); border-left-color:var(--lime); }
+.diff-del{ color:var(--red);  background:rgba(255,77,109,.08); border-left-color:var(--red); }
+.diff-line .diff-sign{ display:inline-block; width:1.2em; color:var(--text-faint); user-select:none; }
+.diff-add .diff-sign{ color:var(--lime); }
+.diff-del .diff-sign{ color:var(--red); }
+.diff-empty{ color:var(--text-faint); padding:8px 10px; }
+
+/* ----- Run console pane (Run preview) ----- */
+.run-console{
+  margin-top:10px;
+  background:var(--void, #04060f); border:1px solid var(--divider); border-radius:6px;
+  display:flex; flex-direction:column; min-height:0;
+}
+.run-console-head{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:7px 10px; border-bottom:1px solid var(--divider);
+}
+.run-console-title{
+  font-size:9.5px; font-weight:800; letter-spacing:.7px; text-transform:uppercase;
+  color:var(--text-dim);
+}
+.run-console-stat{ font-size:10px; color:var(--text-faint); }
+.run-console-stat.has-errors{ color:var(--red); font-weight:800; }
+.run-console-spacer{ flex:1 1 auto; }
+.run-console-body{
+  flex:1 1 auto; overflow:auto; max-height:22vh; min-height:64px;
+  padding:6px 0; font-family:var(--mono); font-size:11.5px; line-height:1.5;
+}
+.rc-line{ display:block; white-space:pre-wrap; word-break:break-word; padding:1px 10px; }
+.rc-line .rc-tag{
+  display:inline-block; font-weight:800; margin-right:7px;
+  font-size:9px; letter-spacing:.5px; text-transform:uppercase;
+}
+.rc-log{ color:var(--text-dim); }
+.rc-log .rc-tag{ color:var(--text-faint); }
+.rc-warn{ color:var(--amber); }
+.rc-warn .rc-tag{ color:var(--amber); }
+.rc-error{ color:var(--red); }
+.rc-error .rc-tag{ color:var(--red); }
+.rc-empty{ color:var(--text-faint); padding:8px 10px; font-size:10.5px; }
+
+/* ----- Task ledger panel (board) ----- */
+.ledger-box{
+  flex:0 0 auto; margin:0 12px 4px;
+  background:rgba(7,11,24,.5); border:1px solid var(--divider); border-radius:5px;
+}
+.ledger-summary{
+  cursor:pointer; list-style:none;
+  display:flex; align-items:center; gap:9px;
+  padding:8px 11px;
+  font-size:10.5px; font-weight:800; letter-spacing:1px; text-transform:uppercase;
+  color:var(--text-dim);
+}
+.ledger-summary::-webkit-details-marker{ display:none; }
+.ledger-summary:hover{ color:var(--text); }
+.ledger-summary-lbl{ flex:1 1 auto; }
+.ledger-badge{
+  font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase;
+  color:var(--text-dim); padding:2px 8px;
+  border:1px solid var(--divider); border-radius:99px;
+}
+.ledger-badge.prog-working{ color:var(--cyan);  border-color:rgba(57,215,255,.5);  box-shadow:var(--glow-cyan-soft); }
+.ledger-badge.prog-stuck{   color:var(--red);   border-color:rgba(255,77,109,.5); box-shadow:var(--glow-red); }
+.ledger-badge.prog-done{    color:var(--lime);  border-color:rgba(93,255,155,.5); }
+.ledger-body{ padding:0 11px 11px; }
+.ledger-section{ margin-top:8px; }
+.ledger-key{
+  font-size:9px; font-weight:800; letter-spacing:.6px; text-transform:uppercase;
+  color:var(--text-faint); margin-bottom:4px;
+}
+.ledger-list{ display:flex; flex-direction:column; gap:3px; }
+.ledger-item{
+  font-size:11px; color:var(--text); line-height:1.45;
+  padding-left:12px; position:relative; word-break:break-word;
+}
+.ledger-item::before{ content:"›"; position:absolute; left:0; color:var(--cyan); }
+.ledger-plan .ledger-item::before{ color:var(--purple); }
+.ledger-empty{ font-size:10.5px; color:var(--text-faint); padding:4px 0; }
+.ledger-updated{ font-size:9px; color:var(--text-faint); margin-top:8px; text-align:right; }
+
+@media (max-width:760px){
+  .run-console-body{ max-height:30vh; }
+  .fv-diff{ max-height:40vh; }
+}
+
 /* reduced motion: calm all the loops */
 @media (prefers-reduced-motion:reduce){
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,

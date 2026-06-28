@@ -274,6 +274,61 @@ window.App = window.App || {};
     return (typeof n === 'number' && n > 0) ? n : 200;
   }
 
+  // WAVE 1: cap helper for per-file version history (files[path].history).
+  function fileHistoryCap() {
+    var n = cfg().FILE_HISTORY_CAP;
+    return (typeof n === 'number' && n > 0) ? n : 20;
+  }
+
+  // WAVE 1: sanitize a persisted file-history array -> [{content,t,by}] (oldest..
+  // newest order preserved). Coerces content to String, caps per-entry size, and
+  // keeps only the newest FILE_HISTORY_CAP entries. Never throws.
+  function normalizeHistory(arr) {
+    if (!Array.isArray(arr)) return [];
+    var PER_ENTRY_MAX = 200 * 1024;   // 200k chars per historical version
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var h = arr[i];
+      if (!h || typeof h !== 'object') continue;
+      var content = (h.content == null) ? '' : String(h.content);
+      if (content.length > PER_ENTRY_MAX) content = content.slice(0, PER_ENTRY_MAX);
+      out.push({
+        content: content,
+        t: (typeof h.t === 'number') ? h.t : nowMs(),
+        by: (h.by == null) ? 'agent' : String(h.by),
+      });
+    }
+    var cap = fileHistoryCap();
+    if (out.length > cap) out = out.slice(out.length - cap);   // keep newest
+    return out;
+  }
+
+  // WAVE 1: sanitize the runtime task ledger -> {facts[],plan[],progress,updated}.
+  // Caps the string arrays, constrains progress to the known enum, coerces every
+  // entry to a string. Returns null when there is nothing meaningful to persist
+  // (so empty saves are not bloated). Never throws.
+  function normalizeLedger(l) {
+    if (!l || typeof l !== 'object') return null;
+    var LIST_CAP = 12;
+    function strList(a) {
+      if (!Array.isArray(a)) return [];
+      var o = [];
+      for (var i = 0; i < a.length && o.length < LIST_CAP; i++) {
+        if (a[i] == null) continue;
+        var s = String(a[i]);
+        if (s) o.push(s);
+      }
+      return o;
+    }
+    var facts = strList(l.facts);
+    var plan = strList(l.plan);
+    var progress = l.progress;
+    if (progress !== 'working' && progress !== 'stuck' && progress !== 'done') progress = 'working';
+    var updated = (typeof l.updated === 'number') ? l.updated : nowMs();
+    if (!facts.length && !plan.length && progress === 'working') return null;   // nothing meaningful
+    return { facts: facts, plan: plan, progress: progress, updated: updated };
+  }
+
   // v5: detect a file's language from its extension (mirror of
   // Workspace.detectLang; kept here so the store can normalize standalone).
   function detectLangFor(path) {
@@ -298,7 +353,9 @@ window.App = window.App || {};
   //   - coerce content to String, cap per-file size (200k chars)
   //   - cap total file count (drop oldest by t past MAX_PROJECT_FILES)
   //   - fill lang/updatedBy/t with safe defaults
-  // Returns a fresh plain object. Never throws.
+  //   - WAVE 1: preserve files[path].history -> normalized [{content,t,by}] (capped)
+  // Returns a fresh plain object. Never throws. Migrate older saves (missing
+  // history -> []).
   function normalizeFiles(map) {
     var out = {};
     if (!map || typeof map !== 'object') return out;
@@ -318,6 +375,7 @@ window.App = window.App || {};
         lang: (f.lang == null || f.lang === '') ? detectLangFor(path) : String(f.lang),
         updatedBy: (f.updatedBy == null) ? 'agent' : String(f.updatedBy),
         t: (typeof f.t === 'number') ? f.t : nowMs(),
+        history: normalizeHistory(f.history),   // WAVE 1: prior versions (migrate missing -> [])
       });
     }
     // cap total count: keep the most recently updated files.
@@ -328,7 +386,7 @@ window.App = window.App || {};
     }
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
-      out[r.path] = { content: r.content, lang: r.lang, updatedBy: r.updatedBy, t: r.t };
+      out[r.path] = { content: r.content, lang: r.lang, updatedBy: r.updatedBy, t: r.t, history: r.history };
     }
     return out;
   }
@@ -382,6 +440,10 @@ window.App = window.App || {};
       _activeStreams: {},
       _followId: null,        // v3: agent id the camera follows (runtime-only)
       _buildActive: false,    // v5: true while a project BUILD pipeline is running (runtime-only, NOT persisted)
+      // WAVE 1: task ledger (working memory; PERSISTED under blob.ledger when meaningful)
+      _ledger: null,          // { facts:[], plan:[], progress:'working'|'stuck'|'done', updated }
+      // WAVE 1: last run / self-repair capture — RUNTIME-ONLY, NEVER persisted.
+      _lastRun: null,         // { errors:[], logs:[], t }
     };
   }
 
@@ -410,6 +472,8 @@ window.App = window.App || {};
     if (!s._activeStreams || typeof s._activeStreams !== 'object') s._activeStreams = {};
     if (typeof s._followId === 'undefined') s._followId = null;
     if (typeof s._buildActive === 'undefined') s._buildActive = false;   // v5
+    if (typeof s._ledger === 'undefined') s._ledger = null;              // WAVE 1
+    if (typeof s._lastRun === 'undefined') s._lastRun = null;            // WAVE 1 (runtime-only)
     return s;
   }
 
@@ -591,6 +655,9 @@ window.App = window.App || {};
     var settings = Object.assign(defaultSettings(), deepClone(s.settings) || {});
     settings.github = normalizeGithub(settings.github);   // v5
 
+    // WAVE 1: task ledger — small runtime working-memory; persist when meaningful.
+    var ledger = normalizeLedger(s._ledger);
+
     var blob = {
       v: schemaVersion(),
       savedAt: nowMs(),
@@ -603,8 +670,10 @@ window.App = window.App || {};
       settings: settings,
       selectedAgentId: s.selectedAgentId || null,
       camera: clampCameraValue(s.camera),
-      // NOT persisted: _time,_meetingActive,_activeStreams,_followId, layoutEdit, paused
+      // NOT persisted: _time,_meetingActive,_activeStreams,_followId, layoutEdit, paused,
+      //   _lastRun (WAVE 1: runtime-only self-repair capture — NEVER persisted).
     };
+    if (ledger) blob.ledger = ledger;   // WAVE 1: persisted under a non-underscore key
     return blob;
   }
 
@@ -695,6 +764,11 @@ window.App = window.App || {};
       if (Object.prototype.hasOwnProperty.call(rebuiltFiles, nfk)) s.files[nfk] = rebuiltFiles[nfk];
     }
 
+    // --- WAVE 1: task ledger (restore if present; else leave unset/runtime-init) ---
+    var lg = normalizeLedger(blob.ledger);
+    if (lg) { s._ledger = lg; }
+    else if (typeof s._ledger === 'undefined') { s._ledger = null; }
+
     // --- settings (merge over defaults; re-normalize github subobject) ---
     s.settings = Object.assign(defaultSettings(), (blob.settings && typeof blob.settings === 'object') ? blob.settings : {});
     s.settings.github = normalizeGithub(s.settings.github);   // v5
@@ -722,6 +796,8 @@ window.App = window.App || {};
     s._activeStreams = {};
     s._followId = null;       // v3: never restore camera-follow from disk
     s._buildActive = false;   // v5: never restore a mid-build flag from disk
+    s._lastRun = null;        // WAVE 1: self-repair capture is runtime-only; never restored
+    // NOTE: s._ledger is set above from blob.ledger when present (it IS persisted).
 
     return s;
   }
@@ -793,6 +869,22 @@ window.App = window.App || {};
           }
         }
         v = 4;
+      }
+      // v4 -> v5 (WAVE 1): per-file version history (files[path].history) + the
+      // persisted task ledger (blob.ledger). Both are filled with safe defaults by
+      // normalizeFiles (missing history -> []) / normalizeLedger on load, so this
+      // step only ensures the shapes exist; everything else is a forward no-op.
+      // Defensive: run whenever v<5 regardless of whether SCHEMA_VERSION was bumped.
+      if (v < 5) {
+        if (blob.files && typeof blob.files === 'object') {
+          for (var fp in blob.files) {
+            if (!Object.prototype.hasOwnProperty.call(blob.files, fp)) continue;
+            var ff = blob.files[fp];
+            if (ff && typeof ff === 'object' && !Array.isArray(ff.history)) ff.history = [];
+          }
+        }
+        // blob.ledger absent -> normalizeLedger yields null (no ledger). Forward no-op.
+        v = 5;
       }
       // Always stamp to current after running known steps.
       blob.v = target;
@@ -923,6 +1015,8 @@ window.App = window.App || {};
       s._activeStreams = {};
       s._followId = null;
       s._buildActive = false;   // v5
+      s._ledger = null;         // WAVE 1: fresh company starts with no ledger
+      s._lastRun = null;        // WAVE 1: runtime-only
 
       // 3) place the 4 default agents at desks (§9: boss, engineer, designer, researcher)
       var collected = collectDeskSeats(s.layout);

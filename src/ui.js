@@ -178,6 +178,7 @@ window.App = window.App || {};
 
       UI.refreshArtifacts();
       UI.refreshFiles();
+      UI.refreshLedger();
       UI.refresh();
     } catch (e) {
       try { console && console.warn && console.warn('[UI.init]', e); } catch (e2) {}
@@ -363,6 +364,7 @@ window.App = window.App || {};
     UI.refreshAgentList();
     UI.refreshBoard();
     UI.refreshLog();
+    UI.refreshLedger();
     refreshSelectedPanel();
     refreshHud();
   };
@@ -1657,9 +1659,93 @@ window.App = window.App || {};
   UI.openTaskBoard = function () {
     show($('board'));
     UI.refreshBoard();
+    UI.refreshLedger();
     var input = $('board-input');
     if (input && input.focus) { try { input.focus(); } catch (e) {} }
   };
+
+  // ===========================================================================
+  // TASK LEDGER PANEL (Wave 1)
+  // Renders App.state._ledger (facts / plan / progress) into the collapsible
+  // #board-ledger HUD section. The Orchestrator maintains the ledger between
+  // waves; this is the read-only surface. Safe no-op when nodes/state missing.
+  // ===========================================================================
+  UI.refreshLedger = function () {
+    try {
+      var box = $('board-ledger');
+      var badge = $('ledger-progress');
+      var body = $('board-ledger-body');
+      var s = STATE();
+      var L = (s && s._ledger) || (s && s.ledger) || null;
+
+      // Progress badge (always reflect current state on the summary).
+      var prog = (L && L.progress) || '';
+      if (badge) {
+        badge.className = 'ledger-badge' + (prog ? ' prog-' + prog : '');
+        badge.textContent = prog ? progressLabel(prog) : '—';
+      }
+
+      if (!body) return;
+      clear(body);
+
+      var facts = (L && Array.isArray(L.facts)) ? L.facts : [];
+      var plan  = (L && Array.isArray(L.plan))  ? L.plan  : [];
+
+      if (!facts.length && !plan.length && !prog) {
+        body.appendChild(el('div', 'ledger-empty',
+          T('ledger.empty', 'No ledger yet — dispatch a goal to the Boss.')));
+        return;
+      }
+
+      body.appendChild(ledgerSection(T('ledger.facts', 'Facts'), facts, 'ledger-facts',
+        T('ledger.noFacts', 'No facts recorded.')));
+      body.appendChild(ledgerSection(T('ledger.plan', 'Plan'), plan, 'ledger-plan',
+        T('ledger.noPlan', 'No plan yet.')));
+
+      if (L && L.updated) {
+        var when = el('div', 'ledger-updated', T('ledger.updated', 'updated ') + relTime(L.updated));
+        body.appendChild(when);
+      }
+    } catch (e) {}
+  };
+
+  function progressLabel(p) {
+    if (p === 'working') return T('ledger.working', 'Working');
+    if (p === 'stuck')   return T('ledger.stuck', 'Stuck');
+    if (p === 'done')    return T('ledger.done', 'Done');
+    return String(p);
+  }
+
+  function ledgerSection(label, items, cls, emptyMsg) {
+    var sec = el('div', 'ledger-section ' + cls);
+    sec.appendChild(el('div', 'ledger-key', label));
+    if (!items || !items.length) {
+      sec.appendChild(el('div', 'ledger-empty', emptyMsg));
+      return sec;
+    }
+    var list = el('div', 'ledger-list');
+    for (var i = 0; i < items.length; i++) {
+      var txt = (items[i] == null) ? '' : String(items[i]);
+      if (!txt.trim()) continue;
+      list.appendChild(el('div', 'ledger-item', truncate(txt, 240)));
+    }
+    sec.appendChild(list);
+    return sec;
+  }
+
+  // Compact relative timestamp ("12s ago", "4m ago", "2h ago").
+  function relTime(t) {
+    var n = Number(t);
+    if (!n) return '';
+    var d = Math.max(0, Date.now() - n);
+    var s = Math.floor(d / 1000);
+    if (s < 60) return s + 's ago';
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + 'm ago';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    return Math.floor(h / 24) + 'd ago';
+  }
 
   // ===========================================================================
   // LAYOUT EDIT
@@ -3185,6 +3271,9 @@ window.App = window.App || {};
     v.appendChild(preview);
     renderFilePreview(preview, path, content, lang);
 
+    // version history + diff + undo/restore
+    v.appendChild(buildHistorySection(path, content));
+
     // edit row
     var editWrap = el('div', 'fv-edit');
     var ta = document.createElement('textarea');
@@ -3222,6 +3311,189 @@ window.App = window.App || {};
       for (var i = 0; i < list.length; i++) if (list[i] && list[i].path === path) return list[i];
     } catch (e) {}
     return null;
+  }
+
+  // ----- FILE VERSION HISTORY + DIFF + UNDO/RESTORE (Wave 1) ------------------
+  // Reads App.Workspace.history(path) -> [{content,t,by}] (newest last). Each
+  // historical version offers a Diff view (App.Workspace.diffLines vs current)
+  // and a Restore button (App.Workspace.restore). All Workspace calls guarded.
+  var _diffOpenFor = {};   // path -> history index whose diff is expanded
+
+  function getFileHistory(path) {
+    try {
+      if (WS() && typeof WS().history === 'function') {
+        var h = WS().history(path);
+        return Array.isArray(h) ? h : [];
+      }
+      // Fallback: read the raw state history array if the API isn't present yet.
+      var s = STATE();
+      var f = s && s.files && s.files[path];
+      if (f && Array.isArray(f.history)) return f.history;
+    } catch (e) {}
+    return [];
+  }
+
+  function buildHistorySection(path, currentContent) {
+    var det = document.createElement('details');
+    det.className = 'fv-history';
+    det.id = 'fv-history';
+
+    var hist = getFileHistory(path);
+    var sum = el('summary');
+    sum.appendChild(el('span', null, T('files.history', 'History')));
+    sum.appendChild(el('span', 'fv-history-count', String(hist.length)));
+    det.appendChild(sum);
+
+    var listWrap = el('div', 'fv-history-list');
+    det.appendChild(listWrap);
+    renderHistoryList(listWrap, path, currentContent, hist);
+    return det;
+  }
+
+  function renderHistoryList(host, path, currentContent, hist) {
+    clear(host);
+    if (!hist || !hist.length) {
+      host.appendChild(el('div', 'fv-hist-empty', T('files.noHistory', 'No earlier versions yet.')));
+      return;
+    }
+    // Newest last in storage; show newest first for the user.
+    for (var i = hist.length - 1; i >= 0; i--) {
+      (function (idx) {
+        var v = hist[idx] || {};
+        var row = el('div', 'fv-hist-row');
+        if (_diffOpenFor[path] === idx) row.classList.add('active');
+
+        row.appendChild(el('span', 'fv-hist-when', relTime(v.t) || T('files.histUnknownTime', 'earlier')));
+        row.appendChild(el('span', 'fv-hist-by', '✎ ' + (v.by || 'agent')));
+        // newest snapshot tag
+        if (idx === hist.length - 1) {
+          row.appendChild(el('span', 'fv-hist-tag', T('files.histLatest', 'prev')));
+        }
+
+        var actions = el('div', 'fv-hist-actions');
+        var diffBtn = el('button', 'btn btn-sq', '±');
+        diffBtn.type = 'button';
+        diffBtn.title = T('files.diff', 'Diff vs current');
+        on(diffBtn, 'click', function () {
+          _diffOpenFor[path] = (_diffOpenFor[path] === idx) ? -1 : idx;
+          rerenderHistory(path);
+        });
+        var restoreBtn = el('button', 'btn', '↺ ' + T('files.restore', 'Restore'));
+        restoreBtn.type = 'button';
+        restoreBtn.title = T('files.restoreTitle', 'Restore this version (saved as a new edit)');
+        on(restoreBtn, 'click', function () { restoreFileVersion(path, idx); });
+        actions.appendChild(diffBtn);
+        actions.appendChild(restoreBtn);
+        row.appendChild(actions);
+        host.appendChild(row);
+
+        // Inline diff for the expanded version.
+        if (_diffOpenFor[path] === idx) {
+          host.appendChild(buildDiffBlock(String(v.content || ''), String(currentContent || '')));
+        }
+      })(i);
+    }
+  }
+
+  function rerenderHistory(path) {
+    var det = $('fv-history');
+    if (!det) return;
+    var list = det.querySelector ? det.querySelector('.fv-history-list') : null;
+    if (!list) return;
+    var current = (WS() && WS().read) ? WS().read(path) : '';
+    renderHistoryList(list, path, current, getFileHistory(path));
+  }
+
+  // Render a unified line diff (old -> current) into a styled block.
+  function buildDiffBlock(oldStr, newStr) {
+    var wrap = el('div', 'fv-diff');
+    wrap.appendChild(el('div', 'fv-diff-title', T('files.diffTitle', 'This version → current')));
+    var rows = computeDiff(oldStr, newStr);
+    if (!rows.length) {
+      wrap.appendChild(el('div', 'diff-empty', T('files.diffSame', 'No differences.')));
+      return wrap;
+    }
+    // cap how many diff lines we render to keep the DOM bounded
+    var CAP = 600;
+    var shown = rows.length > CAP ? rows.slice(0, CAP) : rows;
+    for (var i = 0; i < shown.length; i++) {
+      var d = shown[i] || {};
+      var type = d.type || 'ctx';
+      var line = el('span', 'diff-line diff-' + type);
+      var sign = (type === 'add') ? '+' : (type === 'del') ? '-' : ' ';
+      line.appendChild(el('span', 'diff-sign', sign));
+      line.appendChild(document.createTextNode(String(d.text == null ? '' : d.text)));
+      wrap.appendChild(line);
+    }
+    if (rows.length > CAP) {
+      wrap.appendChild(el('div', 'diff-empty',
+        T('files.diffTrunc', '… diff truncated (') + (rows.length - CAP) + T('files.diffMore', ' more lines)')));
+    }
+    return wrap;
+  }
+
+  // Prefer the Workspace LCS diff; fall back to a tiny local line diff so the
+  // feature still works if the API isn't present yet.
+  function computeDiff(oldStr, newStr) {
+    try {
+      if (WS() && typeof WS().diffLines === 'function') {
+        var d = WS().diffLines(oldStr, newStr);
+        if (Array.isArray(d)) return d;
+      }
+    } catch (e) {}
+    return localDiffLines(oldStr, newStr);
+  }
+
+  // Dependency-free LCS line diff (fallback). Returns [{type,text}] ctx/add/del.
+  function localDiffLines(oldStr, newStr) {
+    var a = String(oldStr == null ? '' : oldStr).split('\n');
+    var b = String(newStr == null ? '' : newStr).split('\n');
+    var n = a.length, m = b.length;
+    // Bound the LCS table for very large files (avoid O(n*m) blowups).
+    if (n * m > 1200000) {
+      var out0 = [];
+      for (var i0 = 0; i0 < n; i0++) out0.push({ type: 'del', text: a[i0] });
+      for (var j0 = 0; j0 < m; j0++) out0.push({ type: 'add', text: b[j0] });
+      return out0;
+    }
+    var dp = [];
+    for (var i = 0; i <= n; i++) { dp[i] = []; dp[i][m] = 0; }
+    for (var j = 0; j <= m; j++) dp[n][j] = 0;
+    for (var ii = n - 1; ii >= 0; ii--) {
+      for (var jj = m - 1; jj >= 0; jj--) {
+        if (a[ii] === b[jj]) dp[ii][jj] = dp[ii + 1][jj + 1] + 1;
+        else dp[ii][jj] = Math.max(dp[ii + 1][jj], dp[ii][jj + 1]);
+      }
+    }
+    var out = [];
+    var x = 0, y = 0;
+    while (x < n && y < m) {
+      if (a[x] === b[y]) { out.push({ type: 'ctx', text: a[x] }); x++; y++; }
+      else if (dp[x + 1][y] >= dp[x][y + 1]) { out.push({ type: 'del', text: a[x] }); x++; }
+      else { out.push({ type: 'add', text: b[y] }); y++; }
+    }
+    while (x < n) { out.push({ type: 'del', text: a[x] }); x++; }
+    while (y < m) { out.push({ type: 'add', text: b[y] }); y++; }
+    return out;
+  }
+
+  function restoreFileVersion(path, idx) {
+    var hist = getFileHistory(path);
+    var v = hist[idx];
+    if (!v) { UI.toast(T('files.restoreGone', 'That version is no longer available')); return; }
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm(T('files.restoreAsk', 'Restore this earlier version of ') + path + '?')) return;
+    var ok = false;
+    try {
+      if (WS() && typeof WS().restore === 'function') { WS().restore(path, idx); ok = true; }
+      else if (WS() && WS().write) { WS().write(path, String(v.content || ''), 'user'); ok = true; }
+    } catch (e) { UI.showError('Restore failed: ' + (e && e.message)); return; }
+    if (!ok) { UI.showError(T('files.restoreUnavailable', 'Restore is unavailable.')); return; }
+    if (App.Store && App.Store.save) App.Store.save();
+    _diffOpenFor[path] = -1;
+    UI.toast(T('files.restored', 'Restored ') + path);
+    viewFile(path, false);
+    UI.refreshFiles();
   }
 
   function renderFilePreview(host, path, content, lang) {
@@ -3406,13 +3678,30 @@ window.App = window.App || {};
   // ----- RUN PREVIEW -----------------------------------------------------------
   // runPreview() — assemble the project into one self-contained HTML doc and run
   // it in a sandboxed iframe (scripts allowed, no same-origin). Friendly message
-  // if there's no html entry. Includes a Reload control.
+  // if there's no html entry. Includes a Reload control, a live CONSOLE pane
+  // (capture prelude via assembleRunnable({capture:true}) + 'neonworks-run'
+  // postMessages), and a 'Fix errors' button -> App.Orchestrator.runAndFix.
+  var _runMsgHandler = null;   // window 'message' listener while the Run modal is open
+
+  function assembleForRun() {
+    // Prefer the capture-instrumented build so the console pane gets logs/errors.
+    try {
+      if (WS() && WS().assembleRunnable) {
+        try { return WS().assembleRunnable({ capture: true }); }
+        catch (e) { return WS().assembleRunnable(); } // older signature: no opts
+      }
+    } catch (e) {}
+    return null;
+  }
+
   UI.runPreview = function () {
-    var assembled = null;
-    try { if (WS() && WS().assembleRunnable) assembled = WS().assembleRunnable(); } catch (e) { assembled = null; }
+    var assembled = assembleForRun();
     var m = mountModal('modal-run', '▶ ' + T('run.title', 'RUN PREVIEW'));
     if (!m) { UI.toast('Run unavailable'); return; }
     m.modal.classList.add('modal-files-wide');
+
+    // Fresh capture buffer for this run.
+    var captured = [];   // [{kind:'log'|'warn'|'error', text}]
 
     if (!assembled) {
       m.body.appendChild(el('div', 'files-empty',
@@ -3425,6 +3714,49 @@ window.App = window.App || {};
       frame.setAttribute('title', T('run.title', 'RUN PREVIEW'));
       frame.setAttribute('srcdoc', safeStr(assembled));
       m.body.appendChild(frame);
+
+      // ----- console pane -----
+      var consoleEl = el('div', 'run-console');
+      consoleEl.id = 'run-console';
+      var head = el('div', 'run-console-head');
+      head.appendChild(el('span', 'run-console-title', T('run.console', 'Console')));
+      var stat = el('span', 'run-console-stat'); stat.id = 'run-console-stat';
+      head.appendChild(stat);
+      head.appendChild(el('span', 'run-console-spacer'));
+      var clearBtn = el('button', 'btn btn-sq', '⌦');
+      clearBtn.type = 'button';
+      clearBtn.title = T('run.clearConsole', 'Clear console');
+      on(clearBtn, 'click', function () { captured.length = 0; renderRunConsole(captured); });
+      head.appendChild(clearBtn);
+      consoleEl.appendChild(head);
+      var cbody = el('div', 'run-console-body'); cbody.id = 'run-console-body';
+      consoleEl.appendChild(cbody);
+      m.body.appendChild(consoleEl);
+      renderRunConsole(captured);
+
+      // Listen for the injected capture prelude's postMessages.
+      detachRunMsgHandler();
+      _runMsgHandler = function (ev) {
+        try {
+          var d = ev && ev.data;
+          if (!d || d.source !== 'neonworks-run') return;
+          var kind = (d.kind === 'error') ? 'error' : (d.kind === 'warn' ? 'warn' : 'log');
+          captured.push({ kind: kind, text: String(d.text == null ? '' : d.text) });
+          if (captured.length > 500) captured.splice(0, captured.length - 500);
+          renderRunConsole(captured);
+          // Mirror errors into the shared _lastRun capture for the Fix flow.
+          if (kind === 'error') {
+            var s = STATE();
+            if (s) {
+              s._lastRun = s._lastRun || { errors: [], logs: [], t: Date.now() };
+              if (!Array.isArray(s._lastRun.errors)) s._lastRun.errors = [];
+              s._lastRun.errors.push(String(d.text == null ? '' : d.text));
+              s._lastRun.t = Date.now();
+            }
+          }
+        } catch (e) {}
+      };
+      try { window.addEventListener('message', _runMsgHandler); } catch (e) {}
     }
 
     if (assembled) {
@@ -3433,18 +3765,110 @@ window.App = window.App || {};
       on(reload, 'click', function () {
         var f = $('run-iframe');
         if (!f) return;
-        var fresh = null;
-        try { if (WS() && WS().assembleRunnable) fresh = WS().assembleRunnable(); } catch (e) {}
+        captured.length = 0; renderRunConsole(captured);
+        var fresh = assembleForRun();
         f.setAttribute('srcdoc', safeStr(fresh || assembled));
       });
       m.foot.appendChild(reload);
+
+      var fixBtn = el('button', 'btn btn-warn', '🔧 ' + T('run.fixErrors', 'Fix errors'));
+      fixBtn.type = 'button';
+      fixBtn.title = T('run.fixErrorsTitle', 'Run the project and let an engineer self-repair any errors');
+      on(fixBtn, 'click', function () { runFixErrors(); });
+      m.foot.appendChild(fixBtn);
     }
     var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
     close.type = 'button';
-    on(close, 'click', m.close);
+    on(close, 'click', function () { detachRunMsgHandler(); m.close(); });
     m.foot.appendChild(close);
     applyI18n(m.modal);
   };
+
+  function detachRunMsgHandler() {
+    if (_runMsgHandler) {
+      try { window.removeEventListener('message', _runMsgHandler); } catch (e) {}
+      _runMsgHandler = null;
+    }
+  }
+
+  // Render captured console lines (+ any persisted _lastRun.errors) into the pane.
+  // Exported so the orchestrator's self-repair loop can live-refresh an open Run
+  // console each round (recordLastRun -> App.UI.refreshRunConsole). No-op if closed.
+  UI.refreshRunConsole = function () { try { if ($('run-console-body')) renderRunConsole([]); } catch (e) {} };
+
+  function renderRunConsole(captured) {
+    var body = $('run-console-body');
+    var stat = $('run-console-stat');
+    if (!body) return;
+    clear(body);
+
+    var lines = Array.isArray(captured) ? captured.slice() : [];
+    // Surface stored errors from the last self-repair run, if any aren't shown.
+    var errCount = 0;
+    for (var i = 0; i < lines.length; i++) if (lines[i] && lines[i].kind === 'error') errCount++;
+
+    if (!lines.length) {
+      var s = STATE();
+      var lastErrs = (s && s._lastRun && Array.isArray(s._lastRun.errors)) ? s._lastRun.errors : [];
+      if (lastErrs.length) {
+        for (var k = 0; k < lastErrs.length; k++) {
+          lines.push({ kind: 'error', text: String(lastErrs[k]) });
+          errCount++;
+        }
+      }
+    }
+
+    if (stat) {
+      if (errCount > 0) {
+        stat.className = 'run-console-stat has-errors';
+        stat.textContent = errCount + ' ' + (errCount === 1 ? T('run.error', 'error') : T('run.errors', 'errors'));
+      } else {
+        stat.className = 'run-console-stat';
+        stat.textContent = lines.length ? (lines.length + ' ' + T('run.lines', 'lines')) : '';
+      }
+    }
+
+    if (!lines.length) {
+      body.appendChild(el('div', 'rc-empty', T('run.consoleEmpty', 'No console output yet.')));
+      return;
+    }
+    for (var j = 0; j < lines.length; j++) {
+      var ln = lines[j] || {};
+      var kind = (ln.kind === 'error') ? 'error' : (ln.kind === 'warn' ? 'warn' : 'log');
+      var row = el('span', 'rc-line rc-' + kind);
+      var tag = (kind === 'error') ? 'err' : (kind === 'warn' ? 'warn' : 'log');
+      row.appendChild(el('span', 'rc-tag', tag));
+      row.appendChild(document.createTextNode(String(ln.text == null ? '' : ln.text)));
+      body.appendChild(row);
+    }
+    body.scrollTop = body.scrollHeight;
+  }
+
+  // 'Fix errors' -> kick the Orchestrator self-repair loop, then reflect any
+  // remaining errors back into the console pane. Bounded + non-blocking.
+  function runFixErrors() {
+    var orch = ORCH();
+    if (!orch || typeof orch.runAndFix !== 'function') {
+      UI.showError(T('run.fixUnavailable', 'Self-repair is unavailable.'));
+      return;
+    }
+    UI.toast(T('run.fixing', 'Running self-repair…'));
+    var done = function () {
+      // Reload the preview with a fresh build and surface stored errors.
+      var f = $('run-iframe');
+      var fresh = assembleForRun();
+      if (f && fresh) f.setAttribute('srcdoc', safeStr(fresh));
+      renderRunConsole([]); // re-render; pulls _lastRun.errors when empty
+      var s = STATE();
+      var n = (s && s._lastRun && Array.isArray(s._lastRun.errors)) ? s._lastRun.errors.length : 0;
+      if (n > 0) UI.toast(T('run.fixRemaining', 'Self-repair finished — ') + n + T('run.fixRemainingTail', ' error(s) remain'));
+      else UI.toast(T('run.fixOk', 'Self-repair finished — no errors'), 'ok');
+    };
+    var p;
+    try { p = orch.runAndFix(); } catch (e) { UI.showError('Self-repair failed: ' + (e && e.message)); return; }
+    if (p && typeof p.then === 'function') p.then(done).catch(function (e) { UI.showError('Self-repair failed: ' + (e && e.message)); });
+    else done();
+  }
 
   // ----- ZIP -------------------------------------------------------------------
   function downloadProjectZip() {

@@ -38,6 +38,8 @@ window.App = window.App || {};
 
   var App = window.App;
 
+  function CFG() { return App.config || {}; }
+
   // ---- limits ---------------------------------------------------------------
   function maxFiles() {
     try {
@@ -48,6 +50,15 @@ window.App = window.App || {};
     return 200;
   }
   var MAX_FILE_BYTES = 200 * 1024; // ~200k per file (chars; conservative)
+
+  // newest-history cap (config.FILE_HISTORY_CAP || 20), bounded defensively.
+  function historyCap() {
+    try {
+      var n = parseInt(CFG().FILE_HISTORY_CAP, 10);
+      if (n > 0 && n < 10000) return n;
+    } catch (e) {}
+    return 20;
+  }
 
   // ---- state accessor (Store owns/seeds; we read defensively) ---------------
   function filesMap() {
@@ -125,6 +136,145 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // VERSION HISTORY helpers
+  //   Each file record carries .history = [{content,t,by}] (newest LAST), the
+  //   prior versions recorded BEFORE each overwrite/edit, capped to newest N.
+  // ===========================================================================
+  function carryHistory(rec) {
+    // Return a fresh array of the record's existing history (coerced + capped).
+    var out = [];
+    try {
+      if (rec && typeof rec === 'object' && rec.history && rec.history.length) {
+        for (var i = 0; i < rec.history.length; i++) {
+          var h = rec.history[i];
+          if (!h || typeof h !== 'object') continue;
+          out.push({
+            content: (typeof h.content === 'string') ? h.content : String(h.content == null ? '' : h.content),
+            t: (typeof h.t === 'number') ? h.t : 0,
+            by: h.by ? String(h.by) : 'agent'
+          });
+        }
+      }
+    } catch (e) {}
+    capHistory(out);
+    return out;
+  }
+
+  function priorContentOf(rec) {
+    if (rec && typeof rec === 'object' && typeof rec.content === 'string') return rec.content;
+    if (typeof rec === 'string') return rec; // tolerate legacy shape
+    if (rec && typeof rec === 'object' && rec.content != null) return String(rec.content);
+    return '';
+  }
+
+  function capHistory(arr) {
+    try {
+      var cap = historyCap();
+      while (arr.length > cap) arr.shift(); // drop oldest (front)
+    } catch (e) {}
+    return arr;
+  }
+
+  // Public: snapshots for a file, newest last. Always an array.
+  function history(path) {
+    try {
+      var map = filesMap();
+      if (!map) return [];
+      var p = normalizePath(path);
+      var rec = map[p];
+      if (!rec || typeof rec !== 'object' || !rec.history || !rec.history.length) return [];
+      var out = [];
+      for (var i = 0; i < rec.history.length; i++) {
+        var h = rec.history[i];
+        if (!h || typeof h !== 'object') continue;
+        out.push({
+          content: (typeof h.content === 'string') ? h.content : String(h.content == null ? '' : h.content),
+          t: (typeof h.t === 'number') ? h.t : 0,
+          by: h.by ? String(h.by) : 'agent'
+        });
+      }
+      return out;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // Public: restore a historical version (by index into history(path)) as a
+  // NEW write (by:'user'), which itself snapshots the current content. Returns
+  // the path on success, null otherwise. Never throws.
+  function restore(path, index) {
+    try {
+      var snaps = history(path);
+      var i = parseInt(index, 10);
+      if (!(i >= 0 && i < snaps.length)) return null;
+      var content = snaps[i].content;
+      return write(path, content, 'user');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Public: dependency-free LCS line diff.
+  //   -> [{type:'ctx'|'add'|'del', text:String}]  (old=del, new=add)
+  //   Bounded for large files: above a size threshold, fall back to a coarse
+  //   block diff (all-del then all-add) to avoid an O(n*m) table blowup.
+  function diffLines(oldStr, newStr) {
+    try {
+      var a = splitLines(oldStr);
+      var b = splitLines(newStr);
+      var out = [];
+      // Bound the LCS table: cap on product of line counts.
+      var MAX_CELLS = 1500 * 1500; // ~2.25M cells ceiling (avoid a giant DP table / UI jank)
+      if (a.length * b.length > MAX_CELLS || a.length > 20000 || b.length > 20000) {
+        for (var d = 0; d < a.length; d++) out.push({ type: 'del', text: a[d] });
+        for (var ad = 0; ad < b.length; ad++) out.push({ type: 'add', text: b[ad] });
+        return out;
+      }
+      var n = a.length, m = b.length;
+      // LCS length table (rows 0..n, cols 0..m). Uint arrays where possible.
+      var table = [];
+      for (var r = 0; r <= n; r++) {
+        table.push(new Array(m + 1));
+        table[r][m] = 0;
+      }
+      for (var c = 0; c <= m; c++) table[n][c] = 0;
+      for (var ii = n - 1; ii >= 0; ii--) {
+        var rowI = table[ii], rowI1 = table[ii + 1];
+        for (var jj = m - 1; jj >= 0; jj--) {
+          if (a[ii] === b[jj]) rowI[jj] = rowI1[jj + 1] + 1;
+          else rowI[jj] = (rowI1[jj] >= rowI[jj + 1]) ? rowI1[jj] : rowI[jj + 1];
+        }
+      }
+      // Backtrack to build the edit script.
+      var x = 0, y = 0;
+      while (x < n && y < m) {
+        if (a[x] === b[y]) {
+          out.push({ type: 'ctx', text: a[x] });
+          x++; y++;
+        } else if (table[x + 1][y] >= table[x][y + 1]) {
+          out.push({ type: 'del', text: a[x] });
+          x++;
+        } else {
+          out.push({ type: 'add', text: b[y] });
+          y++;
+        }
+      }
+      while (x < n) { out.push({ type: 'del', text: a[x] }); x++; }
+      while (y < m) { out.push({ type: 'add', text: b[y] }); y++; }
+      return out;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function splitLines(s) {
+    var str = String(s == null ? '' : s);
+    str = str.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (str === '') return [];
+    return str.split('\n');
+  }
+
+  // ===========================================================================
   // WRITE / READ / REMOVE / LIST / CLEAR
   // ===========================================================================
   function write(path, content, by) {
@@ -137,16 +287,31 @@ window.App = window.App || {};
       // per-file size cap (defensive truncate rather than reject silently)
       if (str.length > MAX_FILE_BYTES) str = str.slice(0, MAX_FILE_BYTES);
       // total-file cap: allow overwrite of existing, reject NEW over cap
-      if (!Object.prototype.hasOwnProperty.call(map, p)) {
+      var existing = Object.prototype.hasOwnProperty.call(map, p) ? map[p] : null;
+      if (!existing) {
         var count = 0;
         for (var k in map) { if (Object.prototype.hasOwnProperty.call(map, k)) count++; }
         if (count >= maxFiles()) return null;
+      }
+      // VERSION HISTORY: carry forward prior history, and record the PRIOR
+      // content as a snapshot BEFORE overwriting (capped to newest entries).
+      var hist = carryHistory(existing);
+      if (existing) {
+        var priorContent = priorContentOf(existing);
+        var priorT = (existing && typeof existing.t === 'number') ? existing.t : 0;
+        var priorBy = (existing && existing.updatedBy) ? String(existing.updatedBy) : 'agent';
+        // skip a no-op snapshot when content is unchanged (avoid history spam)
+        if (priorContent !== str) {
+          hist.push({ content: priorContent, t: priorT, by: priorBy });
+          capHistory(hist);
+        }
       }
       map[p] = {
         content: str,
         lang: detectLang(p),
         updatedBy: by ? String(by) : 'agent',
-        t: Date.now()
+        t: Date.now(),
+        history: hist
       };
       return p;
     } catch (e) {
@@ -199,7 +364,8 @@ window.App = window.App || {};
           content: typeof rec.content === 'string' ? rec.content : String(rec.content == null ? '' : rec.content),
           lang: rec.lang || detectLang(k),
           updatedBy: rec.updatedBy || 'agent',
-          t: typeof rec.t === 'number' ? rec.t : 0
+          t: typeof rec.t === 'number' ? rec.t : 0,
+          history: (rec.history && rec.history.length) ? rec.history.length : 0
         });
       }
       out.sort(function (a, b) { return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0); });
@@ -581,7 +747,84 @@ window.App = window.App || {};
     return String(content == null ? '' : content).replace(/<\/(script)/gi, '<\\/$1');
   }
 
-  function assembleRunnable() {
+  // Self-repair capture prelude: override console.* and listen for runtime
+  // errors, forwarding each to the parent via postMessage. Built by SPLITTING
+  // script-tag literals so this source never contains a real closing tag.
+  //   parent.postMessage({source:'neonworks-run', kind:'log'|'error', text}, '*')
+  function capturePrelude() {
+    var SO = '<scr' + 'ipt>';
+    var SC = '</scr' + 'ipt>';
+    var body = [
+      '(function(){',
+      '  try {',
+      '    var send = function(kind, text){',
+      "      try { parent.postMessage({ source:'neonworks-run', kind:kind, text:String(text) }, '*'); } catch(e){}",
+      '    };',
+      '    var fmt = function(args){',
+      '      var parts = [];',
+      '      for (var i=0;i<args.length;i++){',
+      '        var a = args[i];',
+      '        try {',
+      "          if (a && typeof a === 'object') parts.push(JSON.stringify(a));",
+      '          else parts.push(String(a));',
+      '        } catch(e){ parts.push(String(a)); }',
+      '      }',
+      "      return parts.join(' ');",
+      '    };',
+      "    var c = window.console || (window.console = {});",
+      "    ['log','warn','error','info','debug'].forEach(function(name){",
+      '      var orig = c[name];',
+      '      c[name] = function(){',
+      "        send(name === 'error' ? 'error' : 'log', name.toUpperCase() + ': ' + fmt(arguments));",
+      "        try { if (typeof orig === 'function') orig.apply(c, arguments); } catch(e){}",
+      '      };',
+      '    });',
+      "    window.addEventListener('error', function(ev){",
+      '      try {',
+      '        var msg = ev && ev.message ? ev.message : (ev && ev.error ? String(ev.error) : "error");',
+      '        var loc = (ev && ev.filename) ? (" (" + ev.filename + ":" + (ev.lineno||0) + ":" + (ev.colno||0) + ")") : "";',
+      '        var stk = (ev && ev.error && ev.error.stack) ? ("\\n" + ev.error.stack) : "";',
+      "        send('error', msg + loc + stk);",
+      '      } catch(e){}',
+      '    });',
+      "    window.addEventListener('unhandledrejection', function(ev){",
+      '      try {',
+      '        var r = ev && ev.reason;',
+      '        var msg = (r && r.stack) ? r.stack : (r && r.message) ? r.message : String(r);',
+      "        send('error', 'UnhandledRejection: ' + msg);",
+      '      } catch(e){}',
+      '    });',
+      '  } catch(e){}',
+      '})();'
+    ].join('\n');
+    return SO + '\n' + body + '\n' + SC;
+  }
+
+  // Inject the prelude at the TOP of <head> (or <body>, or the document) so it
+  // installs before any project script runs. Defensive; returns html unchanged
+  // on any failure.
+  function injectCapture(html) {
+    try {
+      var prelude = capturePrelude();
+      var headRe = /<head\b[^>]*>/i;
+      if (headRe.test(html)) {
+        return html.replace(headRe, function (tag) { return tag + '\n' + prelude; });
+      }
+      var bodyRe = /<body\b[^>]*>/i;
+      if (bodyRe.test(html)) {
+        return html.replace(bodyRe, function (tag) { return tag + '\n' + prelude; });
+      }
+      var htmlRe = /<html\b[^>]*>/i;
+      if (htmlRe.test(html)) {
+        return html.replace(htmlRe, function (tag) { return tag + '\n' + prelude; });
+      }
+      return prelude + '\n' + html;
+    } catch (e) {
+      return html;
+    }
+  }
+
+  function assembleRunnable(opts) {
     try {
       var map = filesMap();
       if (!map) return null;
@@ -631,6 +874,11 @@ window.App = window.App || {};
           return '<scr' + 'ipt' + typeAttr + '>\n' + escScriptClose(js) + '\n</scr' + 'ipt>';
         } catch (e) { return full; }
       });
+
+      // Self-repair console/error capture prelude (opt-in via opts.capture).
+      if (opts && opts.capture) {
+        html = injectCapture(html);
+      }
 
       return html;
     } catch (e) {
@@ -753,6 +1001,10 @@ window.App = window.App || {};
     buildZip: buildZip,
     assembleRunnable: assembleRunnable,
     githubPush: githubPush,
+    // VERSION HISTORY (Wave 1 reliability core)
+    history: history,
+    restore: restore,
+    diffLines: diffLines,
     // helpers exposed for reuse / testing (additive, non-spec)
     normalizePath: normalizePath,
     toBase64Utf8: toBase64Utf8

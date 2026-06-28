@@ -174,6 +174,138 @@ window.App = window.App || {};
   Orchestrator.adjustAffinity = adjustAffinity;
   Orchestrator.bondParticipants = bondParticipants;
 
+  // ===========================================================================
+  // TASK LEDGER (Wave 1) — App.state._ledger = {facts, plan, progress, updated}.
+  //   Initialized from the goal at the start of a run; updated by ONE bounded
+  //   LLM reflection between waves / on stall; 'stuck' nudges a re-plan.
+  //   All guarded; never throws. Persistence handled by store.js.
+  // ===========================================================================
+  function refreshLedgerUI() {
+    try { if (App.UI && App.UI.refreshLedger) App.UI.refreshLedger(); } catch (e) {}
+  }
+
+  // initLedger(goal) — seed the ledger facts from the user's goal. Resets per run.
+  function initLedger(goal) {
+    try {
+      var s = STATE();
+      if (!s) return;
+      var g = String(goal == null ? '' : goal).trim();
+      s._ledger = {
+        facts: g ? ['Goal: ' + truncate(g, 240)] : [],
+        plan: [],
+        progress: 'working',
+        updated: nowMs(),
+      };
+      refreshLedgerUI();
+    } catch (e) {}
+  }
+  Orchestrator.initLedger = initLedger;
+
+  // ledger() — current ledger (creates a default working ledger if absent).
+  function ledger() {
+    var s = STATE();
+    if (!s) return null;
+    if (!s._ledger || typeof s._ledger !== 'object') {
+      s._ledger = { facts: [], plan: [], progress: 'working', updated: nowMs() };
+    }
+    return s._ledger;
+  }
+  Orchestrator.ledger = ledger;
+
+  // parseLedgerReflection(raw) → {facts,plan,progress} | null (tolerant JSON).
+  function parseLedgerReflection(raw) {
+    try {
+      if (!raw) return null;
+      var s = String(raw).replace(/^```(?:json|jsonc)?\s*/i, '').replace(/```\s*$/i, '');
+      var first = s.indexOf('{'), last = s.lastIndexOf('}');
+      if (first === -1 || last === -1 || last < first) return null;
+      var body = s.slice(first, last + 1).replace(/,(\s*[}\]])/g, '$1')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+      var obj = null;
+      try { obj = JSON.parse(body); }
+      catch (e) { var bal = braceBalancedPrefix(body); if (bal) { try { obj = JSON.parse(bal); } catch (e2) { obj = null; } } }
+      if (!obj || typeof obj !== 'object') return null;
+      function strList(v) {
+        var out = [];
+        if (Array.isArray(v)) {
+          for (var i = 0; i < v.length; i++) {
+            if (v[i] == null) continue;
+            var t = String(v[i]).trim();
+            if (t) out.push(truncate(t, 240));
+            if (out.length >= 12) break;
+          }
+        }
+        return out;
+      }
+      var progress = (obj.progress === 'stuck' || obj.progress === 'done') ? obj.progress : 'working';
+      return { facts: strList(obj.facts), plan: strList(obj.plan), progress: progress };
+    } catch (e) { return null; }
+  }
+
+  // reflectLedger(root, cb) — ONE bounded LLM call to update the ledger. Guarded by
+  //   root._ledgerBusy so we don't reflect every tick. cb(progress) always called.
+  function reflectLedger(root, cb) {
+    cb = (typeof cb === 'function') ? cb : function () {};
+    try {
+      var settings = (STATE() && STATE().settings) || {};
+      var sys = CFG().LEDGER_REFLECT_SYSTEM;
+      var model = bossModelFor();
+      var lg = ledger();
+      if (!root || !sys || !lg || !hasCredsFor(model)) { cb(lg ? lg.progress : 'working'); return; }
+      if (root._ledgerBusy) { cb(lg.progress); return; }
+      root._ledgerBusy = true;
+
+      var boss = ensureBoss();
+      var content = "USER'S GOAL:\n" + (root.desc || '') +
+        "\n\nCURRENT LEDGER:\n" + JSON.stringify({ facts: lg.facts, plan: lg.plan, progress: lg.progress }) +
+        "\n\nRECENT WORKER RESULTS:\n" + gatherWorkerResults(root) +
+        "\n\nUpdate the ledger. Reply with the strict JSON described in your instructions.";
+      var acc = '';
+      var done = false;
+      function finish(p) {
+        if (done) return; done = true;
+        root._ledgerBusy = false;
+        cb(p || (ledger() ? ledger().progress : 'working'));
+      }
+
+      var handle = App.API.stream({
+        apiKey: settings.apiKey,
+        openaiKey: settings.openaiKey,
+        model: model,
+        system: sys,
+        messages: [{ role: 'user', content: content }],
+        onText: function (d) { acc += d; },
+        onDone: function (res) {
+          var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_ledger'];
+          if (boss && res && res.usage) {
+            boss.stats.tokensIn += (res.usage.input_tokens || 0);
+            boss.stats.tokensOut += (res.usage.output_tokens || 0);
+          }
+          var ref = parseLedgerReflection((res && res.text) || acc);
+          var cur = ledger();
+          if (ref && cur) {
+            if (ref.facts.length) cur.facts = ref.facts;
+            if (ref.plan.length) cur.plan = ref.plan;
+            cur.progress = ref.progress;
+            cur.updated = nowMs();
+            refreshLedgerUI();
+            saveSoon();
+            try { log('Boss', 'system', 'system', '📒 ledger: ' + cur.progress + (cur.plan[0] ? ' — ' + truncate(cur.plan[0], 50) : '')); } catch (e) {}
+          }
+          finish(cur ? cur.progress : 'working');
+        },
+        onError: function () {
+          var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_ledger'];
+          finish(ledger() ? ledger().progress : 'working');
+        },
+      });
+      var s = STATE(); if (s && s._activeStreams) s._activeStreams['__boss_ledger'] = handle;
+    } catch (e) {
+      try { if (root) root._ledgerBusy = false; } catch (e2) {}
+      cb('working');
+    }
+  }
+
   // Usable credentials for a model? openai → openaiKey; anthropic → apiKey OR the
   // local companion (subscription proxy needs no key). Mirrors api.js's guard so
   // companion-only / GPT-only setups aren't blocked before the request is built.
@@ -488,6 +620,8 @@ window.App = window.App || {};
     };
     s.tasks.push(root);
     log('user', 'Boss', 'msg', truncate(text, 120));
+    // TASK LEDGER: seed facts from the goal for this run.
+    initLedger(text);
     refreshBoard();
 
     // No key → fail fast, friendly. (§10)
@@ -1114,7 +1248,9 @@ window.App = window.App || {};
     task.result = text;
 
     // 3) QA loop: a verify task isn't terminal until it PASSes (or retries exhaust).
-    if (task.verify && !task._qaDone && CFG().QA_REVIEW_SYSTEM) {
+    //   Runs with the analytic rubric (QA_RUBRIC_SYSTEM) when available, else the
+    //   plain PASS/FAIL reviewer (QA_REVIEW_SYSTEM).
+    if (task.verify && !task._qaDone && (CFG().QA_RUBRIC_SYSTEM || CFG().QA_REVIEW_SYSTEM)) {
       runQAReview(task, text, agent);
       return;
     }
@@ -1135,7 +1271,11 @@ window.App = window.App || {};
     // No creds for QA → skip review gracefully (finalize as-is; never deadlock).
     if (!hasCredsFor(qaModel)) { finishTask(task, text); return; }
 
-    var sys = CFG().QA_REVIEW_SYSTEM;
+    // RUBRIC QA: prefer the analytic rubric judge when configured; fall back to the
+    //   plain PASS/FAIL reviewer. The rubric returns {pass, fixFocus} which we feed
+    //   as the retry feedback; if its JSON is unparseable we use the PASS/FAIL path.
+    var useRubric = !!CFG().QA_RUBRIC_SYSTEM;
+    var sys = useRubric ? CFG().QA_RUBRIC_SYSTEM : CFG().QA_REVIEW_SYSTEM;
     var artifactText = qaReviewContent(task, text);
     log('QA', (worker ? worker.name : task.role), 'msg', '🔍 reviewing: ' + truncate(task.title, 40));
     if (qaAgent) { try { ag.say(qaAgent, '🔍 reviewing…', 3000); } catch (e) {} }
@@ -1151,14 +1291,26 @@ window.App = window.App || {};
       onDone: function (res) {
         var verdict = (res && res.text) || acc || '';
         var line = resultLine(verdict) || verdict;
-        var pass = /\bPASS\b/i.test(line) && !/\bFAIL\b/i.test(line);
+        var pass, rubricFeedback = '';
+        if (useRubric) {
+          var rub = parseRubricVerdict(verdict);
+          if (rub) {
+            pass = !!rub.pass;
+            rubricFeedback = rub.fixFocus || '';
+          } else {
+            // rubric JSON unreadable → fall back to PASS/FAIL detection.
+            pass = /\bPASS\b/i.test(line) && !/\bFAIL\b/i.test(line);
+          }
+        } else {
+          pass = /\bPASS\b/i.test(line) && !/\bFAIL\b/i.test(line);
+        }
         var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__qa_' + task.id];
         if (pass) {
           log('QA', 'Boss', 'result', '✓ PASS: ' + truncate(task.title, 40));
           task._qaDone = true;
           finishTask(task, text);
         } else {
-          var feedback = extractFeedback(line) || extractFeedback(verdict) || 'address correctness/completeness issues';
+          var feedback = rubricFeedback || extractFeedback(line) || extractFeedback(verdict) || 'address correctness/completeness issues';
           if ((task._retries || 0) < (CFG().QA_MAX_RETRIES || 2)) {
             task._retries = (task._retries || 0) + 1;
             task._feedback = feedback;
@@ -1202,6 +1354,38 @@ window.App = window.App || {};
     parts.push('');
     parts.push('WORKER DELIVERABLE TO REVIEW:\n' + String(text || ''));
     return parts.join('\n');
+  }
+
+  // parseRubricVerdict(raw) → {pass, fixFocus, scores} | null. Tolerant JSON parse of
+  //   the QA_RUBRIC_SYSTEM judge output {scores:[...], pass:bool, fixFocus:String}.
+  //   When 'pass' is absent, derive it from every score's .pass (all true → pass).
+  function parseRubricVerdict(raw) {
+    try {
+      if (!raw) return null;
+      var s = String(raw).replace(/^```(?:json|jsonc)?\s*/i, '').replace(/```\s*$/i, '');
+      var first = s.indexOf('{'), last = s.lastIndexOf('}');
+      if (first === -1 || last === -1 || last < first) return null;
+      var body = s.slice(first, last + 1).replace(/,(\s*[}\]])/g, '$1')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+      var obj = null;
+      try { obj = JSON.parse(body); }
+      catch (e) { var bal = braceBalancedPrefix(body); if (bal) { try { obj = JSON.parse(bal); } catch (e2) { obj = null; } } }
+      if (!obj || typeof obj !== 'object') return null;
+      var pass;
+      if (typeof obj.pass === 'boolean') {
+        pass = obj.pass;
+      } else if (Array.isArray(obj.scores) && obj.scores.length) {
+        pass = true;
+        for (var i = 0; i < obj.scores.length; i++) {
+          var sc = obj.scores[i];
+          if (sc && sc.pass === false) { pass = false; break; }
+        }
+      } else {
+        return null;   // no usable signal → let caller fall back
+      }
+      var fixFocus = (typeof obj.fixFocus === 'string') ? obj.fixFocus.trim() : '';
+      return { pass: pass, fixFocus: fixFocus, scores: Array.isArray(obj.scores) ? obj.scores : [] };
+    } catch (e) { return null; }
   }
 
   // extractFeedback — pull the actionable part after "FAIL —" / "FAIL:".
@@ -1612,8 +1796,20 @@ window.App = window.App || {};
     try {
       if (!root || root._synthStarted) return;
       if (root._gating) return;             // a phase async-call is in flight
-      // PHASE 1 — adaptive replan (once).
-      if (CFG().ENABLE_REPLAN && !root._replanned) {
+      // PHASE 0 — TASK LEDGER reflection (once, bounded). Updates facts/plan/progress;
+      //   if it comes back 'stuck', force a re-plan round even when none was planned.
+      if (CFG().LEDGER_REFLECT_SYSTEM && !root._ledgerReflected) {
+        root._gating = true;
+        reflectLedger(root, function (progress) {
+          root._gating = false;
+          root._ledgerReflected = true;
+          if (progress === 'stuck') root._forceReplan = true;  // nudge a re-plan
+          prepareSynthesis(root);
+        });
+        return;
+      }
+      // PHASE 1 — adaptive replan (once). Runs when enabled OR when the ledger said 'stuck'.
+      if ((CFG().ENABLE_REPLAN || root._forceReplan) && !root._replanned) {
         root._gating = true;
         runReplanPhase(root, function (added) {
           root._gating = false;
@@ -1932,6 +2128,8 @@ window.App = window.App || {};
         rootTask.status = 'done';
         rootTask.result = text || '(no synthesis produced)';
         s._meetingActive = false;
+        // TASK LEDGER: mark the run complete.
+        try { var lg = ledger(); if (lg) { lg.progress = 'done'; lg.updated = nowMs(); refreshLedgerUI(); } } catch (e) {}
         // Push the final answer as an Artifact (overwrite per root on re-run).
         try {
           pushArtifacts([{
@@ -2118,6 +2316,8 @@ window.App = window.App || {};
     };
     s.tasks.push(root);
     log('user', 'Boss', 'msg', '🔨 build: ' + truncate(goalText, 110));
+    // TASK LEDGER: seed facts from the build goal.
+    initLedger(goalText);
     refreshBoard();
 
     // No usable credentials → fail fast, friendly (mirrors runBossTask).
@@ -2582,8 +2782,294 @@ window.App = window.App || {};
     try { if (App.UI && App.UI.openFiles) App.UI.openFiles(); } catch (e) {}
     try { if (App.UI && App.UI.notifyDone) App.UI.notifyDone(root); } catch (e) {}
     saveSoon();
+
+    // SELF-REPAIR: when the project has an HTML entry, run it once and auto-fix any
+    //   runtime errors (bounded). Guarded by ENABLE_SELF_REPAIR; never blocks/throws.
+    try {
+      if (CFG().ENABLE_SELF_REPAIR !== false && workspaceHasHtmlEntry()) {
+        setTimeout(function () {
+          try { Orchestrator.runAndFix({}); } catch (e) {}
+        }, 0);
+      }
+    } catch (e) {}
   }
   Orchestrator.finalizeBuild = finalizeBuild;
+
+  // ===========================================================================
+  // SELF-REPAIR (Wave 1) — App.Orchestrator.runAndFix(opts?)
+  //   1) run the assembled project (run_html tool) → capture errors/logs into
+  //      App.state._lastRun (runtime-only, never persisted).
+  //   2) if errors && ENABLE_SELF_REPAIR && round < REPAIR_MAX_ROUNDS: dispatch a
+  //      focused ENGINEER repair task (given the errors + free to read/edit/write
+  //      via the tool loop), then re-run. Bounded; always terminal; never throws.
+  //   Returns a Promise<{errors:[], rounds:Number, fixed:Boolean}>.
+  // ===========================================================================
+  function workspaceHasHtmlEntry() {
+    try {
+      var ws = WS();
+      if (!ws || typeof ws.list !== 'function') return false;
+      var items = ws.list() || [];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i] && /\.html?$/i.test(items[i].path)) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // parseRunErrors(output) — pull the error list out of a run_html tool summary.
+  //   run_html returns 'no errors' OR 'N error(s):\n<lines>\n\nconsole (...)...'.
+  function parseRunErrors(output) {
+    var errs = [], logs = [];
+    try {
+      var s = String(output == null ? '' : output);
+      if (!s) return { errors: errs, logs: logs };
+      // split off the console section if present.
+      var conIdx = s.search(/\nconsole \(\d+\):/);
+      var errSec = (conIdx >= 0) ? s.slice(0, conIdx) : s;
+      var conSec = (conIdx >= 0) ? s.slice(conIdx) : '';
+      if (!/no errors/i.test(errSec)) {
+        var m = errSec.match(/^\s*\d+ error\(s\):\s*\n?([\s\S]*)$/i);
+        var bodyTxt = m ? m[1] : errSec;
+        var lines = bodyTxt.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+          var ln = lines[i].trim();
+          if (ln) errs.push(ln);
+        }
+      }
+      if (conSec) {
+        var clines = conSec.replace(/^\nconsole \(\d+\):\s*\n?/i, '').split('\n');
+        for (var j = 0; j < clines.length; j++) {
+          var cl = clines[j].trim();
+          if (cl) logs.push(cl);
+        }
+      }
+    } catch (e) {}
+    return { errors: errs, logs: logs };
+  }
+
+  // runProjectCapture() → Promise<{errors:[], logs:[]}>. Prefers the run_html tool;
+  //   falls back to a hidden capture iframe (assembleRunnable({capture:true})) and
+  //   collects 'neonworks-run' postMessages for a short timeout. Never rejects.
+  function runProjectCapture() {
+    // Preferred: the run_html tool (already sandboxed + bounded).
+    try {
+      if (App.Tools && typeof App.Tools.run === 'function') {
+        return Promise.resolve(App.Tools.run('run_html', {})).then(function (r) {
+          r = r || {};
+          if (!r.ok) return { errors: [String(r.error || 'run failed')], logs: [] };
+          return parseRunErrors(r.output);
+        }, function (e) {
+          return { errors: ['run failed: ' + String((e && e.message) || e)], logs: [] };
+        });
+      }
+    } catch (e) {}
+    // Fallback: capture iframe via assembleRunnable({capture:true}).
+    return captureViaIframe();
+  }
+
+  // captureViaIframe() → Promise<{errors:[], logs:[]}>. Loads the capture-prelude
+  //   build into a hidden sandboxed iframe and listens for 'neonworks-run' messages.
+  function captureViaIframe() {
+    return new Promise(function (resolve) {
+      var errors = [], logs = [], settled = false, iframe = null, timer = null;
+      function done() {
+        if (settled) return;
+        settled = true;
+        try { window.removeEventListener('message', onMsg); } catch (e) {}
+        if (timer) { try { clearTimeout(timer); } catch (e) {} }
+        if (iframe) { try { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); } catch (e) {} }
+        resolve({ errors: errors, logs: logs });
+      }
+      function onMsg(ev) {
+        try {
+          var d = ev && ev.data;
+          if (!d || d.source !== 'neonworks-run') return;
+          if (d.kind === 'error') errors.push(String(d.text));
+          else logs.push('[' + (d.kind || 'log') + '] ' + String(d.text));
+        } catch (e) {}
+      }
+      try {
+        var ws = WS();
+        if (typeof document === 'undefined' || !ws || typeof ws.assembleRunnable !== 'function') { done(); return; }
+        var html = ws.assembleRunnable({ capture: true });
+        if (html == null) { done(); return; }
+        window.addEventListener('message', onMsg);
+        iframe = document.createElement('iframe');
+        iframe.setAttribute('sandbox', 'allow-scripts');
+        iframe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:800px;height:600px;border:0;visibility:hidden';
+        (document.body || document.documentElement).appendChild(iframe);
+        iframe.setAttribute('srcdoc', html);
+        timer = setTimeout(done, 1800);
+      } catch (e) { done(); }
+    });
+  }
+
+  // recordLastRun(cap) — store the capture into App.state._lastRun (runtime-only).
+  function recordLastRun(cap) {
+    try {
+      var s = STATE();
+      if (!s) return;
+      s._lastRun = {
+        errors: (cap && Array.isArray(cap.errors)) ? cap.errors.slice(0, 50) : [],
+        logs: (cap && Array.isArray(cap.logs)) ? cap.logs.slice(0, 50) : [],
+        t: nowMs(),
+      };
+      try { if (App.UI && App.UI.refreshRunConsole) App.UI.refreshRunConsole(); } catch (e) {}
+    } catch (e) {}
+  }
+
+  // dispatchRepair(errors) → Promise<Boolean done>. Streams ONE focused ENGINEER
+  //   turn with the full tool loop (read_file/search_workspace/edit_file/write_file)
+  //   so it can locate and fix the failing file(s). Bounded by MAX_TOOL_ITERS in
+  //   the loop itself. Resolves true when the turn completes (success or graceful).
+  function dispatchRepair(errors) {
+    return new Promise(function (resolve) {
+      try {
+        var settings = (STATE() && STATE().settings) || {};
+        var ag = AGENTS();
+
+        // pick an engineer (or generalist) agent for the repair.
+        var roleName = ROLES().engineer ? 'engineer' : 'generalist';
+        var agent = (ag && ag.findIdle) ? (ag.findIdle(roleName) || ag.findIdle('generalist')) : null;
+        if (!agent) agent = spawnTempWorker(roleName);
+        if (!agent) { resolve(false); return; }
+
+        var model = agent.model || settings.defaultModel;
+        if (!hasCredsFor(model)) { resolve(false); return; }
+
+        // tools: full App.Tools suite (Anthropic-only round-trip).
+        var tools;
+        try {
+          if (clientToolsApplicable(agent, settings)) {
+            var specs = App.Tools.specs();
+            if (Array.isArray(specs) && specs.length) tools = specs;
+          }
+        } catch (e) {}
+
+        var ws = WS();
+        var fileList = '';
+        try {
+          if (ws && typeof ws.list === 'function') {
+            var items = ws.list() || [];
+            fileList = items.map(function (f) { return f.path; }).join(', ');
+          }
+        } catch (e) {}
+
+        var sys = CFG().REPAIR_SYSTEM ||
+          ('You are a senior engineer fixing runtime errors in a multi-file project. ' +
+           'Use read_file/search_workspace to locate the cause, then edit_file/write_file to FIX it. ' +
+           'Make the minimal correct change. After fixing, optionally call run_html to confirm. ' +
+           'Do not explain at length — just fix the files via tools.');
+
+        var content = 'The project failed at runtime with these errors:\n\n' +
+          errors.slice(0, 20).join('\n') +
+          '\n\nProject files: ' + (fileList || '(none listed)') +
+          '\n\nLocate and FIX the cause using the file tools. Edit/write the affected file(s).';
+
+        if (agent) {
+          try { ag.say(agent, '🔧 self-repair…', 3000); } catch (e) {}
+          agent.busy = true;
+        }
+
+        // Drive a synthetic build-style repair task through the existing tool loop by
+        //   building a minimal task object and reusing startWorkerStream's mechanics
+        //   via a dedicated, self-contained stream + tool round-trip.
+        runRepairStream(agent, sys, [{ role: 'user', content: content }], tools, 0, function () {
+          try { if (agent) { agent.busy = false; ag.setState(agent, 'idle'); } } catch (e) {}
+          resolve(true);
+        });
+      } catch (e) { resolve(false); }
+    });
+  }
+
+  // runRepairStream — bounded tool-loop turn dedicated to self-repair. Mirrors the
+  //   worker tool loop but writes directly to the Workspace via App.Tools and never
+  //   touches the task board. cb() always called (terminal).
+  function runRepairStream(agent, sys, messages, tools, iter, cb) {
+    cb = (typeof cb === 'function') ? cb : function () {};
+    var ag = AGENTS();
+    var settings = (STATE() && STATE().settings) || {};
+    var MAX = (CFG().MAX_TOOL_ITERS != null) ? CFG().MAX_TOOL_ITERS : 2;
+    iter = iter || 0;
+    var acc = '';
+    var doneCalled = false;
+    function done() { if (doneCalled) return; doneCalled = true; cb(); }
+
+    try {
+      var handle = App.API.stream({
+        apiKey: settings.apiKey,
+        openaiKey: settings.openaiKey,
+        model: agent.model || settings.defaultModel,
+        system: sys,
+        messages: messages,
+        tools: tools,
+        onState: function (st) { if (st === 'text') { try { ag.setState(agent, 'coding'); } catch (e) {} } },
+        onText: function (d) { acc += d; try { markActivity(agent); } catch (e) {} },
+        onDone: function (res) {
+          if (res && res.usage && agent.stats) {
+            agent.stats.tokensIn += (res.usage.input_tokens || 0);
+            agent.stats.tokensOut += (res.usage.output_tokens || 0);
+          }
+          var toolUses = res && Array.isArray(res.toolUses) ? res.toolUses : null;
+          if (toolUses && toolUses.length && tools && tools.length && iter < MAX) {
+            var asstContent = [];
+            if (acc && acc.trim()) asstContent.push({ type: 'text', text: acc });
+            for (var tu = 0; tu < toolUses.length; tu++) {
+              asstContent.push({ type: 'tool_use', id: toolUses[tu].id, name: toolUses[tu].name, input: toolUses[tu].input });
+            }
+            executeToolUses(toolUses, agent).then(function (results) {
+              var next = messages.slice();
+              next.push({ role: 'assistant', content: asstContent });
+              next.push({ role: 'user', content: results });
+              runRepairStream(agent, sys, next, tools, iter + 1, cb);
+            }, function () { done(); });
+            return;
+          }
+          done();
+        },
+        onError: function () { done(); },
+      });
+      var s = STATE(); if (s && s._activeStreams) s._activeStreams['__repair'] = handle;
+    } catch (e) { done(); }
+  }
+
+  // runAndFix(opts?) — run → capture → bounded engineer self-repair → re-run.
+  //   opts.maxRounds overrides REPAIR_MAX_ROUNDS. Always resolves; never throws.
+  Orchestrator.runAndFix = function (opts) {
+    opts = opts || {};
+    var maxRounds = (typeof opts.maxRounds === 'number' && opts.maxRounds >= 0)
+      ? opts.maxRounds : (CFG().REPAIR_MAX_ROUNDS != null ? CFG().REPAIR_MAX_ROUNDS : 3);
+    var selfRepair = (CFG().ENABLE_SELF_REPAIR !== false);
+
+    return new Promise(function (resolve) {
+      var round = 0;
+      function loop() {
+        runProjectCapture().then(function (cap) {
+          cap = cap || { errors: [], logs: [] };
+          recordLastRun(cap);
+          var errs = cap.errors || [];
+          if (!errs.length) { resolve({ errors: [], rounds: round, fixed: round > 0 }); return; }
+          if (!selfRepair || round >= maxRounds) {
+            try { log('Boss', 'system', 'system', '⚠ self-repair: ' + errs.length + ' error(s) remain after ' + round + ' round(s)'); } catch (e) {}
+            resolve({ errors: errs, rounds: round, fixed: false });
+            return;
+          }
+          round++;
+          try { log('Boss', 'all', 'system', '🔧 self-repair round ' + round); } catch (e) {}
+          refreshBoard();
+          dispatchRepair(errs).then(function () {
+            try { if (App.UI && App.UI.refreshFiles) App.UI.refreshFiles(); } catch (e) {}
+            loop();   // re-run after the repair attempt
+          }, function () {
+            resolve({ errors: errs, rounds: round, fixed: false });
+          });
+        }, function () {
+          resolve({ errors: [], rounds: round, fixed: false });
+        });
+      }
+      loop();
+    });
+  };
 
   // ===========================================================================
   // tick() — frame-driven queue pump. Cheap & re-entrant-safe.
