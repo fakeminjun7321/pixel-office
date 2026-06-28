@@ -1215,6 +1215,193 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // FILE SYSTEM ACCESS -- saveToDirectory(opts?) / syncToDirectory()
+  //   Write the WHOLE workspace to a real on-disk folder via the File System
+  //   Access API (Chromium). When showDirectoryPicker is ABSENT (Safari/Firefox)
+  //   fall back to the existing buildZip() download. PURE LOGIC -- no DOM/UI, no
+  //   toasts; returns a status object. NEVER throws; on user-cancel resolves
+  //   {ok:false, error:'cancelled'}.
+  //
+  //   The chosen directory handle is retained at App.state._dirHandle (IN MEMORY
+  //   ONLY -- handles are NOT JSON-serializable; never persist them).
+  // ===========================================================================
+
+  // Trigger a browser download of a Blob with a given filename. Best-effort and
+  // headless-safe (no-op when document/URL are unavailable). Never throws.
+  function triggerDownload(blob, filename) {
+    try {
+      if (!blob || typeof document === 'undefined' || typeof URL === 'undefined' ||
+          typeof URL.createObjectURL !== 'function') {
+        return false;
+      }
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'workspace.zip';
+      if (document.body && document.body.appendChild) document.body.appendChild(a);
+      a.click();
+      if (a.parentNode) a.parentNode.removeChild(a);
+      // revoke after a tick so the click had time to start the download
+      setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ZIP fallback path used when the File System Access API is unavailable.
+  // Resolves {ok:true, fallback:true, dir:'(zip download)', count:<n>}.
+  function zipFallback() {
+    return new Promise(function (resolve) {
+      try {
+        var count = 0;
+        try { count = list().length; } catch (e0) {}
+        var blob = buildZip();
+        triggerDownload(blob, 'neonworks-workspace.zip');
+        resolve({ ok: true, fallback: true, dir: '(zip download)', count: count });
+      } catch (e) {
+        resolve({ ok: false, fallback: true, dir: '(zip download)', count: 0, error: (e && e.message) ? e.message : 'zip failed' });
+      }
+    });
+  }
+
+  // Resolve (creating as needed) the nested subdirectory handle for a file path,
+  // returning the deepest directory handle so the caller can create the file in
+  // it. Splits the normalized path on '/'; the LAST segment is the file name.
+  //   -> Promise<{ dirHandle, fileName } | null>  (null on any failure)
+  function resolveFileDir(rootHandle, normPath) {
+    return new Promise(function (resolve) {
+      try {
+        var segs = String(normPath || '').split('/');
+        var fileName = segs.pop();
+        if (!fileName) return resolve(null);
+        var dirs = [];
+        for (var i = 0; i < segs.length; i++) {
+          if (segs[i]) dirs.push(segs[i]);
+        }
+        function descend(handle, idx) {
+          if (idx >= dirs.length) {
+            return resolve({ dirHandle: handle, fileName: fileName });
+          }
+          handle.getDirectoryHandle(dirs[idx], { create: true }).then(function (sub) {
+            descend(sub, idx + 1);
+          }).catch(function () { resolve(null); });
+        }
+        descend(rootHandle, 0);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  // Write one file's content (UTF-8) into rootHandle at normPath, creating any
+  // nested subdirectories. Resolves true on success, false on failure (never
+  // throws / never rejects).
+  function writeOneFile(rootHandle, normPath, content) {
+    return new Promise(function (resolve) {
+      resolveFileDir(rootHandle, normPath).then(function (loc) {
+        if (!loc) return resolve(false);
+        loc.dirHandle.getFileHandle(loc.fileName, { create: true }).then(function (fileHandle) {
+          fileHandle.createWritable().then(function (writable) {
+            // write UTF-8 bytes explicitly so non-ASCII (Korean etc.) is exact
+            var data;
+            try { data = utf8Bytes(content); } catch (eb) { data = String(content == null ? '' : content); }
+            writable.write(data).then(function () {
+              writable.close().then(function () { resolve(true); })
+                .catch(function () { resolve(false); });
+            }).catch(function () {
+              try { writable.close().catch(function () {}); } catch (ec) {}
+              resolve(false);
+            });
+          }).catch(function () { resolve(false); });
+        }).catch(function () { resolve(false); });
+      }).catch(function () { resolve(false); });
+    });
+  }
+
+  // Write EVERY workspace file into the given directory handle. Resolves the
+  // number of files successfully written. Sequential (bounded; avoids hammering
+  // the disk with hundreds of parallel writables). Never throws.
+  function writeAllTo(rootHandle) {
+    return new Promise(function (resolve) {
+      try {
+        var items = list();
+        var written = 0;
+        function next(idx) {
+          if (idx >= items.length) return resolve(written);
+          writeOneFile(rootHandle, items[idx].path, items[idx].content).then(function (ok) {
+            if (ok) written++;
+            next(idx + 1);
+          });
+        }
+        next(0);
+      } catch (e) {
+        resolve(0);
+      }
+    });
+  }
+
+  function saveToDirectory(opts) {
+    return new Promise(function (resolve) {
+      try {
+        var o = opts || {};
+        // No File System Access API (Safari/Firefox) -> ZIP download fallback.
+        if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
+          return zipFallback().then(resolve);
+        }
+        var pickerOpts = { mode: 'readwrite' };
+        if (o.id) pickerOpts.id = String(o.id);
+        if (o.startIn) pickerOpts.startIn = o.startIn;
+        var picked;
+        try {
+          picked = window.showDirectoryPicker(pickerOpts);
+        } catch (eSync) {
+          // some implementations throw synchronously on bad opts -> retry bare
+          try { picked = window.showDirectoryPicker(); }
+          catch (eSync2) { return resolve({ ok: false, error: 'cancelled' }); }
+        }
+        Promise.resolve(picked).then(function (dirHandle) {
+          if (!dirHandle) return resolve({ ok: false, error: 'cancelled' });
+          // retain IN MEMORY only (handles are not serializable; never persist)
+          try { if (App.state && typeof App.state === 'object') App.state._dirHandle = dirHandle; } catch (eR) {}
+          writeAllTo(dirHandle).then(function (count) {
+            var name = '';
+            try { name = dirHandle.name || ''; } catch (eN) {}
+            resolve({ ok: true, dir: name || 'folder', count: count, fallback: false });
+          }).catch(function (eW) {
+            resolve({ ok: false, error: (eW && eW.message) ? eW.message : 'write failed' });
+          });
+        }).catch(function (err) {
+          // AbortError = user cancelled the picker
+          var name = (err && err.name) ? String(err.name) : '';
+          if (name === 'AbortError') return resolve({ ok: false, error: 'cancelled' });
+          resolve({ ok: false, error: (err && err.message) ? err.message : 'cancelled' });
+        });
+      } catch (e) {
+        resolve({ ok: false, error: (e && e.message) ? e.message : 'cancelled' });
+      }
+    });
+  }
+
+  function syncToDirectory() {
+    return new Promise(function (resolve) {
+      try {
+        var h = (App.state && typeof App.state === 'object') ? App.state._dirHandle : null;
+        if (!h) return resolve({ ok: false, error: 'no directory' });
+        writeAllTo(h).then(function (count) {
+          var name = '';
+          try { name = h.name || ''; } catch (eN) {}
+          resolve({ ok: true, dir: name || 'folder', count: count, fallback: false });
+        }).catch(function (eW) {
+          resolve({ ok: false, error: (eW && eW.message) ? eW.message : 'sync failed' });
+        });
+      } catch (e) {
+        resolve({ ok: false, error: (e && e.message) ? e.message : 'sync failed' });
+      }
+    });
+  }
+
+  // ===========================================================================
   // ATTACH
   // ===========================================================================
   App.Workspace = {
@@ -1232,6 +1419,9 @@ window.App = window.App || {};
     // PROJECT IMPORT (Wave 3 builder)
     importFiles: importFiles,
     readZip: readZip,
+    // FILE SYSTEM ACCESS (contract A) -- save whole workspace to a real folder
+    saveToDirectory: saveToDirectory,
+    syncToDirectory: syncToDirectory,
     // VERSION HISTORY (Wave 1 reliability core)
     history: history,
     restore: restore,

@@ -625,7 +625,11 @@ window.App = window.App || {};
     // API
     API_URL: 'https://api.anthropic.com/v1/messages',
     OPENAI_URL: 'https://api.openai.com/v1/chat/completions',   // v2: OpenAI chat-completions endpoint
-    COMPANION_URL: 'http://localhost:8787/v1/messages',         // v2: local subscription proxy (companion.py)
+    // v2: local subscription proxy (companion.py). The companion is OPT-IN and OFF
+    // by default (store defaultSettings().useCompanion === false), so a fresh or
+    // migrated company talks to the cloud API directly and never depends on a local
+    // server. The user explicitly enables it via the Settings companion toggle.
+    COMPANION_URL: 'http://localhost:8787/v1/messages',
     API_VERSION: '2023-06-01',
     DEFAULT_MODEL: 'claude-sonnet-4-6',          // worker default
     BOSS_MODEL:    'claude-opus-4-8',            // boss default
@@ -700,7 +704,18 @@ window.App = window.App || {};
     // user-facing value to settings.corsProxy (persisted); tools read settings.corsProxy first and
     // fall back to this config default. Keep '' so nothing fetches cross-origin unless configured.
     CORS_PROXY: '',
-    DEFAULT_LANG: 'en',
+    // Default UI language. Korean is now the default (store defaults settings.lang
+    // to this, and i18n.getLang() falls back to it when settings.lang is unset).
+    DEFAULT_LANG: 'ko',
+
+    // ---------------------------------------------------------------------------
+    // SHARE — hash fragment key for shareable state links. App.Share.exportLink
+    // builds location + '#' + SHARE_HASH_KEY + '=' + urlSafeBase64(gzip(state));
+    // App.Share.importFromHash checks location.hash for this same '#<key>=' prefix.
+    // Single source of truth so the two halves never drift. NOTE: directory handles
+    // (App.state._dirHandle) are NOT serializable and are NEVER part of share/save.
+    // ---------------------------------------------------------------------------
+    SHARE_HASH_KEY: 's',
 
     // ---------------------------------------------------------------------------
     // WAVE 2 section IMAGE GEN + RECURSIVE SUBTASKS — keyless Pollinations image endpoint

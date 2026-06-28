@@ -114,6 +114,10 @@ window.App = window.App || {};
   // Pan state.
   var _pan = { active: false, lastX: 0, lastY: 0, movedEnough: false, downX: 0, downY: 0 };
 
+  // Attached input files staged for the next Boss/Build dispatch.
+  // Each entry: { name, path:'inbox/'+name, text }. Shared across HUD + board.
+  var _attachments = [];
+
   // ===========================================================================
   // init() — bind everything by SPEC §8 ids, populate selects, refresh.
   // ===========================================================================
@@ -159,6 +163,9 @@ window.App = window.App || {};
       on(boardInput, 'keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); dispatchBoss(boardInput); }
       });
+
+      // Attach-input controls (📎) next to the HUD + board dispatch fields.
+      ensureAttachControls();
 
       // Agent panel
       on($('panel-agent-close'), 'click', function () { UI.closeAgentPanel(); });
@@ -216,6 +223,10 @@ window.App = window.App || {};
       // Logo glyph in the HUD.
       drawLogo();
 
+      // Accessibility: mark the live-updating regions (activity log + board
+      // columns) as polite live regions so screen readers announce changes.
+      ensureLiveRegions();
+
       // i18n: translate the static shell now that DOM + config are ready.
       applyI18n(document);
 
@@ -237,6 +248,19 @@ window.App = window.App || {};
     if (!modal) return;
     var scrim = modal.querySelector('.modal-scrim');
     on(scrim, 'click', function () { hide(modal); if (typeof after === 'function') after(); });
+  }
+
+  // Accessibility: tag the activity log + task-board column bodies as polite
+  // live regions so assistive tech announces new lines/cards as they stream in.
+  // Defensive: each node is optional; aria-atomic stays off so only deltas read.
+  function ensureLiveRegions() {
+    ['log-body', 'board-col-queued', 'board-col-running', 'board-col-done'].forEach(function (id) {
+      var n = $(id);
+      if (n && !n.getAttribute('aria-live')) {
+        n.setAttribute('aria-live', 'polite');
+        n.setAttribute('aria-atomic', 'false');
+      }
+    });
   }
 
   // ===========================================================================
@@ -622,6 +646,121 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // ATTACH INPUT FILES (📎) — stage files for the next Boss/Build dispatch.
+  // The picker reads each File as text into _attachments=[{name,path,text}];
+  // dispatchBoss/dispatchBuild pass them as opts.attachments and clear after.
+  // A small chip shows the count; "clear" empties the queue. Defensive: missing
+  // anchors no-op. Injected once into the HUD center + board dispatch rows.
+  // ===========================================================================
+  function ensureAttachControls() {
+    if (typeof document === 'undefined') return;
+    // HUD center (next to the dispatch button).
+    buildAttachUnit($('hud-center'), $('hud-task-dispatch'), 'hud');
+    // Board dispatch row (next to the DISPATCH button).
+    buildAttachUnit($('board-dispatch-host') || boardDispatchHost(), $('board-send'), 'board');
+    refreshAttachChips();
+  }
+
+  // The board dispatch row has no id in shell.html — find it via the send button.
+  function boardDispatchHost() {
+    var send = $('board-send');
+    return (send && send.parentNode) ? send.parentNode : null;
+  }
+
+  // Create a 📎 button + a chip (count) and insert them before `beforeNode`
+  // inside `host`. `scope` makes node ids unique (hud / board). Idempotent.
+  function buildAttachUnit(host, beforeNode, scope) {
+    if (!host) return;
+    var btnId = 'attach-btn-' + scope;
+    if ($(btnId)) return; // already injected for this scope
+
+    var btn = el('button', 'btn btn-sq', '📎');
+    btn.type = 'button';
+    btn.id = btnId;
+    btn.title = T('attach.title', 'Attach files for the Boss to read');
+    btn.setAttribute('aria-label', T('attach.title', 'Attach files for the Boss to read'));
+
+    var fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true;
+    fileInput.className = 'hidden';
+    fileInput.id = 'attach-input-' + scope;
+    on(fileInput, 'change', function (e) { readAttachFiles(e); });
+    on(btn, 'click', function () { try { fileInput.value = ''; } catch (e) {} fileInput.click(); });
+
+    // Chip: shows the attached count + a clear (✕) affordance. Hidden when empty.
+    var chip = el('span', 'attach-chip hidden');
+    chip.id = 'attach-chip-' + scope;
+    var chipText = el('span', 'attach-chip-name');
+    chipText.id = 'attach-chip-text-' + scope;
+    var chipClear = el('button', 'attach-chip-x', '✕');
+    chipClear.type = 'button';
+    chipClear.title = T('attach.clear', 'Clear');
+    chipClear.setAttribute('aria-label', T('attach.clear', 'Clear'));
+    on(chipClear, 'click', function () { clearAttachments(); });
+    chip.appendChild(chipText);
+    chip.appendChild(chipClear);
+
+    if (beforeNode && beforeNode.parentNode === host) {
+      host.insertBefore(btn, beforeNode);
+      host.insertBefore(chip, beforeNode);
+    } else {
+      host.appendChild(btn);
+      host.appendChild(chip);
+    }
+  }
+
+  // Read the picked File objects as text into _attachments (de-duped by name).
+  function readAttachFiles(ev) {
+    var files = ev && ev.target && ev.target.files;
+    if (!files || !files.length) return;
+    var pending = files.length;
+    function done() { pending--; if (pending <= 0) refreshAttachChips(); }
+    for (var i = 0; i < files.length; i++) {
+      (function (file) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          var name = String(file.name || 'file.txt');
+          var text = String(reader.result || '');
+          // replace any existing attachment with the same name
+          for (var j = 0; j < _attachments.length; j++) {
+            if (_attachments[j].name === name) { _attachments.splice(j, 1); break; }
+          }
+          _attachments.push({ name: name, path: 'inbox/' + name, text: text });
+          done();
+        };
+        reader.onerror = function () { done(); };
+        try { reader.readAsText(file); } catch (e) { done(); }
+      })(files[i]);
+    }
+  }
+
+  // Update both scope chips to reflect the current _attachments count.
+  function refreshAttachChips() {
+    var n = _attachments.length;
+    ['hud', 'board'].forEach(function (scope) {
+      var chip = $('attach-chip-' + scope);
+      var txt = $('attach-chip-text-' + scope);
+      if (txt) txt.textContent = T('attach.count', n + ' file(s) attached', { count: n });
+      if (chip) { if (n > 0) show(chip); else hide(chip); }
+    });
+  }
+
+  // Empty the staged attachments and refresh the chips.
+  function clearAttachments() {
+    _attachments.length = 0;
+    refreshAttachChips();
+  }
+
+  // Snapshot + clear the staged attachments for one dispatch (returns a copy).
+  function consumeAttachments() {
+    if (!_attachments.length) return null;
+    var out = _attachments.slice();
+    clearAttachments();
+    return out;
+  }
+
+  // ===========================================================================
   // DISPATCH / CHAT input handlers
   // ===========================================================================
   function dispatchBoss(input) {
@@ -631,7 +770,9 @@ window.App = window.App || {};
     input.value = '';
     requestNotifyPermission(); // polite, one-time, on this user gesture
     if (ORCH() && ORCH().runBossTask) {
-      ORCH().runBossTask(text);
+      var atts = consumeAttachments();
+      if (atts) ORCH().runBossTask(text, { attachments: atts });
+      else ORCH().runBossTask(text);
       UI.openTaskBoard(); // surface the board so the user sees the decomposition
     }
   }
@@ -655,7 +796,11 @@ window.App = window.App || {};
     if (board) board.value = '';
     requestNotifyPermission();
     if (ORCH() && ORCH().runBuild) {
-      try { ORCH().runBuild(text); } catch (e) { UI.showError('Build failed to start: ' + (e && e.message)); return; }
+      var atts = consumeAttachments();
+      try {
+        if (atts) ORCH().runBuild(text, { attachments: atts });
+        else ORCH().runBuild(text);
+      } catch (e) { UI.showError('Build failed to start: ' + (e && e.message)); return; }
       UI.openTaskBoard();
     } else {
       UI.showError(T('build.unavailable', 'Build mode is unavailable.'));
@@ -1388,6 +1533,7 @@ window.App = window.App || {};
     ensureLangField();
     highlightSegmented($('set-lang'), 'data-lang', currentLang());
     var ctog = $('set-companion-toggle'); if (ctog) ctog.checked = !!settings.useCompanion;
+    updateCompanionStatus(); // sync the ON/OFF badge with the loaded toggle
     var curl = $('set-companion-url'); if (curl) curl.value = settings.companionUrl || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var dm = $('set-default-model'); if (dm) dm.value = settings.defaultModel || CFG().DEFAULT_MODEL;
     var bm = $('set-boss-model'); if (bm) bm.value = settings.bossModel || CFG().BOSS_MODEL;
@@ -1410,6 +1556,8 @@ window.App = window.App || {};
     ensureAudioFields();
     var sfxSw = $('set-sound'); if (sfxSw) sfxSw.checked = (settings.sound !== false);
     var bgmSw = $('set-bgm'); if (bgmSw) bgmSw.checked = (settings.bgm === true);
+    // Inject (once) the SHARE block (link / state file / preset). App.Share-gated.
+    ensureShareField();
     show($('modal-settings'));
   };
 
@@ -1686,17 +1834,36 @@ window.App = window.App || {};
     if (!anchorField || !anchorField.parentNode) return;
 
     var field = el('label', 'field');
-    field.appendChild(el('span', 'field-label', 'LOCAL COMPANION (SUBSCRIPTION)'));
+    // Label carries an explicit ON/OFF status badge so it is obvious the
+    // companion is OFF by default (and that your API key is used while it is off).
+    var labelRow = el('span', 'field-row');
+    var label = el('span', 'field-label', T('companion.label', 'Mac Companion'));
+    label.style.flex = '1';
+    var statusBadge = el('span', 'companion-pill off');
+    statusBadge.id = 'set-companion-status';
+    statusBadge.setAttribute('aria-live', 'polite');
+    var statusDot = el('span', 'companion-dot');
+    statusDot.setAttribute('aria-hidden', 'true');
+    var statusTxt = el('span', '', T('companion.off', 'Off'));
+    statusTxt.id = 'set-companion-status-text';
+    statusBadge.appendChild(statusDot);
+    statusBadge.appendChild(statusTxt);
+    labelRow.appendChild(label);
+    labelRow.appendChild(statusBadge);
+    field.appendChild(labelRow);
 
     var row = el('span', 'field-row');
     var cb = document.createElement('input');
     cb.id = 'set-companion-toggle';
     cb.type = 'checkbox';
     cb.style.flex = '0 0 auto';
+    cb.setAttribute('aria-label', T('companion.label', 'Mac Companion'));
     var cbHint = el('span', 'field-hint', 'Use your Claude subscription via companion.py (no API key needed)');
     cbHint.style.flex = '1';
     row.appendChild(cb);
     row.appendChild(cbHint);
+    // Live-update the ON/OFF badge as the user flips the toggle.
+    on(cb, 'change', function () { updateCompanionStatus(); });
 
     var urlRow = el('span', 'field-row');
     var url = document.createElement('input');
@@ -1708,7 +1875,8 @@ window.App = window.App || {};
     urlRow.appendChild(url);
 
     var hint = el('span', 'field-hint',
-      'Run companion/companion.py, then enable. Works with the file:// or localhost app (not the https Pages site).');
+      T('companion.hint',
+        'Run the local mac-companion server to read your files and run your tools.'));
 
     field.appendChild(row);
     field.appendChild(urlRow);
@@ -1716,6 +1884,200 @@ window.App = window.App || {};
 
     if (anchorField.nextSibling) anchorField.parentNode.insertBefore(field, anchorField.nextSibling);
     else anchorField.parentNode.appendChild(field);
+  }
+
+  // Reflect the companion checkbox into the ON/OFF status badge (text + class).
+  // OFF (default) makes clear API keys are used; ON means the local server runs.
+  function updateCompanionStatus() {
+    var cb = $('set-companion-toggle');
+    var badge = $('set-companion-status');
+    if (!badge) return;
+    var on_ = !!(cb && cb.checked);
+    var txt = $('set-companion-status-text') || badge;
+    txt.textContent = on_ ? T('companion.on', 'On') : T('companion.off', 'Off');
+    badge.classList.toggle('on', on_);
+    badge.classList.toggle('off', !on_);
+  }
+
+  // ===========================================================================
+  // SHARE block (Settings) — link / state file / preset. Backed by App.Share
+  // (shared contract B). Each control feature-detects its App.Share.* method so
+  // the block degrades gracefully when Share is absent. Injected once, anchored
+  // after the DATA group (#set-clear). Idempotent.
+  // ===========================================================================
+  function ensureShareField() {
+    if ($('set-share-group')) return; // already injected
+    if (!App.Share) return;           // nothing to wire — skip the block entirely
+    var anchor = $('set-clear') || $('set-import') || $('set-export');
+    if (!anchor || typeof document === 'undefined') return;
+    var anchorField = anchor;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    if (!anchorField || !anchorField.parentNode) return;
+
+    var group = el('div', 'field');
+    group.id = 'set-share-group';
+    var label = el('span', 'field-label');
+    label.setAttribute('data-i18n', 'share.title');
+    label.textContent = T('share.title', 'SHARE');
+    group.appendChild(label);
+
+    var row = el('div', 'btn-row');
+
+    // Copy shareable link -> clipboard.
+    if (typeof App.Share.exportLink === 'function') {
+      var copyBtn = el('button', 'btn', '🔗 ' + T('share.copyLink', 'Copy Link'));
+      copyBtn.type = 'button';
+      copyBtn.setAttribute('aria-label', T('share.copyLink', 'Copy Link'));
+      on(copyBtn, 'click', function () { shareCopyLink(); });
+      row.appendChild(copyBtn);
+    }
+
+    // Load state from a pasted link.
+    if (typeof App.Share.importFromHash === 'function') {
+      var fromLinkBtn = el('button', 'btn', '📥 ' + T('share.fromLink', 'Load from Link'));
+      fromLinkBtn.type = 'button';
+      fromLinkBtn.setAttribute('aria-label', T('share.fromLink', 'Load from Link'));
+      on(fromLinkBtn, 'click', function () { shareLoadFromLink(); });
+      row.appendChild(fromLinkBtn);
+    }
+
+    // Download / load full state JSON file.
+    if (typeof App.Share.downloadStateFile === 'function') {
+      var dlBtn = el('button', 'btn', '⤓ ' + T('share.download', 'Download State'));
+      dlBtn.type = 'button';
+      dlBtn.setAttribute('aria-label', T('share.download', 'Download State'));
+      on(dlBtn, 'click', function () { try { App.Share.downloadStateFile(); } catch (e) { UI.showError('Download failed: ' + (e && e.message)); } });
+      row.appendChild(dlBtn);
+    }
+
+    if (typeof App.Share.loadStateFile === 'function') {
+      var loadBtn = el('button', 'btn', '⤒ ' + T('share.load', 'Load State File'));
+      loadBtn.type = 'button';
+      loadBtn.setAttribute('aria-label', T('share.load', 'Load State File'));
+      var loadInput = document.createElement('input');
+      loadInput.type = 'file';
+      loadInput.accept = 'application/json,.json';
+      loadInput.className = 'hidden';
+      loadInput.id = 'set-share-load-file';
+      on(loadInput, 'change', function (e) { shareLoadStateFile(e); });
+      on(loadBtn, 'click', function () { try { loadInput.value = ''; } catch (e) {} loadInput.click(); });
+      row.appendChild(loadBtn);
+      row.appendChild(loadInput);
+    }
+
+    // Export / import a lightweight OFFICE preset (no secrets).
+    if (typeof App.Share.exportPreset === 'function') {
+      var expPresetBtn = el('button', 'btn', '📤 ' + T('share.preset.export', 'Export Preset'));
+      expPresetBtn.type = 'button';
+      expPresetBtn.setAttribute('aria-label', T('share.preset.export', 'Export Preset'));
+      on(expPresetBtn, 'click', function () { try { App.Share.exportPreset(); } catch (e) { UI.showError('Export failed: ' + (e && e.message)); } });
+      row.appendChild(expPresetBtn);
+    }
+
+    if (typeof App.Share.importPreset === 'function') {
+      var impPresetBtn = el('button', 'btn', '📦 ' + T('share.preset.import', 'Import Preset'));
+      impPresetBtn.type = 'button';
+      impPresetBtn.setAttribute('aria-label', T('share.preset.import', 'Import Preset'));
+      var presetInput = document.createElement('input');
+      presetInput.type = 'file';
+      presetInput.accept = 'application/json,.json';
+      presetInput.className = 'hidden';
+      presetInput.id = 'set-share-preset-file';
+      on(presetInput, 'change', function (e) { sharePresetImport(e); });
+      on(impPresetBtn, 'click', function () { try { presetInput.value = ''; } catch (e) {} presetInput.click(); });
+      row.appendChild(impPresetBtn);
+      row.appendChild(presetInput);
+    }
+
+    group.appendChild(row);
+
+    if (anchorField.nextSibling) anchorField.parentNode.insertBefore(group, anchorField.nextSibling);
+    else anchorField.parentNode.appendChild(group);
+  }
+
+  // Build the share URL and copy it to the clipboard (with a manual fallback).
+  function shareCopyLink() {
+    if (!(App.Share && typeof App.Share.exportLink === 'function')) return;
+    var link = '';
+    try { link = App.Share.exportLink(); } catch (e) { UI.showError('Link failed: ' + (e && e.message)); return; }
+    if (!link) { UI.showError('Link failed'); return; }
+    function ok() { UI.toast(T('share.copied', 'Link copied to clipboard.')); }
+    try {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(ok, function () { sharePromptLink(link); });
+        return;
+      }
+    } catch (e) {}
+    sharePromptLink(link);
+  }
+
+  // Clipboard unavailable -> show the link so the user can copy it manually.
+  function sharePromptLink(link) {
+    try {
+      if (typeof window !== 'undefined' && window.prompt) {
+        window.prompt(T('share.openLink', 'Open Link'), link);
+        return;
+      }
+    } catch (e) {}
+    UI.toast(link);
+  }
+
+  // Prompt for a shareable link, set the hash, and load via App.Share.importFromHash.
+  function shareLoadFromLink() {
+    if (!(App.Share && typeof App.Share.importFromHash === 'function')) return;
+    var link = '';
+    try {
+      if (typeof window !== 'undefined' && window.prompt) {
+        link = window.prompt(T('share.fromLink', 'Load from Link'), '');
+      }
+    } catch (e) {}
+    if (link == null) return; // cancelled
+    link = String(link).trim();
+    if (!link) return;
+    // Accept a full URL or a bare '#s=...' / 's=...' fragment.
+    var hash = '';
+    var hi = link.indexOf('#');
+    if (hi >= 0) hash = link.slice(hi);
+    else if (/^s=/.test(link)) hash = '#' + link;
+    else hash = link.charAt(0) === '#' ? link : ('#' + link);
+    try { if (typeof location !== 'undefined') location.hash = hash; } catch (e) {}
+    var p;
+    try { p = App.Share.importFromHash(); } catch (e) { UI.showError('Load failed: ' + (e && e.message)); return; }
+    if (!p || typeof p.then !== 'function') { afterShareLoad(!!p); return; }
+    p.then(afterShareLoad).catch(function (e) { UI.showError('Load failed: ' + (e && e.message)); });
+  }
+
+  function afterShareLoad(ok) {
+    if (ok) { UI.toast(T('share.loaded', 'State loaded.')); UI.refresh(); hide($('modal-settings')); }
+    else UI.showError('Load failed: invalid link');
+  }
+
+  // Load a full state .json through App.Share.loadStateFile.
+  function shareLoadStateFile(ev) {
+    var file = ev && ev.target && ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if (!(App.Share && typeof App.Share.loadStateFile === 'function')) return;
+    var p;
+    try { p = App.Share.loadStateFile(file); } catch (e) { UI.showError('Load failed: ' + (e && e.message)); return; }
+    if (!p || typeof p.then !== 'function') { afterShareLoad(!!p); return; }
+    p.then(afterShareLoad).catch(function (e) { UI.showError('Load failed: ' + (e && e.message)); });
+  }
+
+  // Apply an OFFICE preset .json through App.Share.importPreset.
+  function sharePresetImport(ev) {
+    var file = ev && ev.target && ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if (!(App.Share && typeof App.Share.importPreset === 'function')) return;
+    var p;
+    try { p = App.Share.importPreset(file); } catch (e) { UI.showError('Import failed: ' + (e && e.message)); return; }
+    function done(ok) {
+      if (ok) { UI.toast(T('share.loaded', 'State loaded.')); UI.refresh(); hide($('modal-settings')); }
+      else UI.showError('Import failed: invalid preset');
+    }
+    if (!p || typeof p.then !== 'function') { done(!!p); return; }
+    p.then(done).catch(function (e) { UI.showError('Import failed: ' + (e && e.message)); });
   }
 
   // Inject (once) a LANGUAGE segmented EN/KO toggle into Settings. Switching it
@@ -3612,8 +3974,18 @@ window.App = window.App || {};
     on(zipInput, 'change', function (e) { importZipFile(e); });
     on(zipInBtn, 'click', function () { try { zipInput.value = ''; } catch (e) {} zipInput.click(); });
 
+    // SAVE TO FOLDER (writes every workspace file to a real folder via the
+    // File System Access API; on Safari/Firefox this falls back to a ZIP).
+    // Picking a Dropbox/iCloud-synced folder = effortless cloud backup.
+    var saveFolderBtn = el('button', 'btn', '💾 ' + T('files.saveFolder', 'Save to Folder'));
+    saveFolderBtn.type = 'button';
+    saveFolderBtn.id = 'files-save-folder';
+    saveFolderBtn.setAttribute('aria-label', T('files.saveFolder', 'Save to Folder'));
+    saveFolderBtn.title = T('files.saveFolder.hint', 'Write every workspace file to a folder on your computer.');
+    on(saveFolderBtn, 'click', function () { saveFilesToFolder(); });
+
     bar.appendChild(addBtn); bar.appendChild(runBtn); bar.appendChild(zipBtn); bar.appendChild(ghBtn);
-    bar.appendChild(folderBtn); bar.appendChild(zipInBtn);
+    bar.appendChild(folderBtn); bar.appendChild(zipInBtn); bar.appendChild(saveFolderBtn);
     bar.appendChild(folderInput); bar.appendChild(zipInput);
     m.body.appendChild(bar);
 
@@ -4359,6 +4731,50 @@ window.App = window.App || {};
   // keep folder separators for zip paths (don't collapse '/').
   function safeZipPath(p) {
     return String(p || 'file.txt').replace(/[\\:*?"<>|]+/g, '_').replace(/^\/+/, '').slice(0, 240) || 'file.txt';
+  }
+
+  // ----- SAVE TO FOLDER (File System Access API; ZIP fallback) -----------------
+  // Delegates to App.Workspace.saveToDirectory() (shared contract A). On Chromium
+  // it prompts for a real folder and writes every workspace file there; on
+  // Safari/Firefox it downloads a ZIP. Never throws; toasts the outcome.
+  function saveFilesToFolder() {
+    var ws = WS();
+    if (!ws || typeof ws.saveToDirectory !== 'function') {
+      UI.showError(T('files.saveUnsupported',
+        'Folder save is not supported in this browser - a ZIP was downloaded instead.'));
+      // best-effort fallback so the user still gets their files
+      try { downloadProjectZip(); } catch (e) {}
+      return;
+    }
+    if (fileCount() === 0) { UI.toast(T('files.noneZip', 'No files to download')); return; }
+    var p;
+    try { p = ws.saveToDirectory(); } catch (e) {
+      UI.showError('Save failed: ' + (e && e.message)); return;
+    }
+    if (!p || typeof p.then !== 'function') { UI.showError('Save failed to start'); return; }
+    p.then(function (res) {
+      res = res || {};
+      if (res.ok === false) {
+        if (res.error === 'cancelled') return; // user dismissed the picker — stay quiet
+        UI.showError('Save failed: ' + (res.error || 'unknown error'));
+        return;
+      }
+      if (res.fallback) {
+        // ZIP path (Safari/Firefox) — explain what happened.
+        UI.toast(T('files.saveUnsupported',
+          'Folder save is not supported in this browser - a ZIP was downloaded instead.'));
+        return;
+      }
+      var n = (res.count != null) ? res.count : fileCount();
+      var dir = res.dir || '';
+      UI.toast(T('files.saved', 'Saved ' + n + ' file(s) to ' + dir + '.',
+        { count: n, dir: dir }));
+      // Cloud-backup hint: a synced folder turns this into an off-device backup.
+      UI.toast(T('files.saveFolder.hint',
+        'Write every workspace file to a folder on your computer.'));
+    }).catch(function (e) {
+      UI.showError('Save failed: ' + (e && e.message));
+    });
   }
 
   // ----- GITHUB PUSH -----------------------------------------------------------

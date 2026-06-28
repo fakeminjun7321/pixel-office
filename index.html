@@ -1409,11 +1409,124 @@ select option{ background:var(--panel); color:var(--text); }
 .whiteboard-host{ min-height:40vh; max-height:64vh; overflow:auto; }
 .whiteboard-host canvas{ display:block; max-width:100%; image-rendering:auto; }
 
-/* reduced motion: calm all the loops */
+/* ===========================================================================
+   PWA / SHARE / ATTACH / COMPANION — dynamically-created controls
+   (App.UI builds these at runtime; App.Workspace.saveToDirectory + App.Share.*).
+   Neon theme, consistent with .btn / .hud-badge / .switch conventions above.
+   =========================================================================== */
+
+/* ----- attachment chips (📎 — staged input files before dispatch/build) ----- */
+.attach-chips{
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+  margin:8px 0 2px;
+}
+.attach-chips:empty{ display:none; }
+.attach-chip{
+  display:inline-flex; align-items:center; gap:6px; max-width:100%;
+  padding:3px 6px 3px 9px;
+  font-size:10.5px; font-weight:700; letter-spacing:.2px; color:var(--text);
+  background:rgba(155,92,255,.10);
+  border:1px solid rgba(155,92,255,.45); border-radius:99px;
+  box-shadow:0 0 8px rgba(155,92,255,.18);
+}
+.attach-chip .attach-chip-name{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.attach-chip .attach-chip-x{
+  flex:0 0 auto; cursor:pointer; line-height:1;
+  width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center;
+  font-size:11px; color:var(--text-dim);
+  background:transparent; border:none; border-radius:50%;
+  transition:color .12s, background .12s;
+}
+.attach-chip .attach-chip-x:hover{ color:var(--red); background:rgba(255,77,109,.14); }
+
+/* the 📎 trigger button can flag "n attached" via .has-attach + a count badge */
+.btn.has-attach{ color:var(--purple); border-color:rgba(155,92,255,.5); }
+.btn.has-attach:hover{ background:var(--purple); color:#10031f; border-color:var(--purple);
+  box-shadow:0 0 12px rgba(155,92,255,.4); }
+.attach-count{
+  font-size:9px; font-weight:800; line-height:1;
+  min-width:15px; padding:2px 4px; border-radius:8px;
+  color:#10031f; background:var(--purple);
+  box-shadow:0 0 8px rgba(155,92,255,.5);
+}
+
+/* ----- save-to-folder button (💾 in the Files panel) ----- */
+.btn-save-folder{ color:var(--lime); border-color:rgba(93,255,155,.5); }
+.btn-save-folder:hover{ background:var(--lime); color:#031a0d; border-color:var(--lime); box-shadow:var(--glow-lime); }
+
+/* ----- Share section (copy link / open / from-link / download / load / preset) ----- */
+.share-section{
+  margin-top:6px; padding:10px 12px;
+  background:var(--field); border:1px solid var(--divider); border-radius:6px;
+}
+.share-title{
+  font-size:10px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase;
+  color:var(--text-dim); margin-bottom:8px;
+}
+.share-row{ display:flex; flex-wrap:wrap; gap:8px; }
+.share-row + .share-row{ margin-top:8px; }
+.share-hint{ font-size:10px; color:var(--text-faint); line-height:1.45; margin-top:8px; }
+.share-link-field{
+  width:100%; margin-top:8px;
+  background:var(--void); color:var(--cyan);
+  border:1px solid var(--panel-edge); border-radius:5px;
+  padding:7px 9px; font-family:var(--mono); font-size:11px; line-height:1.4;
+  word-break:break-all; overflow:auto; max-height:64px;
+}
+.share-link-field:focus{ outline:none; border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); }
+/* primary "copy link" button reuses .btn .btn-primary; .copied flashes lime */
+.btn.copied{ color:var(--lime) !important; border-color:var(--lime) !important; box-shadow:var(--glow-lime) !important; }
+
+/* ----- companion status pill (local mac-companion on/off) ----- */
+.companion-pill{
+  display:inline-flex; align-items:center; gap:7px;
+  padding:4px 10px;
+  font-size:10px; font-weight:800; letter-spacing:.6px; text-transform:uppercase;
+  border-radius:99px; user-select:none;
+  color:var(--text-dim);
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--divider);
+  transition:color .15s, border-color .15s, box-shadow .15s, background .15s;
+}
+.companion-pill .companion-dot{
+  width:8px; height:8px; border-radius:50%; flex:0 0 auto;
+  background:var(--text-faint); box-shadow:none;
+  transition:background .15s, box-shadow .15s;
+}
+.companion-pill.on{
+  color:var(--lime); border-color:rgba(93,255,155,.5);
+  background:rgba(93,255,155,.08); box-shadow:0 0 10px rgba(93,255,155,.18);
+}
+.companion-pill.on .companion-dot{ background:var(--lime); box-shadow:0 0 8px var(--lime); }
+.companion-pill.off{ color:var(--text-faint); }
+.companion-hint{ font-size:10px; color:var(--text-faint); line-height:1.45; margin-top:6px; }
+
+/* ===========================================================================
+   REDUCED MOTION — calm every DOM loop/transition when the OS asks for it.
+   App.main also sets App.state.reduceMotion as a JS flag; this block handles
+   all CSS-driven animation. (Canvas draw is governed separately in JS.)
+   =========================================================================== */
 @media (prefers-reduced-motion:reduce){
+  /* kill keyframe loops (HUD sweep, flicker, pulse, shimmer, blink, pops, toasts) */
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,
-  .toast-item, .modal-card, .modal-scrim{ animation:none !important; }
-  .agent-row .ar-xp-fill, .panel-level .pl-fill{ transition:none !important; }
+  .toast-item, .toast-item.leaving, .modal-card, .modal-scrim,
+  .tx-cursor::after{
+    animation:none !important;
+  }
+  /* relax incidental transitions so panels/chips/pills just appear, not glide */
+  .agent-row, .agent-row .ar-xp-fill, .panel-level .pl-fill,
+  .palette-item, .preset-card, .ar-item, .swatch,
+  .btn, .panel-x, .switch, .switch .switch-knob,
+  .companion-pill, .companion-pill .companion-dot,
+  .attach-chip .attach-chip-x, .mood-fill, .rail-scrim,
+  #agent-list, #log{
+    transition:none !important;
+  }
+  /* don't translate on hover/active (no motion cues) */
+  .agent-row:hover, .palette-item:hover, .preset-card:hover,
+  .ar-item:hover, .swatch:hover, .btn:active{
+    transform:none !important;
+  }
 }
 </style>
 </head>
@@ -1431,6 +1544,20 @@ select option{ background:var(--panel); color:var(--text); }
     - Selects/segmented pickers ship EMPTY; App.UI fills them from config at init.
   ===========================================================================
 -->
+
+<!-- =======================================================================
+     PWA META — installable / standalone hints. The real <head> is emitted by
+     build.sh (charset/viewport/title/style); these tags live at the top of the
+     inlined body and are still honored by browsers (theme-color tints the OS
+     chrome; apple-* tags enable a standalone iOS web-app). The Web App Manifest
+     itself is injected at runtime by App.main (link rel="manifest", blob URL).
+     ======================================================================= -->
+<meta name="theme-color" content="#070912">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NEON//WORKS">
+<meta name="mobile-web-app-capable" content="yes">
 
 <!-- =======================================================================
      #app — root flex container: the canvas world + all DOM overlays on top.
@@ -2446,7 +2573,11 @@ window.App = window.App || {};
     // API
     API_URL: 'https://api.anthropic.com/v1/messages',
     OPENAI_URL: 'https://api.openai.com/v1/chat/completions',   // v2: OpenAI chat-completions endpoint
-    COMPANION_URL: 'http://localhost:8787/v1/messages',         // v2: local subscription proxy (companion.py)
+    // v2: local subscription proxy (companion.py). The companion is OPT-IN and OFF
+    // by default (store defaultSettings().useCompanion === false), so a fresh or
+    // migrated company talks to the cloud API directly and never depends on a local
+    // server. The user explicitly enables it via the Settings companion toggle.
+    COMPANION_URL: 'http://localhost:8787/v1/messages',
     API_VERSION: '2023-06-01',
     DEFAULT_MODEL: 'claude-sonnet-4-6',          // worker default
     BOSS_MODEL:    'claude-opus-4-8',            // boss default
@@ -2521,7 +2652,18 @@ window.App = window.App || {};
     // user-facing value to settings.corsProxy (persisted); tools read settings.corsProxy first and
     // fall back to this config default. Keep '' so nothing fetches cross-origin unless configured.
     CORS_PROXY: '',
-    DEFAULT_LANG: 'en',
+    // Default UI language. Korean is now the default (store defaults settings.lang
+    // to this, and i18n.getLang() falls back to it when settings.lang is unset).
+    DEFAULT_LANG: 'ko',
+
+    // ---------------------------------------------------------------------------
+    // SHARE — hash fragment key for shareable state links. App.Share.exportLink
+    // builds location + '#' + SHARE_HASH_KEY + '=' + urlSafeBase64(gzip(state));
+    // App.Share.importFromHash checks location.hash for this same '#<key>=' prefix.
+    // Single source of truth so the two halves never drift. NOTE: directory handles
+    // (App.state._dirHandle) are NOT serializable and are NEVER part of share/save.
+    // ---------------------------------------------------------------------------
+    SHARE_HASH_KEY: 's',
 
     // ---------------------------------------------------------------------------
     // WAVE 2 section IMAGE GEN + RECURSIVE SUBTASKS — keyless Pollinations image endpoint
@@ -3037,6 +3179,15 @@ window.App = window.App || {};
       'set.boss': 'BOSS MODEL',
       'set.websearch': 'WEB SEARCH',
       'set.language': 'LANGUAGE',
+      'set.audio': 'AUDIO',
+      'set.sound': 'SOUND EFFECTS',
+      'set.bgm': 'AMBIENT MUSIC',
+      'set.tools': 'TOOLS',
+      'set.toolsEnabled': 'ENABLE TOOLS',
+      'set.corsProxy': 'CORS PROXY',
+      'set.httpAllowlist': 'HTTP ALLOWLIST',
+      'set.toolGhPush': 'GH PUSH',
+      'share.loaded': 'State loaded.',
       'set.data': 'DATA',
       'set.save': 'SAVE',
       'set.apikey.ph': 'sk-ant-...  (stored locally only)',
@@ -3063,6 +3214,62 @@ window.App = window.App || {};
 
       // --- onboarding / tour ---
       'tour.help': 'Help / Tour',
+      'tour.skip': 'Skip',
+      'tour.next': 'Next',
+      'tour.done': 'Done',
+      'tour.settings.title': 'Set your API key',
+      'tour.settings.body': 'Open Settings to add your Anthropic or OpenAI API key. Agents need it to think.',
+      'tour.dispatch.title': 'Dispatch a goal',
+      'tour.dispatch.body': 'Type a goal here and hit Dispatch. The Boss breaks it into subtasks for the crew.',
+      'tour.watch.title': 'Watch the agents',
+      'tour.watch.body': 'Workers walk the office, collaborate, take breaks, and stream their results live.',
+      'tour.artifacts.title': 'Collect artifacts',
+      'tour.artifacts.body': 'Finished outputs land in Artifacts with a formatted preview.',
+      'tour.sessions.title': 'Save sessions',
+      'tour.sessions.body': 'Save and reload entire company states from Sessions whenever you like.',
+
+      // --- extra hud buttons (referenced by shell) ---
+      'hud.build': 'Build',
+      'hud.files': 'Files',
+      'hud.run': 'Run',
+      'hud.metrics': 'Metrics',
+      'hud.graph': 'Graph',
+      'hud.whiteboard': 'Board',
+      'hud.shop': 'Shop',
+
+      // --- ledger / add-agent / github (referenced by shell) ---
+      'ledger.title': 'TASK LEDGER',
+      'add.title': '+ NEW AGENT',
+      'set.github': 'GITHUB (PUSH PROJECT)',
+
+      // --- files panel / save-to-folder (contract F) ---
+      'files.saveFolder': 'Save to Folder',
+      'files.saveFolder.hint': 'Write every workspace file to a folder on your computer.',
+      'files.saved': 'Saved {count} file(s) to {dir}.',
+      'files.saveUnsupported': 'Folder save is not supported in this browser - a ZIP was downloaded instead.',
+
+      // --- attachments (contract F) ---
+      'attach.btn': 'Attach',
+      'attach.title': 'Attach files for the Boss to read',
+      'attach.clear': 'Clear',
+      'attach.count': '{count} file(s) attached',
+
+      // --- share / export (contract F) ---
+      'share.title': 'SHARE',
+      'share.copyLink': 'Copy Link',
+      'share.copied': 'Link copied to clipboard.',
+      'share.openLink': 'Open Link',
+      'share.fromLink': 'Load from Link',
+      'share.download': 'Download State',
+      'share.load': 'Load State File',
+      'share.preset.export': 'Export Preset',
+      'share.preset.import': 'Import Preset',
+
+      // --- companion server (contract F) ---
+      'companion.label': 'Mac Companion',
+      'companion.on': 'On',
+      'companion.off': 'Off',
+      'companion.hint': 'Run the local mac-companion server to read your files and run your tools.',
 
       // --- common state words ---
       'state.queued': 'queued',
@@ -3147,6 +3354,15 @@ window.App = window.App || {};
       'set.boss': '보스 모델',
       'set.websearch': '웹 검색',
       'set.language': '언어',
+      'set.audio': '오디오',
+      'set.sound': '효과음',
+      'set.bgm': '배경음악',
+      'set.tools': '도구',
+      'set.toolsEnabled': '도구 사용',
+      'set.corsProxy': 'CORS 프록시',
+      'set.httpAllowlist': 'HTTP 허용목록',
+      'set.toolGhPush': 'GitHub 푸시',
+      'share.loaded': '상태를 불러왔습니다.',
       'set.data': '데이터',
       'set.save': '저장',
       'set.apikey.ph': 'sk-ant-...  (로컬에만 저장됨)',
@@ -3169,6 +3385,56 @@ window.App = window.App || {};
       'graph.empty': '아직 그릴 활성 작업이 없습니다.',
 
       'tour.help': '도움말 / 둘러보기',
+      'tour.skip': '건너뛰기',
+      'tour.next': '다음',
+      'tour.done': '완료',
+      'tour.settings.title': 'API 키 설정',
+      'tour.settings.body': '설정을 열어 Anthropic 또는 OpenAI API 키를 추가하세요. 에이전트가 사고하려면 키가 필요합니다.',
+      'tour.dispatch.title': '목표 지시',
+      'tour.dispatch.body': '여기에 목표를 입력하고 지시를 누르세요. 보스가 이를 하위 작업으로 나눠 직원에게 맡깁니다.',
+      'tour.watch.title': '에이전트 관찰',
+      'tour.watch.body': '직원들이 사무실을 돌아다니며 협업하고, 휴식하고, 결과를 실시간으로 보여줍니다.',
+      'tour.artifacts.title': '산출물 모으기',
+      'tour.artifacts.body': '완성된 결과물이 산출물에 정리된 미리보기와 함께 쌓입니다.',
+      'tour.sessions.title': '세션 저장',
+      'tour.sessions.body': '세션에서 회사 전체 상태를 언제든 저장하고 다시 불러올 수 있습니다.',
+
+      'hud.build': '빌드',
+      'hud.files': '파일',
+      'hud.run': '실행',
+      'hud.metrics': '지표',
+      'hud.graph': '그래프',
+      'hud.whiteboard': '보드',
+      'hud.shop': '상점',
+
+      'ledger.title': '작업 원장',
+      'add.title': '+ 새 에이전트',
+      'set.github': 'GITHUB (프로젝트 푸시)',
+
+      'files.saveFolder': '폴더에 저장',
+      'files.saveFolder.hint': '모든 작업 공간 파일을 내 컴퓨터의 폴더에 저장합니다.',
+      'files.saved': '{count}개 파일을 {dir}에 저장했습니다.',
+      'files.saveUnsupported': '이 브라우저에서는 폴더 저장을 지원하지 않아 대신 ZIP을 내려받았습니다.',
+
+      'attach.btn': '첨부',
+      'attach.title': '보스가 읽을 파일 첨부',
+      'attach.clear': '지우기',
+      'attach.count': '{count}개 파일 첨부됨',
+
+      'share.title': '공유',
+      'share.copyLink': '링크 복사',
+      'share.copied': '링크를 클립보드에 복사했습니다.',
+      'share.openLink': '링크 열기',
+      'share.fromLink': '링크에서 불러오기',
+      'share.download': '상태 내려받기',
+      'share.load': '상태 파일 불러오기',
+      'share.preset.export': '프리셋 내보내기',
+      'share.preset.import': '프리셋 가져오기',
+
+      'companion.label': '맥 컴패니언',
+      'companion.on': '켜짐',
+      'companion.off': '꺼짐',
+      'companion.hint': '로컬 mac-companion 서버를 실행하면 내 파일을 읽고 내 도구를 실행할 수 있습니다.',
 
       'state.queued': '대기',
       'state.running': '진행 중',
@@ -6212,6 +6478,193 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // FILE SYSTEM ACCESS -- saveToDirectory(opts?) / syncToDirectory()
+  //   Write the WHOLE workspace to a real on-disk folder via the File System
+  //   Access API (Chromium). When showDirectoryPicker is ABSENT (Safari/Firefox)
+  //   fall back to the existing buildZip() download. PURE LOGIC -- no DOM/UI, no
+  //   toasts; returns a status object. NEVER throws; on user-cancel resolves
+  //   {ok:false, error:'cancelled'}.
+  //
+  //   The chosen directory handle is retained at App.state._dirHandle (IN MEMORY
+  //   ONLY -- handles are NOT JSON-serializable; never persist them).
+  // ===========================================================================
+
+  // Trigger a browser download of a Blob with a given filename. Best-effort and
+  // headless-safe (no-op when document/URL are unavailable). Never throws.
+  function triggerDownload(blob, filename) {
+    try {
+      if (!blob || typeof document === 'undefined' || typeof URL === 'undefined' ||
+          typeof URL.createObjectURL !== 'function') {
+        return false;
+      }
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'workspace.zip';
+      if (document.body && document.body.appendChild) document.body.appendChild(a);
+      a.click();
+      if (a.parentNode) a.parentNode.removeChild(a);
+      // revoke after a tick so the click had time to start the download
+      setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ZIP fallback path used when the File System Access API is unavailable.
+  // Resolves {ok:true, fallback:true, dir:'(zip download)', count:<n>}.
+  function zipFallback() {
+    return new Promise(function (resolve) {
+      try {
+        var count = 0;
+        try { count = list().length; } catch (e0) {}
+        var blob = buildZip();
+        triggerDownload(blob, 'neonworks-workspace.zip');
+        resolve({ ok: true, fallback: true, dir: '(zip download)', count: count });
+      } catch (e) {
+        resolve({ ok: false, fallback: true, dir: '(zip download)', count: 0, error: (e && e.message) ? e.message : 'zip failed' });
+      }
+    });
+  }
+
+  // Resolve (creating as needed) the nested subdirectory handle for a file path,
+  // returning the deepest directory handle so the caller can create the file in
+  // it. Splits the normalized path on '/'; the LAST segment is the file name.
+  //   -> Promise<{ dirHandle, fileName } | null>  (null on any failure)
+  function resolveFileDir(rootHandle, normPath) {
+    return new Promise(function (resolve) {
+      try {
+        var segs = String(normPath || '').split('/');
+        var fileName = segs.pop();
+        if (!fileName) return resolve(null);
+        var dirs = [];
+        for (var i = 0; i < segs.length; i++) {
+          if (segs[i]) dirs.push(segs[i]);
+        }
+        function descend(handle, idx) {
+          if (idx >= dirs.length) {
+            return resolve({ dirHandle: handle, fileName: fileName });
+          }
+          handle.getDirectoryHandle(dirs[idx], { create: true }).then(function (sub) {
+            descend(sub, idx + 1);
+          }).catch(function () { resolve(null); });
+        }
+        descend(rootHandle, 0);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  // Write one file's content (UTF-8) into rootHandle at normPath, creating any
+  // nested subdirectories. Resolves true on success, false on failure (never
+  // throws / never rejects).
+  function writeOneFile(rootHandle, normPath, content) {
+    return new Promise(function (resolve) {
+      resolveFileDir(rootHandle, normPath).then(function (loc) {
+        if (!loc) return resolve(false);
+        loc.dirHandle.getFileHandle(loc.fileName, { create: true }).then(function (fileHandle) {
+          fileHandle.createWritable().then(function (writable) {
+            // write UTF-8 bytes explicitly so non-ASCII (Korean etc.) is exact
+            var data;
+            try { data = utf8Bytes(content); } catch (eb) { data = String(content == null ? '' : content); }
+            writable.write(data).then(function () {
+              writable.close().then(function () { resolve(true); })
+                .catch(function () { resolve(false); });
+            }).catch(function () {
+              try { writable.close().catch(function () {}); } catch (ec) {}
+              resolve(false);
+            });
+          }).catch(function () { resolve(false); });
+        }).catch(function () { resolve(false); });
+      }).catch(function () { resolve(false); });
+    });
+  }
+
+  // Write EVERY workspace file into the given directory handle. Resolves the
+  // number of files successfully written. Sequential (bounded; avoids hammering
+  // the disk with hundreds of parallel writables). Never throws.
+  function writeAllTo(rootHandle) {
+    return new Promise(function (resolve) {
+      try {
+        var items = list();
+        var written = 0;
+        function next(idx) {
+          if (idx >= items.length) return resolve(written);
+          writeOneFile(rootHandle, items[idx].path, items[idx].content).then(function (ok) {
+            if (ok) written++;
+            next(idx + 1);
+          });
+        }
+        next(0);
+      } catch (e) {
+        resolve(0);
+      }
+    });
+  }
+
+  function saveToDirectory(opts) {
+    return new Promise(function (resolve) {
+      try {
+        var o = opts || {};
+        // No File System Access API (Safari/Firefox) -> ZIP download fallback.
+        if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
+          return zipFallback().then(resolve);
+        }
+        var pickerOpts = { mode: 'readwrite' };
+        if (o.id) pickerOpts.id = String(o.id);
+        if (o.startIn) pickerOpts.startIn = o.startIn;
+        var picked;
+        try {
+          picked = window.showDirectoryPicker(pickerOpts);
+        } catch (eSync) {
+          // some implementations throw synchronously on bad opts -> retry bare
+          try { picked = window.showDirectoryPicker(); }
+          catch (eSync2) { return resolve({ ok: false, error: 'cancelled' }); }
+        }
+        Promise.resolve(picked).then(function (dirHandle) {
+          if (!dirHandle) return resolve({ ok: false, error: 'cancelled' });
+          // retain IN MEMORY only (handles are not serializable; never persist)
+          try { if (App.state && typeof App.state === 'object') App.state._dirHandle = dirHandle; } catch (eR) {}
+          writeAllTo(dirHandle).then(function (count) {
+            var name = '';
+            try { name = dirHandle.name || ''; } catch (eN) {}
+            resolve({ ok: true, dir: name || 'folder', count: count, fallback: false });
+          }).catch(function (eW) {
+            resolve({ ok: false, error: (eW && eW.message) ? eW.message : 'write failed' });
+          });
+        }).catch(function (err) {
+          // AbortError = user cancelled the picker
+          var name = (err && err.name) ? String(err.name) : '';
+          if (name === 'AbortError') return resolve({ ok: false, error: 'cancelled' });
+          resolve({ ok: false, error: (err && err.message) ? err.message : 'cancelled' });
+        });
+      } catch (e) {
+        resolve({ ok: false, error: (e && e.message) ? e.message : 'cancelled' });
+      }
+    });
+  }
+
+  function syncToDirectory() {
+    return new Promise(function (resolve) {
+      try {
+        var h = (App.state && typeof App.state === 'object') ? App.state._dirHandle : null;
+        if (!h) return resolve({ ok: false, error: 'no directory' });
+        writeAllTo(h).then(function (count) {
+          var name = '';
+          try { name = h.name || ''; } catch (eN) {}
+          resolve({ ok: true, dir: name || 'folder', count: count, fallback: false });
+        }).catch(function (eW) {
+          resolve({ ok: false, error: (eW && eW.message) ? eW.message : 'sync failed' });
+        });
+      } catch (e) {
+        resolve({ ok: false, error: (e && e.message) ? e.message : 'sync failed' });
+      }
+    });
+  }
+
+  // ===========================================================================
   // ATTACH
   // ===========================================================================
   App.Workspace = {
@@ -6229,6 +6682,9 @@ window.App = window.App || {};
     // PROJECT IMPORT (Wave 3 builder)
     importFiles: importFiles,
     readZip: readZip,
+    // FILE SYSTEM ACCESS (contract A) -- save whole workspace to a real folder
+    saveToDirectory: saveToDirectory,
+    syncToDirectory: syncToDirectory,
     // VERSION HISTORY (Wave 1 reliability core)
     history: history,
     restore: restore,
@@ -10202,7 +10658,7 @@ window.App = window.App || {};
     return {
       apiKey: '',
       openaiKey: '',                                   // v2: OpenAI key (for gpt-* models)
-      useCompanion: false,                             // v2: route Claude models through local subscription proxy
+      useCompanion: false,                             // v2: route Claude models through local subscription proxy (OPT-IN; OFF by default)
       companionUrl: c.COMPANION_URL || 'http://localhost:8787/v1/messages',
       defaultModel: c.DEFAULT_MODEL || 'claude-sonnet-4-6',
       bossModel: c.BOSS_MODEL || 'claude-opus-4-8',
@@ -10211,7 +10667,7 @@ window.App = window.App || {};
       sound: true,            // v3: completion chime on/off
       bgm: false,             // Wave 4a: ambient background music (procedural) on/off - default OFF
       liveChatter: false,     // v3: watercooler uses an LLM call when true; canned lines when false
-      lang: (c.DEFAULT_LANG || 'en'),  // Wave B: UI language (i18n) — 'en' | 'ko'
+      lang: (c.DEFAULT_LANG || 'ko'),  // Wave B: UI language (i18n) — 'en' | 'ko' (Korean is now the default)
       onboarded: false,       // Wave C: first-run guided tour completed flag
       // v5: GitHub push target for the project workspace. Token is stored LOCALLY
       // only (never transmitted except to api.github.com on an explicit push).
@@ -10876,8 +11332,13 @@ window.App = window.App || {};
     // layout: deep clone so we never persist live references
     var layout = deepClone(s.layout) || emptyLayout();
 
-    // settings: deep clone with defaults merged (then re-normalize github subobject)
+    // settings: deep clone with defaults merged (then re-normalize github subobject).
+    // deepClone is a JSON round-trip, so any non-serializable share/save artifact
+    // (e.g. a File System Access directory handle parked on settings) is dropped
+    // here automatically — directory handles live IN MEMORY on App.state._dirHandle
+    // and are NEVER persisted. Strip any stray _*-prefixed runtime keys too.
     var settings = Object.assign(defaultSettings(), deepClone(s.settings) || {});
+    settings = stripUnderscored(settings);
     settings.github = normalizeGithub(settings.github);   // v5
 
     // WAVE 1: task ledger — small runtime working-memory; persist when meaningful.
@@ -11022,7 +11483,10 @@ window.App = window.App || {};
     else if (typeof s._ledger === 'undefined') { s._ledger = null; }
 
     // --- settings (merge over defaults; re-normalize github subobject) ---
+    // stripUnderscored drops any stray _*-prefixed runtime keys an imported/shared
+    // blob might carry (directory handles are never serialized into a blob anyway).
     s.settings = Object.assign(defaultSettings(), (blob.settings && typeof blob.settings === 'object') ? blob.settings : {});
+    s.settings = stripUnderscored(s.settings);
     s.settings.github = normalizeGithub(s.settings.github);   // v5
 
     // --- selection ---
@@ -13615,6 +14079,62 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // ATTACHMENTS (Contract C) — opts.attachments = [{name, path, text}].
+  //   ingestAttachments(opts): write each file into the Workspace (default path
+  //     'inbox/'+name) and return a normalized list. Fully guarded; opts/absent →
+  //     [] so callers stay byte-for-byte backward compatible.
+  //   attachmentsDigest(list): a concise "## ATTACHED INPUT FILES" preamble (a
+  //     bullet per file + the first ~1200 chars of each) so the Boss + workers KNOW
+  //     about the files and can read_file the full copies from the Workspace.
+  // ===========================================================================
+  function ingestAttachments(opts) {
+    var out = [];
+    try {
+      var list = opts && opts.attachments;
+      if (!Array.isArray(list) || !list.length) return out;
+      for (var i = 0; i < list.length; i++) {
+        var att = list[i];
+        if (!att || typeof att !== 'object') continue;
+        var name = String(att.name == null ? ('file-' + (i + 1)) : att.name).trim() || ('file-' + (i + 1));
+        var text = String(att.text == null ? '' : att.text);
+        var path = String(att.path == null ? '' : att.path).trim() || ('inbox/' + name);
+        var written = path;
+        try {
+          if (App.Workspace && typeof App.Workspace.write === 'function') {
+            var p = App.Workspace.write(path, text, 'user');
+            if (p) written = p;
+          }
+        } catch (e) {}
+        out.push({ name: name, path: written, text: text });
+        try { log('user', 'Boss', 'system', '📎 attached ' + written + ' (' + text.length + ' chars)'); } catch (e) {}
+      }
+      try { if (App.UI && App.UI.refreshFiles) App.UI.refreshFiles(); } catch (e) {}
+    } catch (e) {}
+    return out;
+  }
+
+  function attachmentsDigest(list) {
+    try {
+      if (!Array.isArray(list) || !list.length) return '';
+      var head = '## ATTACHED INPUT FILES (provided by the user)';
+      var bullets = [];
+      var bodies = [];
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i];
+        if (!a) continue;
+        var chars = (a.text != null) ? String(a.text).length : 0;
+        bullets.push('- ' + a.path + ' (' + chars + ' chars)');
+        var snippet = truncate(String(a.text == null ? '' : a.text), 1200);
+        bodies.push('### ' + a.path + '\n' + snippet);
+      }
+      if (!bullets.length) return '';
+      return head + '\n' + bullets.join('\n') +
+        '\n(Full copies are saved in the Workspace — use read_file on the path above to read the whole file.)\n\n' +
+        bodies.join('\n\n');
+    } catch (e) { return ''; }
+  }
+
+  // ===========================================================================
   // BOSS — ensure / runBossTask
   // ===========================================================================
   function ensureBoss() {
@@ -13633,8 +14153,10 @@ window.App = window.App || {};
     });
   }
 
-  // runBossTask(text) — decompose the user's high-level goal into child tasks.
-  Orchestrator.runBossTask = function (text) {
+  // runBossTask(text, opts?) — decompose the user's high-level goal into child tasks.
+  //   opts.attachments (Contract C): files are written to the Workspace and a digest
+  //   is injected into the Boss context. opts omitted → identical to before.
+  Orchestrator.runBossTask = function (text, opts) {
     text = String(text == null ? '' : text).trim();
     if (!text) return;
 
@@ -13642,6 +14164,11 @@ window.App = window.App || {};
     var settings = (s && s.settings) || {};
     var ag = AGENTS();
     var boss = ensureBoss();
+
+    // Contract C: ingest any attached files into the Workspace + build a digest to
+    //   inject into the Boss context. No attachments → atts=[] / digest='' (no-op).
+    var atts = ingestAttachments(opts);
+    var attDigest = attachmentsDigest(atts);
 
     // root task
     var root = {
@@ -13683,16 +14210,16 @@ window.App = window.App || {};
       var startPlanning = function () {
         ag.setState(boss, 'thinking');
         ag.say(boss, '🧠 Planning…', 4000);
-        streamDecompose(root, boss, text);
+        streamDecompose(root, boss, text, attDigest);
       };
       // walk to desk seat first (best-effort)
       ag.goToFurniture(boss, 'desk', startPlanning);
     } else {
-      streamDecompose(root, null, text);
+      streamDecompose(root, null, text, attDigest);
     }
   };
 
-  function streamDecompose(root, boss, userText) {
+  function streamDecompose(root, boss, userText, attDigest) {
     var settings = STATE().settings || {};
     var roleDef = ROLES().boss || {};
     var sys = roleDef.system || '';
@@ -13701,6 +14228,8 @@ window.App = window.App || {};
     if (personaP) { pre.push(personaP); pre.push(''); }
     var memP = memoryBlock(boss, userText);
     if (memP) { pre.push(memP); pre.push(''); }
+    // Contract C: attached input files digest (empty string when no attachments).
+    if (attDigest) { pre.push(attDigest); pre.push(''); }
     var userMsg = pre.join('\n') + 'GOAL:\n' + userText + '\n\nReturn the JSON plan now.';
 
     var raw = '';
@@ -15434,8 +15963,10 @@ window.App = window.App || {};
     return out.join('/');
   }
 
-  // runBuild(goalText) — entry point for PROJECT BUILD mode.
-  Orchestrator.runBuild = function (goalText) {
+  // runBuild(goalText, opts?) — entry point for PROJECT BUILD mode.
+  //   opts.attachments (Contract C): files written to the Workspace + a digest is
+  //   injected into the Boss build context. opts omitted → identical to before.
+  Orchestrator.runBuild = function (goalText, opts) {
     goalText = String(goalText == null ? '' : goalText).trim();
     if (!goalText) return;
 
@@ -15443,6 +15974,11 @@ window.App = window.App || {};
     var settings = (s && s.settings) || {};
     var ag = AGENTS();
     var boss = ensureBoss();
+
+    // Contract C: ingest any attached files into the Workspace + build a digest to
+    //   inject into the Boss build context. No attachments → atts=[] / digest=''.
+    var atts = ingestAttachments(opts);
+    var attDigest = attachmentsDigest(atts);
 
     var root = {
       id: uid('t'),
@@ -15489,16 +16025,16 @@ window.App = window.App || {};
       var startPlanning = function () {
         ag.setState(boss, 'thinking');
         ag.say(boss, '🧠 Planning the project…', 4000);
-        streamDecomposeBuild(root, boss, goalText);
+        streamDecomposeBuild(root, boss, goalText, attDigest);
       };
       ag.goToFurniture(boss, 'desk', startPlanning);
     } else {
-      streamDecomposeBuild(root, null, goalText);
+      streamDecomposeBuild(root, null, goalText, attDigest);
     }
   };
 
   // streamDecomposeBuild — Boss call with BUILD_DECOMPOSE_SYSTEM → file manifest.
-  function streamDecomposeBuild(root, boss, userText) {
+  function streamDecomposeBuild(root, boss, userText, attDigest) {
     var settings = STATE().settings || {};
     var sys = CFG().BUILD_DECOMPOSE_SYSTEM ||
       ('You plan a complete, coherent, RUNNABLE multi-file software project. ' +
@@ -15511,6 +16047,8 @@ window.App = window.App || {};
     if (personaP) { pre.push(personaP); pre.push(''); }
     var memP = memoryBlock(boss, userText);
     if (memP) { pre.push(memP); pre.push(''); }
+    // Contract C: attached input files digest (empty string when no attachments).
+    if (attDigest) { pre.push(attDigest); pre.push(''); }
     var userMsg = pre.join('\n') + 'PROJECT GOAL:\n' + userText + '\n\nReturn the JSON file manifest now.';
 
     var raw = '';
@@ -18276,6 +18814,543 @@ window.App = window.App || {};
 })();
 </script>
 <script>
+// share.js — App.Share
+// ---------------------------------------------------------------------------
+// Contract (B): shareable links + state files + lightweight presets.
+//
+//   App.Share.exportLink()            -> string  (location + '#s=' + urlSafeB64(gzip(JSON)))
+//   App.Share.importFromHash()        -> Promise<boolean>  (decode '#s=' and load on boot)
+//   App.Share.downloadStateFile()     -> void     (download neonworks-state.json)
+//   App.Share.loadStateFile(file)     -> Promise<boolean>  (load a .json state File)
+//   App.Share.exportPreset()          -> void     (download lightweight OFFICE preset, no secrets)
+//   App.Share.importPreset(file)      -> Promise<boolean>  (apply a preset .json)
+//
+// Design notes:
+//   - Persistence is NOT reinvented. We reuse App.Store.exportJSON() (full
+//     snapshot -> pretty JSON string) and App.Store.importJSON(str) (validate
+//     + migrate + apply + save + refresh, returns bool). importJSON IS the same
+//     load/replace path the DATA import uses, so links/files/presets all flow
+//     through it.
+//   - Compression: CompressionStream('gzip') / DecompressionStream('gzip') when
+//     available, else a plain (uncompressed) base64 fallback. A 1-char marker is
+//     prepended to the URL-safe base64 so import knows which path to take:
+//       'G' + b64  -> gzipped payload
+//       'R' + b64  -> raw (uncompressed) UTF-8 JSON
+//   - URL-safe base64: standard base64 with  + / =  ->  - _  (padding stripped).
+//   - Defensive: every public fn swallows errors. Malformed link/file resolves
+//     false (or returns location for exportLink) and NEVER throws.
+//   - Classic <script> module. NO import/export. Attaches to window.App.Share.
+// ---------------------------------------------------------------------------
+
+(function () {
+  'use strict';
+
+  var App = (window.App = window.App || {});
+
+  // -- lazy resolvers (App.* may load in any order) ---------------------------
+  function store() { return (App && App.Store) ? App.Store : null; }
+  function ws() { return (App && App.Workspace) ? App.Workspace : null; }
+
+  function logErr(where, e) {
+    try { if (App.Store && App.Store.log) App.Store.log({ from: 'system', to: 'all', kind: 'error', text: 'share:' + where + ': ' + ((e && e.message) ? e.message : e) }); } catch (_) {}
+    try { if (typeof console !== 'undefined' && console.warn) console.warn('share:' + where, e); } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // UTF-8  <->  bytes
+  // ---------------------------------------------------------------------------
+  function strToBytes(str) {
+    try {
+      if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str);
+    } catch (e) {}
+    // manual UTF-8 encode fallback
+    var out = [];
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      if (c < 0x80) { out.push(c); }
+      else if (c < 0x800) { out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f)); }
+      else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {
+        var c2 = str.charCodeAt(i + 1);
+        if (c2 >= 0xdc00 && c2 <= 0xdfff) {
+          var cp = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);
+          out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+          i++;
+        } else { out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f)); }
+      } else { out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f)); }
+    }
+    return new Uint8Array(out);
+  }
+
+  function bytesToStr(bytes) {
+    try {
+      if (typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8').decode(bytes);
+    } catch (e) {}
+    // manual UTF-8 decode fallback
+    var res = '';
+    var i = 0;
+    while (i < bytes.length) {
+      var b = bytes[i++];
+      if (b < 0x80) { res += String.fromCharCode(b); }
+      else if (b >= 0xc0 && b < 0xe0) { res += String.fromCharCode(((b & 0x1f) << 6) | (bytes[i++] & 0x3f)); }
+      else if (b >= 0xe0 && b < 0xf0) { res += String.fromCharCode(((b & 0x0f) << 12) | ((bytes[i++] & 0x3f) << 6) | (bytes[i++] & 0x3f)); }
+      else {
+        var cp = ((b & 0x07) << 18) | ((bytes[i++] & 0x3f) << 12) | ((bytes[i++] & 0x3f) << 6) | (bytes[i++] & 0x3f);
+        cp -= 0x10000;
+        res += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff));
+      }
+    }
+    return res;
+  }
+
+  // ---------------------------------------------------------------------------
+  // base64 (standard)  <->  bytes
+  // ---------------------------------------------------------------------------
+  var B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+  function bytesToBase64(bytes) {
+    try {
+      if (typeof btoa === 'function') {
+        var bin = '';
+        var CH = 0x8000;
+        for (var off = 0; off < bytes.length; off += CH) {
+          var slice = bytes.subarray ? bytes.subarray(off, off + CH) : bytes.slice(off, off + CH);
+          bin += String.fromCharCode.apply(null, slice);
+        }
+        return btoa(bin);
+      }
+    } catch (e) {}
+    // manual base64 encode
+    var res = '';
+    var i = 0;
+    for (; i + 2 < bytes.length; i += 3) {
+      var n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+      res += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + B64[(n >> 6) & 63] + B64[n & 63];
+    }
+    var rem = bytes.length - i;
+    if (rem === 1) {
+      var a = bytes[i];
+      res += B64[(a >> 2) & 63] + B64[(a << 4) & 63] + '==';
+    } else if (rem === 2) {
+      var x = bytes[i], y = bytes[i + 1];
+      res += B64[(x >> 2) & 63] + B64[((x << 4) | (y >> 4)) & 63] + B64[(y << 2) & 63] + '=';
+    }
+    return res;
+  }
+
+  function base64ToBytes(b64) {
+    // strip whitespace; tolerate missing padding
+    b64 = String(b64).replace(/[^A-Za-z0-9+/=]/g, '');
+    try {
+      if (typeof atob === 'function') {
+        var bin = atob(b64);
+        var out = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) & 0xff;
+        return out;
+      }
+    } catch (e) {}
+    // manual base64 decode
+    var lookup = {};
+    for (var k = 0; k < B64.length; k++) lookup[B64[k]] = k;
+    var clean = b64.replace(/=+$/, '');
+    var bytes = [];
+    var buf = 0, bits = 0;
+    for (var j = 0; j < clean.length; j++) {
+      var v = lookup[clean[j]];
+      if (v === undefined) continue;
+      buf = (buf << 6) | v;
+      bits += 6;
+      if (bits >= 8) { bits -= 8; bytes.push((buf >> bits) & 0xff); }
+    }
+    return new Uint8Array(bytes);
+  }
+
+  // url-safe base64: + / =  ->  - _  (padding stripped)  and back
+  function toUrlSafe(b64) {
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function fromUrlSafe(s) {
+    return String(s).replace(/-/g, '+').replace(/_/g, '/');
+  }
+
+  // ---------------------------------------------------------------------------
+  // gzip via streams (async). Returns a Promise<Uint8Array> or rejects.
+  // ---------------------------------------------------------------------------
+  function gzipBytes(bytes) {
+    return new Promise(function (resolve, reject) {
+      try {
+        if (typeof CompressionStream === 'undefined' || typeof Response === 'undefined') { reject(new Error('no-gzip')); return; }
+        var cs = new CompressionStream('gzip');
+        var writer = cs.writable.getWriter();
+        writer.write(bytes);
+        writer.close();
+        new Response(cs.readable).arrayBuffer().then(function (buf) {
+          resolve(new Uint8Array(buf));
+        }, reject);
+      } catch (e) { reject(e); }
+    });
+  }
+
+  function gunzipBytes(bytes) {
+    return new Promise(function (resolve, reject) {
+      try {
+        if (typeof DecompressionStream === 'undefined' || typeof Response === 'undefined') { reject(new Error('no-gunzip')); return; }
+        var ds = new DecompressionStream('gzip');
+        var writer = ds.writable.getWriter();
+        writer.write(bytes);
+        writer.close();
+        new Response(ds.readable).arrayBuffer().then(function (buf) {
+          resolve(new Uint8Array(buf));
+        }, reject);
+      } catch (e) { reject(e); }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // payload codec — string <-> marked url-safe base64
+  //   encode: try gzip ('G'+b64); on any failure fall back to raw ('R'+b64).
+  //   decode: read marker, gunzip or pass through. ALWAYS resolves a string or
+  //           rejects (callers treat reject as "malformed").
+  // ---------------------------------------------------------------------------
+  function encodePayload(str) {
+    return new Promise(function (resolve) {
+      var bytes = strToBytes(str);
+      gzipBytes(bytes).then(function (gz) {
+        resolve('G' + toUrlSafe(bytesToBase64(gz)));
+      }, function () {
+        // gzip unavailable/failed -> plain base64
+        resolve('R' + toUrlSafe(bytesToBase64(bytes)));
+      });
+    });
+  }
+
+  function decodePayload(marked) {
+    return new Promise(function (resolve, reject) {
+      try {
+        marked = String(marked || '');
+        if (!marked) { reject(new Error('empty')); return; }
+        var marker = marked.charAt(0);
+        var body = marked.slice(1);
+        // Back-compat / lenient: if no recognized marker, treat the whole thing
+        // as raw url-safe base64 of UTF-8 JSON.
+        if (marker !== 'G' && marker !== 'R') { marker = 'R'; body = marked; }
+        var bytes = base64ToBytes(fromUrlSafe(body));
+        if (marker === 'G') {
+          gunzipBytes(bytes).then(function (raw) {
+            try { resolve(bytesToStr(raw)); } catch (e) { reject(e); }
+          }, reject);
+        } else {
+          resolve(bytesToStr(bytes));
+        }
+      } catch (e) { reject(e); }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // small helpers
+  // ---------------------------------------------------------------------------
+  function baseUrl() {
+    try {
+      if (typeof location !== 'undefined') return location.origin + location.pathname;
+    } catch (e) {}
+    return '';
+  }
+
+  function snapshotJSON() {
+    // reuse Store's DATA-export serializer (pretty JSON string).
+    var st = store();
+    if (st && typeof st.exportJSON === 'function') return st.exportJSON();
+    return '';
+  }
+
+  function loadSnapshotJSON(jsonStr) {
+    // reuse Store's DATA-import path (validate + migrate + apply + save + refresh).
+    var st = store();
+    if (st && typeof st.importJSON === 'function') return !!st.importJSON(jsonStr);
+    return false;
+  }
+
+  function triggerDownload(text, filename, mime) {
+    // Prefer the Workspace helper (Blob-based) so behavior matches the rest of
+    // the app; fall back to a local Blob+anchor if Workspace isn't present.
+    try {
+      var blob = (typeof Blob !== 'undefined')
+        ? new Blob([text], { type: mime || 'application/json' })
+        : null;
+      var w = ws();
+      if (blob && w && typeof w.triggerDownload === 'function') {
+        return w.triggerDownload(blob, filename);
+      }
+      if (!blob || typeof document === 'undefined' || typeof URL === 'undefined' ||
+          typeof URL.createObjectURL !== 'function') {
+        return false;
+      }
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'neonworks-state.json';
+      if (document.body && document.body.appendChild) document.body.appendChild(a);
+      a.click();
+      if (a.parentNode) a.parentNode.removeChild(a);
+      setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
+      return true;
+    } catch (e) { logErr('triggerDownload', e); return false; }
+  }
+
+  function readFileText(file) {
+    return new Promise(function (resolve, reject) {
+      try {
+        if (!file) { reject(new Error('no-file')); return; }
+        // Modern path: File.text()
+        if (typeof file.text === 'function') {
+          file.text().then(resolve, reject);
+          return;
+        }
+        if (typeof FileReader === 'undefined') { reject(new Error('no-FileReader')); return; }
+        var fr = new FileReader();
+        fr.onload = function () { resolve(String(fr.result || '')); };
+        fr.onerror = function () { reject(fr.error || new Error('read-failed')); };
+        fr.readAsText(file);
+      } catch (e) { reject(e); }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // PUBLIC — exportLink / importFromHash  (the '#s=' share link)
+  // ---------------------------------------------------------------------------
+
+  // exportLink() -> full shareable URL. Synchronous return per contract: we
+  // produce the base64 synchronously via a guaranteed-available codec. gzip is
+  // async (streams), so for the SYNC return we use the raw('R') encoding; the
+  // importer accepts both 'G' and 'R'. (exportLinkAsync below adds gzip when the
+  // caller can await — used internally is optional.)
+  function exportLink() {
+    try {
+      var json = snapshotJSON();
+      if (!json) return baseUrl();
+      var bytes = strToBytes(json);
+      var payload = 'R' + toUrlSafe(bytesToBase64(bytes));
+      return baseUrl() + '#s=' + payload;
+    } catch (e) {
+      logErr('exportLink', e);
+      return baseUrl();
+    }
+  }
+
+  // Async variant that uses gzip when available (smaller links for big states).
+  // Returns Promise<string>. Falls back to the sync raw link on any failure.
+  function exportLinkAsync() {
+    return new Promise(function (resolve) {
+      try {
+        var json = snapshotJSON();
+        if (!json) { resolve(baseUrl()); return; }
+        encodePayload(json).then(function (payload) {
+          resolve(baseUrl() + '#s=' + payload);
+        }, function () {
+          resolve(exportLink());
+        });
+      } catch (e) {
+        logErr('exportLinkAsync', e);
+        resolve(exportLink());
+      }
+    });
+  }
+
+  // importFromHash() -> Promise<boolean>. Decodes '#s=' and loads through Store.
+  function importFromHash() {
+    return new Promise(function (resolve) {
+      try {
+        if (typeof location === 'undefined' || !location.hash) { resolve(false); return; }
+        var h = location.hash;
+        // accept '#s=' (case-sensitive per contract) at the start
+        if (h.indexOf('#s=') !== 0) { resolve(false); return; }
+        var marked = h.slice(3);
+        if (!marked) { resolve(false); return; }
+        decodePayload(marked).then(function (json) {
+          var ok = false;
+          try { ok = loadSnapshotJSON(json); } catch (e) { logErr('importFromHash:load', e); ok = false; }
+          // Clear the hash regardless (so a bad link doesn't re-trigger / linger)
+          clearHash();
+          resolve(!!ok);
+        }, function (e) {
+          logErr('importFromHash:decode', e);
+          clearHash();
+          resolve(false);
+        });
+      } catch (e) {
+        logErr('importFromHash', e);
+        resolve(false);
+      }
+    });
+  }
+
+  function clearHash() {
+    try {
+      if (typeof location === 'undefined') return;
+      if (typeof history !== 'undefined' && history.replaceState) {
+        history.replaceState(null, '', location.pathname + location.search);
+      } else {
+        location.hash = '';
+      }
+    } catch (e) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // PUBLIC — state file download / load
+  // ---------------------------------------------------------------------------
+
+  function downloadStateFile() {
+    try {
+      var json = snapshotJSON();
+      if (!json) json = '{}';
+      return triggerDownload(json, 'neonworks-state.json', 'application/json');
+    } catch (e) { logErr('downloadStateFile', e); return false; }
+  }
+
+  function loadStateFile(file) {
+    return new Promise(function (resolve) {
+      try {
+        readFileText(file).then(function (txt) {
+          var ok = false;
+          try { ok = loadSnapshotJSON(txt); } catch (e) { logErr('loadStateFile:load', e); ok = false; }
+          resolve(!!ok);
+        }, function (e) {
+          logErr('loadStateFile:read', e);
+          resolve(false);
+        });
+      } catch (e) {
+        logErr('loadStateFile', e);
+        resolve(false);
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // PRESET — lightweight OFFICE share (roster + layout/upgrades + settings,
+  // EXCLUDING any apiKey/token). The marketplace-style share.
+  // ---------------------------------------------------------------------------
+
+  // strip secrets from a settings object (shallow clone; never mutate input).
+  function sanitizeSettings(settings) {
+    var s = (settings && typeof settings === 'object') ? settings : {};
+    var out = {};
+    for (var k in s) { if (Object.prototype.hasOwnProperty.call(s, k)) out[k] = s[k]; }
+    // drop credentials entirely
+    delete out.apiKey;
+    delete out.openaiKey;
+    if (out.github && typeof out.github === 'object') {
+      var g = {};
+      for (var gk in out.github) { if (Object.prototype.hasOwnProperty.call(out.github, gk)) g[gk] = out.github[gk]; }
+      g.token = '';   // never share the GitHub token
+      out.github = g;
+    }
+    return out;
+  }
+
+  // Build a preset object from the current full snapshot. We parse Store's own
+  // exportJSON so the agent/layout shapes are exactly what importJSON expects.
+  function buildPresetObject() {
+    var json = snapshotJSON();
+    var blob = JSON.parse(json);   // may throw -> caller catches
+    return {
+      _preset: true,
+      v: blob.v,
+      savedAt: (typeof Date !== 'undefined') ? Date.now() : 0,
+      agents: Array.isArray(blob.agents) ? blob.agents : [],
+      layout: blob.layout || null,
+      upgrades: Array.isArray(blob.upgrades) ? blob.upgrades : [],
+      settings: sanitizeSettings(blob.settings),
+    };
+  }
+
+  function exportPreset() {
+    try {
+      var preset = buildPresetObject();
+      var txt = JSON.stringify(preset, null, 2);
+      return triggerDownload(txt, 'neonworks-preset.json', 'application/json');
+    } catch (e) { logErr('exportPreset', e); return false; }
+  }
+
+  // Apply a preset: overlay its roster/layout/upgrades/settings onto the CURRENT
+  // full snapshot (preserving tasks/log/artifacts/files/credits), then run it
+  // through the standard importJSON load path. Sensitive settings already in the
+  // live state (apiKey/token) are RETAINED — the preset never carries them.
+  function applyPresetObject(preset) {
+    if (!preset || typeof preset !== 'object') return false;
+    // current full snapshot to overlay onto
+    var current;
+    try { current = JSON.parse(snapshotJSON()); }
+    catch (e) { current = {}; }
+    if (!current || typeof current !== 'object') current = {};
+
+    // roster + office
+    if (Array.isArray(preset.agents)) current.agents = preset.agents;
+    if (preset.layout) current.layout = preset.layout;
+    if (Array.isArray(preset.upgrades)) current.upgrades = preset.upgrades;
+
+    // settings: merge preset settings (secret-stripped) over current, but keep
+    // the user's live credentials.
+    var curSettings = (current.settings && typeof current.settings === 'object') ? current.settings : {};
+    var liveApiKey = curSettings.apiKey;
+    var liveOpenai = curSettings.openaiKey;
+    var liveToken = (curSettings.github && typeof curSettings.github === 'object') ? curSettings.github.token : undefined;
+
+    var presetSettings = sanitizeSettings(preset.settings);   // already has no secrets, but be safe
+    var merged = {};
+    var kk;
+    for (kk in curSettings) { if (Object.prototype.hasOwnProperty.call(curSettings, kk)) merged[kk] = curSettings[kk]; }
+    for (kk in presetSettings) { if (Object.prototype.hasOwnProperty.call(presetSettings, kk)) merged[kk] = presetSettings[kk]; }
+    // restore live credentials (preset must never overwrite them)
+    if (liveApiKey !== undefined) merged.apiKey = liveApiKey;
+    if (liveOpenai !== undefined) merged.openaiKey = liveOpenai;
+    if (merged.github && typeof merged.github === 'object' && liveToken !== undefined) {
+      merged.github.token = liveToken;
+    }
+    current.settings = merged;
+
+    // applying a preset starts a fresh office: drop in-flight tasks so we don't
+    // resurrect work that referenced the old roster. Keep history/files/credits.
+    current.tasks = [];
+
+    return loadSnapshotJSON(JSON.stringify(current));
+  }
+
+  function importPreset(file) {
+    return new Promise(function (resolve) {
+      try {
+        readFileText(file).then(function (txt) {
+          var ok = false;
+          try {
+            var obj = JSON.parse(txt);
+            ok = applyPresetObject(obj);
+          } catch (e) { logErr('importPreset:parse', e); ok = false; }
+          resolve(!!ok);
+        }, function (e) {
+          logErr('importPreset:read', e);
+          resolve(false);
+        });
+      } catch (e) {
+        logErr('importPreset', e);
+        resolve(false);
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // PUBLIC API
+  // ---------------------------------------------------------------------------
+  App.Share = {
+    exportLink: exportLink,
+    exportLinkAsync: exportLinkAsync,   // bonus: gzip-when-available async link
+    importFromHash: importFromHash,
+    downloadStateFile: downloadStateFile,
+    loadStateFile: loadStateFile,
+    exportPreset: exportPreset,
+    importPreset: importPreset,
+  };
+
+})();
+</script>
+<script>
 // =============================================================================
 // ui.js  →  App.UI
 // PIXEL AI COMPANY ("NEON//WORKS") — DOM overlays, modals, input, camera controls.
@@ -18392,6 +19467,10 @@ window.App = window.App || {};
   // Pan state.
   var _pan = { active: false, lastX: 0, lastY: 0, movedEnough: false, downX: 0, downY: 0 };
 
+  // Attached input files staged for the next Boss/Build dispatch.
+  // Each entry: { name, path:'inbox/'+name, text }. Shared across HUD + board.
+  var _attachments = [];
+
   // ===========================================================================
   // init() — bind everything by SPEC §8 ids, populate selects, refresh.
   // ===========================================================================
@@ -18437,6 +19516,9 @@ window.App = window.App || {};
       on(boardInput, 'keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); dispatchBoss(boardInput); }
       });
+
+      // Attach-input controls (📎) next to the HUD + board dispatch fields.
+      ensureAttachControls();
 
       // Agent panel
       on($('panel-agent-close'), 'click', function () { UI.closeAgentPanel(); });
@@ -18494,6 +19576,10 @@ window.App = window.App || {};
       // Logo glyph in the HUD.
       drawLogo();
 
+      // Accessibility: mark the live-updating regions (activity log + board
+      // columns) as polite live regions so screen readers announce changes.
+      ensureLiveRegions();
+
       // i18n: translate the static shell now that DOM + config are ready.
       applyI18n(document);
 
@@ -18515,6 +19601,19 @@ window.App = window.App || {};
     if (!modal) return;
     var scrim = modal.querySelector('.modal-scrim');
     on(scrim, 'click', function () { hide(modal); if (typeof after === 'function') after(); });
+  }
+
+  // Accessibility: tag the activity log + task-board column bodies as polite
+  // live regions so assistive tech announces new lines/cards as they stream in.
+  // Defensive: each node is optional; aria-atomic stays off so only deltas read.
+  function ensureLiveRegions() {
+    ['log-body', 'board-col-queued', 'board-col-running', 'board-col-done'].forEach(function (id) {
+      var n = $(id);
+      if (n && !n.getAttribute('aria-live')) {
+        n.setAttribute('aria-live', 'polite');
+        n.setAttribute('aria-atomic', 'false');
+      }
+    });
   }
 
   // ===========================================================================
@@ -18900,6 +19999,121 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // ATTACH INPUT FILES (📎) — stage files for the next Boss/Build dispatch.
+  // The picker reads each File as text into _attachments=[{name,path,text}];
+  // dispatchBoss/dispatchBuild pass them as opts.attachments and clear after.
+  // A small chip shows the count; "clear" empties the queue. Defensive: missing
+  // anchors no-op. Injected once into the HUD center + board dispatch rows.
+  // ===========================================================================
+  function ensureAttachControls() {
+    if (typeof document === 'undefined') return;
+    // HUD center (next to the dispatch button).
+    buildAttachUnit($('hud-center'), $('hud-task-dispatch'), 'hud');
+    // Board dispatch row (next to the DISPATCH button).
+    buildAttachUnit($('board-dispatch-host') || boardDispatchHost(), $('board-send'), 'board');
+    refreshAttachChips();
+  }
+
+  // The board dispatch row has no id in shell.html — find it via the send button.
+  function boardDispatchHost() {
+    var send = $('board-send');
+    return (send && send.parentNode) ? send.parentNode : null;
+  }
+
+  // Create a 📎 button + a chip (count) and insert them before `beforeNode`
+  // inside `host`. `scope` makes node ids unique (hud / board). Idempotent.
+  function buildAttachUnit(host, beforeNode, scope) {
+    if (!host) return;
+    var btnId = 'attach-btn-' + scope;
+    if ($(btnId)) return; // already injected for this scope
+
+    var btn = el('button', 'btn btn-sq', '📎');
+    btn.type = 'button';
+    btn.id = btnId;
+    btn.title = T('attach.title', 'Attach files for the Boss to read');
+    btn.setAttribute('aria-label', T('attach.title', 'Attach files for the Boss to read'));
+
+    var fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true;
+    fileInput.className = 'hidden';
+    fileInput.id = 'attach-input-' + scope;
+    on(fileInput, 'change', function (e) { readAttachFiles(e); });
+    on(btn, 'click', function () { try { fileInput.value = ''; } catch (e) {} fileInput.click(); });
+
+    // Chip: shows the attached count + a clear (✕) affordance. Hidden when empty.
+    var chip = el('span', 'attach-chip hidden');
+    chip.id = 'attach-chip-' + scope;
+    var chipText = el('span', 'attach-chip-name');
+    chipText.id = 'attach-chip-text-' + scope;
+    var chipClear = el('button', 'attach-chip-x', '✕');
+    chipClear.type = 'button';
+    chipClear.title = T('attach.clear', 'Clear');
+    chipClear.setAttribute('aria-label', T('attach.clear', 'Clear'));
+    on(chipClear, 'click', function () { clearAttachments(); });
+    chip.appendChild(chipText);
+    chip.appendChild(chipClear);
+
+    if (beforeNode && beforeNode.parentNode === host) {
+      host.insertBefore(btn, beforeNode);
+      host.insertBefore(chip, beforeNode);
+    } else {
+      host.appendChild(btn);
+      host.appendChild(chip);
+    }
+  }
+
+  // Read the picked File objects as text into _attachments (de-duped by name).
+  function readAttachFiles(ev) {
+    var files = ev && ev.target && ev.target.files;
+    if (!files || !files.length) return;
+    var pending = files.length;
+    function done() { pending--; if (pending <= 0) refreshAttachChips(); }
+    for (var i = 0; i < files.length; i++) {
+      (function (file) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          var name = String(file.name || 'file.txt');
+          var text = String(reader.result || '');
+          // replace any existing attachment with the same name
+          for (var j = 0; j < _attachments.length; j++) {
+            if (_attachments[j].name === name) { _attachments.splice(j, 1); break; }
+          }
+          _attachments.push({ name: name, path: 'inbox/' + name, text: text });
+          done();
+        };
+        reader.onerror = function () { done(); };
+        try { reader.readAsText(file); } catch (e) { done(); }
+      })(files[i]);
+    }
+  }
+
+  // Update both scope chips to reflect the current _attachments count.
+  function refreshAttachChips() {
+    var n = _attachments.length;
+    ['hud', 'board'].forEach(function (scope) {
+      var chip = $('attach-chip-' + scope);
+      var txt = $('attach-chip-text-' + scope);
+      if (txt) txt.textContent = T('attach.count', n + ' file(s) attached', { count: n });
+      if (chip) { if (n > 0) show(chip); else hide(chip); }
+    });
+  }
+
+  // Empty the staged attachments and refresh the chips.
+  function clearAttachments() {
+    _attachments.length = 0;
+    refreshAttachChips();
+  }
+
+  // Snapshot + clear the staged attachments for one dispatch (returns a copy).
+  function consumeAttachments() {
+    if (!_attachments.length) return null;
+    var out = _attachments.slice();
+    clearAttachments();
+    return out;
+  }
+
+  // ===========================================================================
   // DISPATCH / CHAT input handlers
   // ===========================================================================
   function dispatchBoss(input) {
@@ -18909,7 +20123,9 @@ window.App = window.App || {};
     input.value = '';
     requestNotifyPermission(); // polite, one-time, on this user gesture
     if (ORCH() && ORCH().runBossTask) {
-      ORCH().runBossTask(text);
+      var atts = consumeAttachments();
+      if (atts) ORCH().runBossTask(text, { attachments: atts });
+      else ORCH().runBossTask(text);
       UI.openTaskBoard(); // surface the board so the user sees the decomposition
     }
   }
@@ -18933,7 +20149,11 @@ window.App = window.App || {};
     if (board) board.value = '';
     requestNotifyPermission();
     if (ORCH() && ORCH().runBuild) {
-      try { ORCH().runBuild(text); } catch (e) { UI.showError('Build failed to start: ' + (e && e.message)); return; }
+      var atts = consumeAttachments();
+      try {
+        if (atts) ORCH().runBuild(text, { attachments: atts });
+        else ORCH().runBuild(text);
+      } catch (e) { UI.showError('Build failed to start: ' + (e && e.message)); return; }
       UI.openTaskBoard();
     } else {
       UI.showError(T('build.unavailable', 'Build mode is unavailable.'));
@@ -19666,6 +20886,7 @@ window.App = window.App || {};
     ensureLangField();
     highlightSegmented($('set-lang'), 'data-lang', currentLang());
     var ctog = $('set-companion-toggle'); if (ctog) ctog.checked = !!settings.useCompanion;
+    updateCompanionStatus(); // sync the ON/OFF badge with the loaded toggle
     var curl = $('set-companion-url'); if (curl) curl.value = settings.companionUrl || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var dm = $('set-default-model'); if (dm) dm.value = settings.defaultModel || CFG().DEFAULT_MODEL;
     var bm = $('set-boss-model'); if (bm) bm.value = settings.bossModel || CFG().BOSS_MODEL;
@@ -19688,6 +20909,8 @@ window.App = window.App || {};
     ensureAudioFields();
     var sfxSw = $('set-sound'); if (sfxSw) sfxSw.checked = (settings.sound !== false);
     var bgmSw = $('set-bgm'); if (bgmSw) bgmSw.checked = (settings.bgm === true);
+    // Inject (once) the SHARE block (link / state file / preset). App.Share-gated.
+    ensureShareField();
     show($('modal-settings'));
   };
 
@@ -19964,17 +21187,36 @@ window.App = window.App || {};
     if (!anchorField || !anchorField.parentNode) return;
 
     var field = el('label', 'field');
-    field.appendChild(el('span', 'field-label', 'LOCAL COMPANION (SUBSCRIPTION)'));
+    // Label carries an explicit ON/OFF status badge so it is obvious the
+    // companion is OFF by default (and that your API key is used while it is off).
+    var labelRow = el('span', 'field-row');
+    var label = el('span', 'field-label', T('companion.label', 'Mac Companion'));
+    label.style.flex = '1';
+    var statusBadge = el('span', 'companion-pill off');
+    statusBadge.id = 'set-companion-status';
+    statusBadge.setAttribute('aria-live', 'polite');
+    var statusDot = el('span', 'companion-dot');
+    statusDot.setAttribute('aria-hidden', 'true');
+    var statusTxt = el('span', '', T('companion.off', 'Off'));
+    statusTxt.id = 'set-companion-status-text';
+    statusBadge.appendChild(statusDot);
+    statusBadge.appendChild(statusTxt);
+    labelRow.appendChild(label);
+    labelRow.appendChild(statusBadge);
+    field.appendChild(labelRow);
 
     var row = el('span', 'field-row');
     var cb = document.createElement('input');
     cb.id = 'set-companion-toggle';
     cb.type = 'checkbox';
     cb.style.flex = '0 0 auto';
+    cb.setAttribute('aria-label', T('companion.label', 'Mac Companion'));
     var cbHint = el('span', 'field-hint', 'Use your Claude subscription via companion.py (no API key needed)');
     cbHint.style.flex = '1';
     row.appendChild(cb);
     row.appendChild(cbHint);
+    // Live-update the ON/OFF badge as the user flips the toggle.
+    on(cb, 'change', function () { updateCompanionStatus(); });
 
     var urlRow = el('span', 'field-row');
     var url = document.createElement('input');
@@ -19986,7 +21228,8 @@ window.App = window.App || {};
     urlRow.appendChild(url);
 
     var hint = el('span', 'field-hint',
-      'Run companion/companion.py, then enable. Works with the file:// or localhost app (not the https Pages site).');
+      T('companion.hint',
+        'Run the local mac-companion server to read your files and run your tools.'));
 
     field.appendChild(row);
     field.appendChild(urlRow);
@@ -19994,6 +21237,200 @@ window.App = window.App || {};
 
     if (anchorField.nextSibling) anchorField.parentNode.insertBefore(field, anchorField.nextSibling);
     else anchorField.parentNode.appendChild(field);
+  }
+
+  // Reflect the companion checkbox into the ON/OFF status badge (text + class).
+  // OFF (default) makes clear API keys are used; ON means the local server runs.
+  function updateCompanionStatus() {
+    var cb = $('set-companion-toggle');
+    var badge = $('set-companion-status');
+    if (!badge) return;
+    var on_ = !!(cb && cb.checked);
+    var txt = $('set-companion-status-text') || badge;
+    txt.textContent = on_ ? T('companion.on', 'On') : T('companion.off', 'Off');
+    badge.classList.toggle('on', on_);
+    badge.classList.toggle('off', !on_);
+  }
+
+  // ===========================================================================
+  // SHARE block (Settings) — link / state file / preset. Backed by App.Share
+  // (shared contract B). Each control feature-detects its App.Share.* method so
+  // the block degrades gracefully when Share is absent. Injected once, anchored
+  // after the DATA group (#set-clear). Idempotent.
+  // ===========================================================================
+  function ensureShareField() {
+    if ($('set-share-group')) return; // already injected
+    if (!App.Share) return;           // nothing to wire — skip the block entirely
+    var anchor = $('set-clear') || $('set-import') || $('set-export');
+    if (!anchor || typeof document === 'undefined') return;
+    var anchorField = anchor;
+    while (anchorField && anchorField.classList && !anchorField.classList.contains('field')) {
+      anchorField = anchorField.parentNode;
+    }
+    if (!anchorField || !anchorField.parentNode) return;
+
+    var group = el('div', 'field');
+    group.id = 'set-share-group';
+    var label = el('span', 'field-label');
+    label.setAttribute('data-i18n', 'share.title');
+    label.textContent = T('share.title', 'SHARE');
+    group.appendChild(label);
+
+    var row = el('div', 'btn-row');
+
+    // Copy shareable link -> clipboard.
+    if (typeof App.Share.exportLink === 'function') {
+      var copyBtn = el('button', 'btn', '🔗 ' + T('share.copyLink', 'Copy Link'));
+      copyBtn.type = 'button';
+      copyBtn.setAttribute('aria-label', T('share.copyLink', 'Copy Link'));
+      on(copyBtn, 'click', function () { shareCopyLink(); });
+      row.appendChild(copyBtn);
+    }
+
+    // Load state from a pasted link.
+    if (typeof App.Share.importFromHash === 'function') {
+      var fromLinkBtn = el('button', 'btn', '📥 ' + T('share.fromLink', 'Load from Link'));
+      fromLinkBtn.type = 'button';
+      fromLinkBtn.setAttribute('aria-label', T('share.fromLink', 'Load from Link'));
+      on(fromLinkBtn, 'click', function () { shareLoadFromLink(); });
+      row.appendChild(fromLinkBtn);
+    }
+
+    // Download / load full state JSON file.
+    if (typeof App.Share.downloadStateFile === 'function') {
+      var dlBtn = el('button', 'btn', '⤓ ' + T('share.download', 'Download State'));
+      dlBtn.type = 'button';
+      dlBtn.setAttribute('aria-label', T('share.download', 'Download State'));
+      on(dlBtn, 'click', function () { try { App.Share.downloadStateFile(); } catch (e) { UI.showError('Download failed: ' + (e && e.message)); } });
+      row.appendChild(dlBtn);
+    }
+
+    if (typeof App.Share.loadStateFile === 'function') {
+      var loadBtn = el('button', 'btn', '⤒ ' + T('share.load', 'Load State File'));
+      loadBtn.type = 'button';
+      loadBtn.setAttribute('aria-label', T('share.load', 'Load State File'));
+      var loadInput = document.createElement('input');
+      loadInput.type = 'file';
+      loadInput.accept = 'application/json,.json';
+      loadInput.className = 'hidden';
+      loadInput.id = 'set-share-load-file';
+      on(loadInput, 'change', function (e) { shareLoadStateFile(e); });
+      on(loadBtn, 'click', function () { try { loadInput.value = ''; } catch (e) {} loadInput.click(); });
+      row.appendChild(loadBtn);
+      row.appendChild(loadInput);
+    }
+
+    // Export / import a lightweight OFFICE preset (no secrets).
+    if (typeof App.Share.exportPreset === 'function') {
+      var expPresetBtn = el('button', 'btn', '📤 ' + T('share.preset.export', 'Export Preset'));
+      expPresetBtn.type = 'button';
+      expPresetBtn.setAttribute('aria-label', T('share.preset.export', 'Export Preset'));
+      on(expPresetBtn, 'click', function () { try { App.Share.exportPreset(); } catch (e) { UI.showError('Export failed: ' + (e && e.message)); } });
+      row.appendChild(expPresetBtn);
+    }
+
+    if (typeof App.Share.importPreset === 'function') {
+      var impPresetBtn = el('button', 'btn', '📦 ' + T('share.preset.import', 'Import Preset'));
+      impPresetBtn.type = 'button';
+      impPresetBtn.setAttribute('aria-label', T('share.preset.import', 'Import Preset'));
+      var presetInput = document.createElement('input');
+      presetInput.type = 'file';
+      presetInput.accept = 'application/json,.json';
+      presetInput.className = 'hidden';
+      presetInput.id = 'set-share-preset-file';
+      on(presetInput, 'change', function (e) { sharePresetImport(e); });
+      on(impPresetBtn, 'click', function () { try { presetInput.value = ''; } catch (e) {} presetInput.click(); });
+      row.appendChild(impPresetBtn);
+      row.appendChild(presetInput);
+    }
+
+    group.appendChild(row);
+
+    if (anchorField.nextSibling) anchorField.parentNode.insertBefore(group, anchorField.nextSibling);
+    else anchorField.parentNode.appendChild(group);
+  }
+
+  // Build the share URL and copy it to the clipboard (with a manual fallback).
+  function shareCopyLink() {
+    if (!(App.Share && typeof App.Share.exportLink === 'function')) return;
+    var link = '';
+    try { link = App.Share.exportLink(); } catch (e) { UI.showError('Link failed: ' + (e && e.message)); return; }
+    if (!link) { UI.showError('Link failed'); return; }
+    function ok() { UI.toast(T('share.copied', 'Link copied to clipboard.')); }
+    try {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(ok, function () { sharePromptLink(link); });
+        return;
+      }
+    } catch (e) {}
+    sharePromptLink(link);
+  }
+
+  // Clipboard unavailable -> show the link so the user can copy it manually.
+  function sharePromptLink(link) {
+    try {
+      if (typeof window !== 'undefined' && window.prompt) {
+        window.prompt(T('share.openLink', 'Open Link'), link);
+        return;
+      }
+    } catch (e) {}
+    UI.toast(link);
+  }
+
+  // Prompt for a shareable link, set the hash, and load via App.Share.importFromHash.
+  function shareLoadFromLink() {
+    if (!(App.Share && typeof App.Share.importFromHash === 'function')) return;
+    var link = '';
+    try {
+      if (typeof window !== 'undefined' && window.prompt) {
+        link = window.prompt(T('share.fromLink', 'Load from Link'), '');
+      }
+    } catch (e) {}
+    if (link == null) return; // cancelled
+    link = String(link).trim();
+    if (!link) return;
+    // Accept a full URL or a bare '#s=...' / 's=...' fragment.
+    var hash = '';
+    var hi = link.indexOf('#');
+    if (hi >= 0) hash = link.slice(hi);
+    else if (/^s=/.test(link)) hash = '#' + link;
+    else hash = link.charAt(0) === '#' ? link : ('#' + link);
+    try { if (typeof location !== 'undefined') location.hash = hash; } catch (e) {}
+    var p;
+    try { p = App.Share.importFromHash(); } catch (e) { UI.showError('Load failed: ' + (e && e.message)); return; }
+    if (!p || typeof p.then !== 'function') { afterShareLoad(!!p); return; }
+    p.then(afterShareLoad).catch(function (e) { UI.showError('Load failed: ' + (e && e.message)); });
+  }
+
+  function afterShareLoad(ok) {
+    if (ok) { UI.toast(T('share.loaded', 'State loaded.')); UI.refresh(); hide($('modal-settings')); }
+    else UI.showError('Load failed: invalid link');
+  }
+
+  // Load a full state .json through App.Share.loadStateFile.
+  function shareLoadStateFile(ev) {
+    var file = ev && ev.target && ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if (!(App.Share && typeof App.Share.loadStateFile === 'function')) return;
+    var p;
+    try { p = App.Share.loadStateFile(file); } catch (e) { UI.showError('Load failed: ' + (e && e.message)); return; }
+    if (!p || typeof p.then !== 'function') { afterShareLoad(!!p); return; }
+    p.then(afterShareLoad).catch(function (e) { UI.showError('Load failed: ' + (e && e.message)); });
+  }
+
+  // Apply an OFFICE preset .json through App.Share.importPreset.
+  function sharePresetImport(ev) {
+    var file = ev && ev.target && ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if (!(App.Share && typeof App.Share.importPreset === 'function')) return;
+    var p;
+    try { p = App.Share.importPreset(file); } catch (e) { UI.showError('Import failed: ' + (e && e.message)); return; }
+    function done(ok) {
+      if (ok) { UI.toast(T('share.loaded', 'State loaded.')); UI.refresh(); hide($('modal-settings')); }
+      else UI.showError('Import failed: invalid preset');
+    }
+    if (!p || typeof p.then !== 'function') { done(!!p); return; }
+    p.then(done).catch(function (e) { UI.showError('Import failed: ' + (e && e.message)); });
   }
 
   // Inject (once) a LANGUAGE segmented EN/KO toggle into Settings. Switching it
@@ -21890,8 +23327,18 @@ window.App = window.App || {};
     on(zipInput, 'change', function (e) { importZipFile(e); });
     on(zipInBtn, 'click', function () { try { zipInput.value = ''; } catch (e) {} zipInput.click(); });
 
+    // SAVE TO FOLDER (writes every workspace file to a real folder via the
+    // File System Access API; on Safari/Firefox this falls back to a ZIP).
+    // Picking a Dropbox/iCloud-synced folder = effortless cloud backup.
+    var saveFolderBtn = el('button', 'btn', '💾 ' + T('files.saveFolder', 'Save to Folder'));
+    saveFolderBtn.type = 'button';
+    saveFolderBtn.id = 'files-save-folder';
+    saveFolderBtn.setAttribute('aria-label', T('files.saveFolder', 'Save to Folder'));
+    saveFolderBtn.title = T('files.saveFolder.hint', 'Write every workspace file to a folder on your computer.');
+    on(saveFolderBtn, 'click', function () { saveFilesToFolder(); });
+
     bar.appendChild(addBtn); bar.appendChild(runBtn); bar.appendChild(zipBtn); bar.appendChild(ghBtn);
-    bar.appendChild(folderBtn); bar.appendChild(zipInBtn);
+    bar.appendChild(folderBtn); bar.appendChild(zipInBtn); bar.appendChild(saveFolderBtn);
     bar.appendChild(folderInput); bar.appendChild(zipInput);
     m.body.appendChild(bar);
 
@@ -22639,6 +24086,50 @@ window.App = window.App || {};
     return String(p || 'file.txt').replace(/[\\:*?"<>|]+/g, '_').replace(/^\/+/, '').slice(0, 240) || 'file.txt';
   }
 
+  // ----- SAVE TO FOLDER (File System Access API; ZIP fallback) -----------------
+  // Delegates to App.Workspace.saveToDirectory() (shared contract A). On Chromium
+  // it prompts for a real folder and writes every workspace file there; on
+  // Safari/Firefox it downloads a ZIP. Never throws; toasts the outcome.
+  function saveFilesToFolder() {
+    var ws = WS();
+    if (!ws || typeof ws.saveToDirectory !== 'function') {
+      UI.showError(T('files.saveUnsupported',
+        'Folder save is not supported in this browser - a ZIP was downloaded instead.'));
+      // best-effort fallback so the user still gets their files
+      try { downloadProjectZip(); } catch (e) {}
+      return;
+    }
+    if (fileCount() === 0) { UI.toast(T('files.noneZip', 'No files to download')); return; }
+    var p;
+    try { p = ws.saveToDirectory(); } catch (e) {
+      UI.showError('Save failed: ' + (e && e.message)); return;
+    }
+    if (!p || typeof p.then !== 'function') { UI.showError('Save failed to start'); return; }
+    p.then(function (res) {
+      res = res || {};
+      if (res.ok === false) {
+        if (res.error === 'cancelled') return; // user dismissed the picker — stay quiet
+        UI.showError('Save failed: ' + (res.error || 'unknown error'));
+        return;
+      }
+      if (res.fallback) {
+        // ZIP path (Safari/Firefox) — explain what happened.
+        UI.toast(T('files.saveUnsupported',
+          'Folder save is not supported in this browser - a ZIP was downloaded instead.'));
+        return;
+      }
+      var n = (res.count != null) ? res.count : fileCount();
+      var dir = res.dir || '';
+      UI.toast(T('files.saved', 'Saved ' + n + ' file(s) to ' + dir + '.',
+        { count: n, dir: dir }));
+      // Cloud-backup hint: a synced folder turns this into an off-device backup.
+      UI.toast(T('files.saveFolder.hint',
+        'Write every workspace file to a folder on your computer.'));
+    }).catch(function (e) {
+      UI.showError('Save failed: ' + (e && e.message));
+    });
+  }
+
   // ----- GITHUB PUSH -----------------------------------------------------------
   function pushToGithub() {
     var s = STATE();
@@ -23226,6 +24717,10 @@ window.App = window.App || {};
   // ---------------------------------------------------------------------------
   Main.init = function () {
     try {
+      // 0) environment flags (defensive; never fatal).
+      detectReduceMotion();
+      injectManifest();
+
       // 1) state: load or seed.
       if (App.Store && App.Store.init) App.Store.init();
 
@@ -23244,6 +24739,10 @@ window.App = window.App || {};
       // 3) UI wiring.
       if (App.UI && App.UI.init) App.UI.init();
 
+      // 3b) shared-link import (async, fire-and-forget). If a state arrives via
+      //     #s=..., Share loads it through Store; refresh the UI when it lands.
+      maybeImportFromHash();
+
       // 4) loop.
       _running = true;
       _last = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -23253,6 +24752,135 @@ window.App = window.App || {};
       try { console && console.error && console.error('[App.main.init]', e); } catch (e2) {}
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // prefers-reduced-motion — set a pure flag on App.state. We do NOT rewrite the
+  // draw loop here; modules/CSS consult the flag. Re-read on changes.
+  // ---------------------------------------------------------------------------
+  function detectReduceMotion() {
+    try {
+      var s = STATE();
+      var mq = (typeof window !== 'undefined' && window.matchMedia)
+        ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+      var on = !!(mq && mq.matches);
+      if (s) s.reduceMotion = on;
+      if (mq) {
+        var onChange = function (e) {
+          try { var st = STATE(); if (st) st.reduceMotion = !!(e && e.matches); } catch (e2) {}
+        };
+        // addEventListener is the modern API; addListener is the legacy fallback.
+        if (mq.addEventListener) mq.addEventListener('change', onChange);
+        else if (mq.addListener) mq.addListener(onChange);
+      }
+    } catch (e) {
+      try { var st2 = STATE(); if (st2) st2.reduceMotion = false; } catch (e2) {}
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // installable Web App Manifest — generated at runtime and attached via a blob
+  // URL <link rel="manifest">, with a procedurally generated neon SVG icon so the
+  // app is installable with zero external assets. Defensive + non-fatal.
+  // ---------------------------------------------------------------------------
+  function injectManifest() {
+    try {
+      if (typeof document === 'undefined') return;
+      if (document.querySelector('link[rel="manifest"]')) return; // don't double-inject
+
+      var pal = (CFG() && CFG().palette) || {};
+      var bg = pal.void || '#070912';
+      var theme = pal.cyan || '#39d7ff';
+      var iconUrl = neonIconDataUri(theme, pal.magenta || '#ff3df0', bg);
+
+      var manifest = {
+        name: 'NEON//WORKS',
+        short_name: 'NEONWORKS',
+        description: 'A living pixel-art AI agent collective you direct like a company.',
+        start_url: '.',
+        scope: '.',
+        display: 'standalone',
+        orientation: 'any',
+        background_color: bg,
+        theme_color: theme,
+        icons: [
+          { src: iconUrl, sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' }
+        ]
+      };
+
+      var json = JSON.stringify(manifest);
+      var href;
+      try {
+        if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+          href = URL.createObjectURL(new Blob([json], { type: 'application/manifest+json' }));
+        }
+      } catch (eBlob) { href = null; }
+      if (!href) {
+        // data-URI fallback (some engines reject blob: manifests).
+        href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(json);
+      }
+
+      var link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = href;
+      var head = document.head || document.getElementsByTagName('head')[0];
+      if (head) head.appendChild(link);
+    } catch (e) {
+      try { console && console.warn && console.warn('[App.main.injectManifest]', e); } catch (e2) {}
+    }
+  }
+
+  // Build a small NEON//WORKS app icon as an SVG data-URI (no external assets).
+  function neonIconDataUri(c1, c2, bg) {
+    // 512x512 rounded-square tile with two hex nodes + a connecting bolt.
+    var svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">' +
+        '<rect width="512" height="512" rx="96" fill="' + bg + '"/>' +
+        '<g fill="none" stroke="' + c1 + '" stroke-width="22" stroke-linejoin="round">' +
+          '<path d="M150 150 L260 150 L300 215 L260 280 L150 280 L110 215 Z"/>' +
+        '</g>' +
+        '<g fill="none" stroke="' + c2 + '" stroke-width="22" stroke-linejoin="round">' +
+          '<path d="M252 232 L362 232 L402 297 L362 362 L252 362 L212 297 Z"/>' +
+        '</g>' +
+        '<path d="M236 196 L300 196 L268 256 L320 256 L210 366 L246 286 L196 286 Z" fill="' + c1 + '" opacity="0.9"/>' +
+      '</svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
+  // ---------------------------------------------------------------------------
+  // shared-link import — defer to App.Share.importFromHash() if present. It is
+  // async; on a successful load we re-render the full UI. Never throws.
+  // ---------------------------------------------------------------------------
+  function maybeImportFromHash() {
+    try {
+      if (!(App.Share && App.Share.importFromHash)) return;
+      var p = App.Share.importFromHash();
+      if (p && typeof p.then === 'function') {
+        p.then(function (loaded) {
+          if (loaded) refreshAfterLoad();
+        }, function (err) {
+          try { console && console.warn && console.warn('[App.main.importFromHash]', err); } catch (e2) {}
+        });
+      } else if (p) {
+        refreshAfterLoad();
+      }
+    } catch (e) {
+      try { console && console.warn && console.warn('[App.main.maybeImportFromHash]', e); } catch (e2) {}
+    }
+  }
+
+  // Re-render every overlay after a fresh state lands (mirror UI.init's pass).
+  function refreshAfterLoad() {
+    try {
+      var u = App.UI;
+      if (!u) return;
+      if (u.refreshArtifacts) u.refreshArtifacts();
+      if (u.refreshFiles) u.refreshFiles();
+      if (u.refreshLedger) u.refreshLedger();
+      if (u.refresh) u.refresh();
+    } catch (e) {
+      try { console && console.warn && console.warn('[App.main.refreshAfterLoad]', e); } catch (e2) {}
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // resize — size to CSS box × DPR; apply DPR transform ONCE (SPEC §4.1).

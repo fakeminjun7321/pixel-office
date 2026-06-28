@@ -654,6 +654,62 @@ window.App = window.App || {};
   }
 
   // ===========================================================================
+  // ATTACHMENTS (Contract C) — opts.attachments = [{name, path, text}].
+  //   ingestAttachments(opts): write each file into the Workspace (default path
+  //     'inbox/'+name) and return a normalized list. Fully guarded; opts/absent →
+  //     [] so callers stay byte-for-byte backward compatible.
+  //   attachmentsDigest(list): a concise "## ATTACHED INPUT FILES" preamble (a
+  //     bullet per file + the first ~1200 chars of each) so the Boss + workers KNOW
+  //     about the files and can read_file the full copies from the Workspace.
+  // ===========================================================================
+  function ingestAttachments(opts) {
+    var out = [];
+    try {
+      var list = opts && opts.attachments;
+      if (!Array.isArray(list) || !list.length) return out;
+      for (var i = 0; i < list.length; i++) {
+        var att = list[i];
+        if (!att || typeof att !== 'object') continue;
+        var name = String(att.name == null ? ('file-' + (i + 1)) : att.name).trim() || ('file-' + (i + 1));
+        var text = String(att.text == null ? '' : att.text);
+        var path = String(att.path == null ? '' : att.path).trim() || ('inbox/' + name);
+        var written = path;
+        try {
+          if (App.Workspace && typeof App.Workspace.write === 'function') {
+            var p = App.Workspace.write(path, text, 'user');
+            if (p) written = p;
+          }
+        } catch (e) {}
+        out.push({ name: name, path: written, text: text });
+        try { log('user', 'Boss', 'system', '📎 attached ' + written + ' (' + text.length + ' chars)'); } catch (e) {}
+      }
+      try { if (App.UI && App.UI.refreshFiles) App.UI.refreshFiles(); } catch (e) {}
+    } catch (e) {}
+    return out;
+  }
+
+  function attachmentsDigest(list) {
+    try {
+      if (!Array.isArray(list) || !list.length) return '';
+      var head = '## ATTACHED INPUT FILES (provided by the user)';
+      var bullets = [];
+      var bodies = [];
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i];
+        if (!a) continue;
+        var chars = (a.text != null) ? String(a.text).length : 0;
+        bullets.push('- ' + a.path + ' (' + chars + ' chars)');
+        var snippet = truncate(String(a.text == null ? '' : a.text), 1200);
+        bodies.push('### ' + a.path + '\n' + snippet);
+      }
+      if (!bullets.length) return '';
+      return head + '\n' + bullets.join('\n') +
+        '\n(Full copies are saved in the Workspace — use read_file on the path above to read the whole file.)\n\n' +
+        bodies.join('\n\n');
+    } catch (e) { return ''; }
+  }
+
+  // ===========================================================================
   // BOSS — ensure / runBossTask
   // ===========================================================================
   function ensureBoss() {
@@ -672,8 +728,10 @@ window.App = window.App || {};
     });
   }
 
-  // runBossTask(text) — decompose the user's high-level goal into child tasks.
-  Orchestrator.runBossTask = function (text) {
+  // runBossTask(text, opts?) — decompose the user's high-level goal into child tasks.
+  //   opts.attachments (Contract C): files are written to the Workspace and a digest
+  //   is injected into the Boss context. opts omitted → identical to before.
+  Orchestrator.runBossTask = function (text, opts) {
     text = String(text == null ? '' : text).trim();
     if (!text) return;
 
@@ -681,6 +739,11 @@ window.App = window.App || {};
     var settings = (s && s.settings) || {};
     var ag = AGENTS();
     var boss = ensureBoss();
+
+    // Contract C: ingest any attached files into the Workspace + build a digest to
+    //   inject into the Boss context. No attachments → atts=[] / digest='' (no-op).
+    var atts = ingestAttachments(opts);
+    var attDigest = attachmentsDigest(atts);
 
     // root task
     var root = {
@@ -722,16 +785,16 @@ window.App = window.App || {};
       var startPlanning = function () {
         ag.setState(boss, 'thinking');
         ag.say(boss, '🧠 Planning…', 4000);
-        streamDecompose(root, boss, text);
+        streamDecompose(root, boss, text, attDigest);
       };
       // walk to desk seat first (best-effort)
       ag.goToFurniture(boss, 'desk', startPlanning);
     } else {
-      streamDecompose(root, null, text);
+      streamDecompose(root, null, text, attDigest);
     }
   };
 
-  function streamDecompose(root, boss, userText) {
+  function streamDecompose(root, boss, userText, attDigest) {
     var settings = STATE().settings || {};
     var roleDef = ROLES().boss || {};
     var sys = roleDef.system || '';
@@ -740,6 +803,8 @@ window.App = window.App || {};
     if (personaP) { pre.push(personaP); pre.push(''); }
     var memP = memoryBlock(boss, userText);
     if (memP) { pre.push(memP); pre.push(''); }
+    // Contract C: attached input files digest (empty string when no attachments).
+    if (attDigest) { pre.push(attDigest); pre.push(''); }
     var userMsg = pre.join('\n') + 'GOAL:\n' + userText + '\n\nReturn the JSON plan now.';
 
     var raw = '';
@@ -2473,8 +2538,10 @@ window.App = window.App || {};
     return out.join('/');
   }
 
-  // runBuild(goalText) — entry point for PROJECT BUILD mode.
-  Orchestrator.runBuild = function (goalText) {
+  // runBuild(goalText, opts?) — entry point for PROJECT BUILD mode.
+  //   opts.attachments (Contract C): files written to the Workspace + a digest is
+  //   injected into the Boss build context. opts omitted → identical to before.
+  Orchestrator.runBuild = function (goalText, opts) {
     goalText = String(goalText == null ? '' : goalText).trim();
     if (!goalText) return;
 
@@ -2482,6 +2549,11 @@ window.App = window.App || {};
     var settings = (s && s.settings) || {};
     var ag = AGENTS();
     var boss = ensureBoss();
+
+    // Contract C: ingest any attached files into the Workspace + build a digest to
+    //   inject into the Boss build context. No attachments → atts=[] / digest=''.
+    var atts = ingestAttachments(opts);
+    var attDigest = attachmentsDigest(atts);
 
     var root = {
       id: uid('t'),
@@ -2528,16 +2600,16 @@ window.App = window.App || {};
       var startPlanning = function () {
         ag.setState(boss, 'thinking');
         ag.say(boss, '🧠 Planning the project…', 4000);
-        streamDecomposeBuild(root, boss, goalText);
+        streamDecomposeBuild(root, boss, goalText, attDigest);
       };
       ag.goToFurniture(boss, 'desk', startPlanning);
     } else {
-      streamDecomposeBuild(root, null, goalText);
+      streamDecomposeBuild(root, null, goalText, attDigest);
     }
   };
 
   // streamDecomposeBuild — Boss call with BUILD_DECOMPOSE_SYSTEM → file manifest.
-  function streamDecomposeBuild(root, boss, userText) {
+  function streamDecomposeBuild(root, boss, userText, attDigest) {
     var settings = STATE().settings || {};
     var sys = CFG().BUILD_DECOMPOSE_SYSTEM ||
       ('You plan a complete, coherent, RUNNABLE multi-file software project. ' +
@@ -2550,6 +2622,8 @@ window.App = window.App || {};
     if (personaP) { pre.push(personaP); pre.push(''); }
     var memP = memoryBlock(boss, userText);
     if (memP) { pre.push(memP); pre.push(''); }
+    // Contract C: attached input files digest (empty string when no attachments).
+    if (attDigest) { pre.push(attDigest); pre.push(''); }
     var userMsg = pre.join('\n') + 'PROJECT GOAL:\n' + userText + '\n\nReturn the JSON file manifest now.';
 
     var raw = '';

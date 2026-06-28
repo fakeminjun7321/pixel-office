@@ -119,7 +119,7 @@ window.App = window.App || {};
     return {
       apiKey: '',
       openaiKey: '',                                   // v2: OpenAI key (for gpt-* models)
-      useCompanion: false,                             // v2: route Claude models through local subscription proxy
+      useCompanion: false,                             // v2: route Claude models through local subscription proxy (OPT-IN; OFF by default)
       companionUrl: c.COMPANION_URL || 'http://localhost:8787/v1/messages',
       defaultModel: c.DEFAULT_MODEL || 'claude-sonnet-4-6',
       bossModel: c.BOSS_MODEL || 'claude-opus-4-8',
@@ -128,7 +128,7 @@ window.App = window.App || {};
       sound: true,            // v3: completion chime on/off
       bgm: false,             // Wave 4a: ambient background music (procedural) on/off - default OFF
       liveChatter: false,     // v3: watercooler uses an LLM call when true; canned lines when false
-      lang: (c.DEFAULT_LANG || 'en'),  // Wave B: UI language (i18n) — 'en' | 'ko'
+      lang: (c.DEFAULT_LANG || 'ko'),  // Wave B: UI language (i18n) — 'en' | 'ko' (Korean is now the default)
       onboarded: false,       // Wave C: first-run guided tour completed flag
       // v5: GitHub push target for the project workspace. Token is stored LOCALLY
       // only (never transmitted except to api.github.com on an explicit push).
@@ -793,8 +793,13 @@ window.App = window.App || {};
     // layout: deep clone so we never persist live references
     var layout = deepClone(s.layout) || emptyLayout();
 
-    // settings: deep clone with defaults merged (then re-normalize github subobject)
+    // settings: deep clone with defaults merged (then re-normalize github subobject).
+    // deepClone is a JSON round-trip, so any non-serializable share/save artifact
+    // (e.g. a File System Access directory handle parked on settings) is dropped
+    // here automatically — directory handles live IN MEMORY on App.state._dirHandle
+    // and are NEVER persisted. Strip any stray _*-prefixed runtime keys too.
     var settings = Object.assign(defaultSettings(), deepClone(s.settings) || {});
+    settings = stripUnderscored(settings);
     settings.github = normalizeGithub(settings.github);   // v5
 
     // WAVE 1: task ledger — small runtime working-memory; persist when meaningful.
@@ -939,7 +944,10 @@ window.App = window.App || {};
     else if (typeof s._ledger === 'undefined') { s._ledger = null; }
 
     // --- settings (merge over defaults; re-normalize github subobject) ---
+    // stripUnderscored drops any stray _*-prefixed runtime keys an imported/shared
+    // blob might carry (directory handles are never serialized into a blob anyway).
     s.settings = Object.assign(defaultSettings(), (blob.settings && typeof blob.settings === 'object') ? blob.settings : {});
+    s.settings = stripUnderscored(s.settings);
     s.settings.github = normalizeGithub(s.settings.github);   // v5
 
     // --- selection ---

@@ -39,6 +39,10 @@ window.App = window.App || {};
   // ---------------------------------------------------------------------------
   Main.init = function () {
     try {
+      // 0) environment flags (defensive; never fatal).
+      detectReduceMotion();
+      injectManifest();
+
       // 1) state: load or seed.
       if (App.Store && App.Store.init) App.Store.init();
 
@@ -57,6 +61,10 @@ window.App = window.App || {};
       // 3) UI wiring.
       if (App.UI && App.UI.init) App.UI.init();
 
+      // 3b) shared-link import (async, fire-and-forget). If a state arrives via
+      //     #s=..., Share loads it through Store; refresh the UI when it lands.
+      maybeImportFromHash();
+
       // 4) loop.
       _running = true;
       _last = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -66,6 +74,135 @@ window.App = window.App || {};
       try { console && console.error && console.error('[App.main.init]', e); } catch (e2) {}
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // prefers-reduced-motion — set a pure flag on App.state. We do NOT rewrite the
+  // draw loop here; modules/CSS consult the flag. Re-read on changes.
+  // ---------------------------------------------------------------------------
+  function detectReduceMotion() {
+    try {
+      var s = STATE();
+      var mq = (typeof window !== 'undefined' && window.matchMedia)
+        ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+      var on = !!(mq && mq.matches);
+      if (s) s.reduceMotion = on;
+      if (mq) {
+        var onChange = function (e) {
+          try { var st = STATE(); if (st) st.reduceMotion = !!(e && e.matches); } catch (e2) {}
+        };
+        // addEventListener is the modern API; addListener is the legacy fallback.
+        if (mq.addEventListener) mq.addEventListener('change', onChange);
+        else if (mq.addListener) mq.addListener(onChange);
+      }
+    } catch (e) {
+      try { var st2 = STATE(); if (st2) st2.reduceMotion = false; } catch (e2) {}
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // installable Web App Manifest — generated at runtime and attached via a blob
+  // URL <link rel="manifest">, with a procedurally generated neon SVG icon so the
+  // app is installable with zero external assets. Defensive + non-fatal.
+  // ---------------------------------------------------------------------------
+  function injectManifest() {
+    try {
+      if (typeof document === 'undefined') return;
+      if (document.querySelector('link[rel="manifest"]')) return; // don't double-inject
+
+      var pal = (CFG() && CFG().palette) || {};
+      var bg = pal.void || '#070912';
+      var theme = pal.cyan || '#39d7ff';
+      var iconUrl = neonIconDataUri(theme, pal.magenta || '#ff3df0', bg);
+
+      var manifest = {
+        name: 'NEON//WORKS',
+        short_name: 'NEONWORKS',
+        description: 'A living pixel-art AI agent collective you direct like a company.',
+        start_url: '.',
+        scope: '.',
+        display: 'standalone',
+        orientation: 'any',
+        background_color: bg,
+        theme_color: theme,
+        icons: [
+          { src: iconUrl, sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' }
+        ]
+      };
+
+      var json = JSON.stringify(manifest);
+      var href;
+      try {
+        if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+          href = URL.createObjectURL(new Blob([json], { type: 'application/manifest+json' }));
+        }
+      } catch (eBlob) { href = null; }
+      if (!href) {
+        // data-URI fallback (some engines reject blob: manifests).
+        href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(json);
+      }
+
+      var link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = href;
+      var head = document.head || document.getElementsByTagName('head')[0];
+      if (head) head.appendChild(link);
+    } catch (e) {
+      try { console && console.warn && console.warn('[App.main.injectManifest]', e); } catch (e2) {}
+    }
+  }
+
+  // Build a small NEON//WORKS app icon as an SVG data-URI (no external assets).
+  function neonIconDataUri(c1, c2, bg) {
+    // 512x512 rounded-square tile with two hex nodes + a connecting bolt.
+    var svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">' +
+        '<rect width="512" height="512" rx="96" fill="' + bg + '"/>' +
+        '<g fill="none" stroke="' + c1 + '" stroke-width="22" stroke-linejoin="round">' +
+          '<path d="M150 150 L260 150 L300 215 L260 280 L150 280 L110 215 Z"/>' +
+        '</g>' +
+        '<g fill="none" stroke="' + c2 + '" stroke-width="22" stroke-linejoin="round">' +
+          '<path d="M252 232 L362 232 L402 297 L362 362 L252 362 L212 297 Z"/>' +
+        '</g>' +
+        '<path d="M236 196 L300 196 L268 256 L320 256 L210 366 L246 286 L196 286 Z" fill="' + c1 + '" opacity="0.9"/>' +
+      '</svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
+  // ---------------------------------------------------------------------------
+  // shared-link import — defer to App.Share.importFromHash() if present. It is
+  // async; on a successful load we re-render the full UI. Never throws.
+  // ---------------------------------------------------------------------------
+  function maybeImportFromHash() {
+    try {
+      if (!(App.Share && App.Share.importFromHash)) return;
+      var p = App.Share.importFromHash();
+      if (p && typeof p.then === 'function') {
+        p.then(function (loaded) {
+          if (loaded) refreshAfterLoad();
+        }, function (err) {
+          try { console && console.warn && console.warn('[App.main.importFromHash]', err); } catch (e2) {}
+        });
+      } else if (p) {
+        refreshAfterLoad();
+      }
+    } catch (e) {
+      try { console && console.warn && console.warn('[App.main.maybeImportFromHash]', e); } catch (e2) {}
+    }
+  }
+
+  // Re-render every overlay after a fresh state lands (mirror UI.init's pass).
+  function refreshAfterLoad() {
+    try {
+      var u = App.UI;
+      if (!u) return;
+      if (u.refreshArtifacts) u.refreshArtifacts();
+      if (u.refreshFiles) u.refreshFiles();
+      if (u.refreshLedger) u.refreshLedger();
+      if (u.refresh) u.refresh();
+    } catch (e) {
+      try { console && console.warn && console.warn('[App.main.refreshAfterLoad]', e); } catch (e2) {}
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // resize — size to CSS box × DPR; apply DPR transform ONCE (SPEC §4.1).

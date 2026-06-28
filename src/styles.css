@@ -1402,9 +1402,122 @@ select option{ background:var(--panel); color:var(--text); }
 .whiteboard-host{ min-height:40vh; max-height:64vh; overflow:auto; }
 .whiteboard-host canvas{ display:block; max-width:100%; image-rendering:auto; }
 
-/* reduced motion: calm all the loops */
+/* ===========================================================================
+   PWA / SHARE / ATTACH / COMPANION — dynamically-created controls
+   (App.UI builds these at runtime; App.Workspace.saveToDirectory + App.Share.*).
+   Neon theme, consistent with .btn / .hud-badge / .switch conventions above.
+   =========================================================================== */
+
+/* ----- attachment chips (📎 — staged input files before dispatch/build) ----- */
+.attach-chips{
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+  margin:8px 0 2px;
+}
+.attach-chips:empty{ display:none; }
+.attach-chip{
+  display:inline-flex; align-items:center; gap:6px; max-width:100%;
+  padding:3px 6px 3px 9px;
+  font-size:10.5px; font-weight:700; letter-spacing:.2px; color:var(--text);
+  background:rgba(155,92,255,.10);
+  border:1px solid rgba(155,92,255,.45); border-radius:99px;
+  box-shadow:0 0 8px rgba(155,92,255,.18);
+}
+.attach-chip .attach-chip-name{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.attach-chip .attach-chip-x{
+  flex:0 0 auto; cursor:pointer; line-height:1;
+  width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center;
+  font-size:11px; color:var(--text-dim);
+  background:transparent; border:none; border-radius:50%;
+  transition:color .12s, background .12s;
+}
+.attach-chip .attach-chip-x:hover{ color:var(--red); background:rgba(255,77,109,.14); }
+
+/* the 📎 trigger button can flag "n attached" via .has-attach + a count badge */
+.btn.has-attach{ color:var(--purple); border-color:rgba(155,92,255,.5); }
+.btn.has-attach:hover{ background:var(--purple); color:#10031f; border-color:var(--purple);
+  box-shadow:0 0 12px rgba(155,92,255,.4); }
+.attach-count{
+  font-size:9px; font-weight:800; line-height:1;
+  min-width:15px; padding:2px 4px; border-radius:8px;
+  color:#10031f; background:var(--purple);
+  box-shadow:0 0 8px rgba(155,92,255,.5);
+}
+
+/* ----- save-to-folder button (💾 in the Files panel) ----- */
+.btn-save-folder{ color:var(--lime); border-color:rgba(93,255,155,.5); }
+.btn-save-folder:hover{ background:var(--lime); color:#031a0d; border-color:var(--lime); box-shadow:var(--glow-lime); }
+
+/* ----- Share section (copy link / open / from-link / download / load / preset) ----- */
+.share-section{
+  margin-top:6px; padding:10px 12px;
+  background:var(--field); border:1px solid var(--divider); border-radius:6px;
+}
+.share-title{
+  font-size:10px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase;
+  color:var(--text-dim); margin-bottom:8px;
+}
+.share-row{ display:flex; flex-wrap:wrap; gap:8px; }
+.share-row + .share-row{ margin-top:8px; }
+.share-hint{ font-size:10px; color:var(--text-faint); line-height:1.45; margin-top:8px; }
+.share-link-field{
+  width:100%; margin-top:8px;
+  background:var(--void); color:var(--cyan);
+  border:1px solid var(--panel-edge); border-radius:5px;
+  padding:7px 9px; font-family:var(--mono); font-size:11px; line-height:1.4;
+  word-break:break-all; overflow:auto; max-height:64px;
+}
+.share-link-field:focus{ outline:none; border-color:var(--cyan); box-shadow:var(--glow-cyan-soft); }
+/* primary "copy link" button reuses .btn .btn-primary; .copied flashes lime */
+.btn.copied{ color:var(--lime) !important; border-color:var(--lime) !important; box-shadow:var(--glow-lime) !important; }
+
+/* ----- companion status pill (local mac-companion on/off) ----- */
+.companion-pill{
+  display:inline-flex; align-items:center; gap:7px;
+  padding:4px 10px;
+  font-size:10px; font-weight:800; letter-spacing:.6px; text-transform:uppercase;
+  border-radius:99px; user-select:none;
+  color:var(--text-dim);
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--divider);
+  transition:color .15s, border-color .15s, box-shadow .15s, background .15s;
+}
+.companion-pill .companion-dot{
+  width:8px; height:8px; border-radius:50%; flex:0 0 auto;
+  background:var(--text-faint); box-shadow:none;
+  transition:background .15s, box-shadow .15s;
+}
+.companion-pill.on{
+  color:var(--lime); border-color:rgba(93,255,155,.5);
+  background:rgba(93,255,155,.08); box-shadow:0 0 10px rgba(93,255,155,.18);
+}
+.companion-pill.on .companion-dot{ background:var(--lime); box-shadow:0 0 8px var(--lime); }
+.companion-pill.off{ color:var(--text-faint); }
+.companion-hint{ font-size:10px; color:var(--text-faint); line-height:1.45; margin-top:6px; }
+
+/* ===========================================================================
+   REDUCED MOTION — calm every DOM loop/transition when the OS asks for it.
+   App.main also sets App.state.reduceMotion as a JS flag; this block handles
+   all CSS-driven animation. (Canvas draw is governed separately in JS.)
+   =========================================================================== */
 @media (prefers-reduced-motion:reduce){
+  /* kill keyframe loops (HUD sweep, flicker, pulse, shimmer, blink, pops, toasts) */
   #hud::after, .wm-slash, .log-pulse, .task-card.status-running::after,
-  .toast-item, .modal-card, .modal-scrim{ animation:none !important; }
-  .agent-row .ar-xp-fill, .panel-level .pl-fill{ transition:none !important; }
+  .toast-item, .toast-item.leaving, .modal-card, .modal-scrim,
+  .tx-cursor::after{
+    animation:none !important;
+  }
+  /* relax incidental transitions so panels/chips/pills just appear, not glide */
+  .agent-row, .agent-row .ar-xp-fill, .panel-level .pl-fill,
+  .palette-item, .preset-card, .ar-item, .swatch,
+  .btn, .panel-x, .switch, .switch .switch-knob,
+  .companion-pill, .companion-pill .companion-dot,
+  .attach-chip .attach-chip-x, .mood-fill, .rail-scrim,
+  #agent-list, #log{
+    transition:none !important;
+  }
+  /* don't translate on hover/active (no motion cues) */
+  .agent-row:hover, .palette-item:hover, .preset-card:hover,
+  .ar-item:hover, .swatch:hover, .btn:active{
+    transform:none !important;
+  }
 }

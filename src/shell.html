@@ -13,6 +13,20 @@
 -->
 
 <!-- =======================================================================
+     PWA META — installable / standalone hints. The real <head> is emitted by
+     build.sh (charset/viewport/title/style); these tags live at the top of the
+     inlined body and are still honored by browsers (theme-color tints the OS
+     chrome; apple-* tags enable a standalone iOS web-app). The Web App Manifest
+     itself is injected at runtime by App.main (link rel="manifest", blob URL).
+     ======================================================================= -->
+<meta name="theme-color" content="#070912">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NEON//WORKS">
+<meta name="mobile-web-app-capable" content="yes">
+
+<!-- =======================================================================
      #app — root flex container: the canvas world + all DOM overlays on top.
      ======================================================================= -->
 <div id="app">
