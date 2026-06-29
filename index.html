@@ -2046,7 +2046,8 @@ window.App = window.App || {};
     researcher: '#5dff9b',  // lime
     writer: '#ffc24d',      // amber
     qa: '#ff4d6d',          // red
-    generalist: '#9b5cff'   // purple
+    generalist: '#9b5cff',  // purple
+    analyst: '#2dd4bf'      // teal (DATA/ANALYTICS dept — distinct from amber/red/purple)
   };
 
   // ---------------------------------------------------------------------------
@@ -2152,6 +2153,15 @@ window.App = window.App || {};
 'Handle whatever the instruction asks as competently as possible, end-to-end. Produce the real deliverable.\n' +
 'RESULT: line = one-sentence summary of what you delivered.';
 
+  var ANALYST_BODY =
+'ROLE: Data Analyst.\n' +
+'You turn raw data into clear metrics, charts, and decision-ready insight.\n' +
+'- Compute the actual numbers (counts, sums, means, rates, deltas, percentiles); show the key figures, not vague adjectives.\n' +
+'- When a visual helps, give a concrete chart spec (type, x/y, series) or an ASCII/structural chart the team can render.\n' +
+'- State your method and any assumptions in one line (data source, time window, how you handled gaps/outliers).\n' +
+'- Rigorously separate FACT (what the data shows) from INFERENCE (what you conclude). Never fabricate numbers.\n' +
+'RESULT: line = the single most decision-relevant metric or finding.';
+
   // ---------------------------------------------------------------------------
   // v3 §ARTIFACTS — appended to every worker instruction so concrete deliverables
   // are emitted as fenced ```artifact:<filename.ext>``` blocks the Orchestrator
@@ -2231,6 +2241,11 @@ window.App = window.App || {};
       identity: 'You are a Generalist Operator — versatile and reliable, you take any task end-to-end.',
       plan: 'Understand the ask, pick a sensible approach, and produce the real deliverable without fuss.',
       relationships: 'You fill gaps for the whole team and adapt to whatever the Boss needs next.'
+    },
+    analyst: {
+      identity: 'You are the Analyst — numerate, skeptical, and obsessed with what the data actually says.',
+      plan: 'Pull the numbers, compute the metrics, chart the signal, and separate fact from inference.',
+      relationships: 'You hand hard numbers to the Boss and the writer, and pressure-test the researcher\'s claims with data.'
     }
   };
 
@@ -2245,7 +2260,9 @@ window.App = window.App || {};
 '- "designer"  : UI/UX, visual specs, layout, copy for interfaces.\n' +
 '- "researcher": gathers/synthesizes current external information (can use web search).\n' +
 '- "writer"    : long-form prose, docs, marketing, summaries.\n' +
+'- "analyst"   : computes metrics, analyzes data, builds charts and data-driven insight from numbers.\n' +
 '- "qa"        : reviews/critiques an artifact for correctness and edge cases.\n' +
+'- "generalist": anything that does not clearly fit one of the roles above.\n' +
 '\n' +
 'Decompose the goal into 1–5 subtasks (fewer is better; only split when a different role or clearly\n' +
 'parallel piece of work is genuinely needed). Order them so dependencies come first; later tasks may\n' +
@@ -2553,6 +2570,10 @@ window.App = window.App || {};
     generalist: {
       label: 'Generalist', color: roleColor.generalist, model: 'claude-sonnet-4-6', glyph: 'star',
       webSearchPreferred: false, system: worker(GENERALIST_BODY), persona: PERSONAS.generalist
+    },
+    analyst: {
+      label: 'Analyst', color: roleColor.analyst, model: 'claude-sonnet-4-6', glyph: 'barchart',
+      webSearchPreferred: false, system: worker(ANALYST_BODY), persona: PERSONAS.analyst
     }
   };
 
@@ -2564,7 +2585,7 @@ window.App = window.App || {};
     TILE: 16,            // world px per cell edge
     PIXEL: 3,            // base upscale: 1 world px -> 3 screen px @ zoom 1 (cell = 48 screen px @ zoom1)
     GRID_COLS: 54,       // v8: enlarged so each department room fits a 3rd desk (10-person company)
-    GRID_ROWS: 36,       // v8: enlarged so each department room fits a 3rd desk (10-person company)
+    GRID_ROWS: 46,       // v9: enlarged (36->46) to add a DATA LAB + QA ROOM band below the labs (13+ person company)
 
     // camera
     ZOOM_MIN: 0.5,
@@ -3608,7 +3629,14 @@ window.App = window.App || {};
       'knowledge.clear': 'Clear all',
       'knowledge.clearAsk': 'Clear all saved company knowledge? This cannot be undone.',
       'knowledge.cleared': 'Knowledge cleared.',
-      'knowledge.unavailable': 'Knowledge base unavailable'
+      'knowledge.unavailable': 'Knowledge base unavailable',
+
+      // --- roles (department labels) ---
+      'role.analyst': 'Analyst',
+
+      // --- department / room labels (Wave 4i: data lab + qa room) ---
+      'room.dataLab': 'Data Lab',
+      'room.qa': 'QA Room'
     },
 
     ko: {
@@ -3814,7 +3842,14 @@ window.App = window.App || {};
       'knowledge.clear': '모두 지우기',
       'knowledge.clearAsk': '저장된 회사 지식을 모두 지울까요? 되돌릴 수 없습니다.',
       'knowledge.cleared': '지식을 지웠습니다.',
-      'knowledge.unavailable': '지식 베이스를 사용할 수 없습니다'
+      'knowledge.unavailable': '지식 베이스를 사용할 수 없습니다',
+
+      // --- roles (department labels) ---
+      'role.analyst': '분석가',
+
+      // --- department / room labels (Wave 4i: data lab + qa room) ---
+      'room.dataLab': '데이터 랩',
+      'room.qa': 'QA 룸'
     }
   };
 
@@ -8447,6 +8482,7 @@ window.App = window.App || {};
         case 'engineer':   drawRoleEngineer(ctx, pal, color, up, side, X); break;
         case 'designer':   drawRoleDesigner(ctx, pal, color, up, side, X); break;
         case 'researcher': drawRoleResearcher(ctx, pal, color, up, side, X); break;
+        case 'analyst':    drawRoleAnalyst(ctx, pal, color, up, side, X, frame); break;
         case 'writer':     drawRoleWriter(ctx, pal, color, up, side, X); break;
         case 'qa':         drawRoleQA(ctx, pal, color, up, side, X, state); break;
         case 'generalist':
@@ -8557,6 +8593,44 @@ window.App = window.App || {};
     pr(X(13, 1), 13, 1, 1, lime, 0.8); // ring right
     pr(X(12, 1), 13, 1, 1, '#ffffff', 0.6); // glint
     pr(X(13, 1), 15, 2, 1, '#caa15a'); // handle
+  }
+
+  // --- ANALYST (teal): rectangular data-visor + bar-chart TABLET + chest chart. -
+  // Teal accent comes from `color` (config roleColor.analyst); teal is not a palette
+  // key, so we use the passed-in color directly for the neon bits and fall back to
+  // pal.cyan if it is somehow missing. Style mirrors researcher/QA: a held prop on
+  // the front/right hand, a headwear silhouette kept for the up-facing view, and a
+  // small chest icon shown front-on only.
+  function drawRoleAnalyst(ctx, pal, color, up, side, X, frame) {
+    var teal = color || pal.cyan;
+    var visor = '#0c1a22';
+    var f = (typeof frame === 'number') ? frame : frameCounter();
+    // Wide data-visor band across the brow (kept as a silhouette even facing up).
+    pr(X(4, 8), 1, 8, 2, visor);
+    pr(X(4, 8), 1, 8, 1, '#16323e', 0.7); // top bevel
+    // Glowing teal readout line on the visor edge — the focal neon for the head.
+    withGlow(ctx, teal, 4, function () { pr(X(4, 8), 2, 8, 1, teal, 0.85); });
+    if (up) return;
+    // Rectangular glasses lenses peeking below the visor (front + side).
+    pr(X(5, 2), 3, 2, 1, teal, 0.55);
+    pr(X(9, 2), 3, 2, 1, teal, 0.55);
+    pr(X(5, 1), 3, 1, 1, '#ffffff', 0.6); // lens glint
+    // Held bar-chart tablet on the front/right hand (animated mini bars).
+    var tx = X(11, 4);
+    pr(tx, 10, 4, 6, '#0a121f');           // tablet body
+    pr(tx, 10, 4, 1, '#1a2238', 0.8);      // tablet top bezel
+    var barCols = [teal, pal.lime, pal.amber];
+    for (var b = 0; b < 3; b++) {
+      var bh = 1 + (hash('an' + b + (f >> 1)) % 3); // 1..3 art-px tall, shifting
+      pr(tx + 1 + b, 14 - bh, 1, bh, barCols[b % barCols.length], 0.9);
+    }
+    pr(tx, 15, 4, 1, teal, 0.5);           // tablet baseline glow
+    if (side) return;
+    // Chest bar-chart icon (three rising bars on a baseline) — analytics motif.
+    pr(6, 13, 4, 1, teal, 0.7);            // baseline
+    pr(6, 11, 1, 2, teal, 0.85);           // short bar
+    pr(8, 10, 1, 3, teal, 0.85);           // mid bar
+    pr(10, 9, 1, 4, teal, 0.85);           // tall bar
   }
 
   // --- WRITER (amber): pencil behind ear + scarf + notepad + pen-nib icon. -----
@@ -9896,29 +9970,30 @@ window.App = window.App || {};
   };
 
   /* ===========================================================================
-   * DEFAULT LAYOUT — the seeded neon office (v8: enlarged, multi-ROOM).
-   *   Deterministic. 54×36 grid, walled outer ring, one bottom DOOR.
+   * DEFAULT LAYOUT — the seeded neon office (v9: + DATA LAB & QA ROOM band).
+   *   Deterministic. 54×46 grid, walled outer ring, one bottom DOOR.
    *
    *   Room map (top → bottom; interior walls with DOOR gaps between rooms):
    *     ┌───────── BOSS OFFICE (cyan CARPET, top-center) ─────────┐
    *     │  ENGINEERING BAY (left)   │   DESIGN STUDIO (right)      │
    *     │  RESEARCH LAB (left)      │   MEETING ROOM (purple RUG)  │
+   *     │  DATA LAB (left, analyst) │   QA ROOM (right, qa)        │  ← v9 NEW band
    *     │  LOUNGE / BREAK ROOM (coffee + sofa-chairs + plants)     │
    *     └──────────────────────────────────────────────────────────┘
    *
-   *   10 desks total (1 boss + 3 engineering + 3 design + 3 research) so a full
-   *   10-person company AND temp workers get seats. The seeded agents' desks are
-   *   placed FIRST (in this order) so Store.seed lines up:
-   *     index 0 = Boss       → bossDesk.seat
-   *     index 1 = Engineer   → engDesk.seat   (Engineering bay)
-   *     index 2 = Designer   → desDesk.seat   (Design studio)
-   *     index 3 = Researcher → resDesk.seat   (Research lab)
-   *   The remaining 6 desks (spare engineering/design/research) are free for
-   *   writer/qa/generalist + temps via freeDeskCell().
+   *   16 desks total (1 boss + 3 engineering + 3 design + 3 research + 3 analyst +
+   *   3 qa) so the full 13-person seeded roster AND temp workers get seats. Every
+   *   desk carries a `.dept` tag = its room's role key (boss/engineer/designer/
+   *   researcher/analyst/qa) so Store.seed can seat each agent in its own room.
+   *   The seeded agents' department desks are placed in room order; Store seats by
+   *   DEPT match (role -> seat.dept), so the desk *order* no longer matters for
+   *   correctness, only that enough dept-matched seats exist.
    *
    *   This builder is robust to the grid being 30×20 (legacy) / 46×30 (v2) /
-   *   54×36 (v8): it derives every position from cols/rows, never hardcoding a
-   *   size, and the three 3rd desks are guarded so short grids skip them cleanly.
+   *   54×36 (v8) / 54×46 (v9): it derives every position from cols/rows, never
+   *   hardcoding a size. The three 3rd desks per room are guarded so short grids
+   *   skip them cleanly, and the whole DATA/QA band is guarded by `hasDataBand`
+   *   so a grid too short to host it collapses back to the classic 4-band office.
    * ========================================================================= */
   World.defaultLayout = function () {
     var c = CFG();
@@ -9999,6 +10074,26 @@ window.App = window.App || {};
     if (midBot >= labBot) midBot = Math.max(bossBot + 2, labBot - 3);
     if (bossBot >= midBot) bossBot = Math.max(y0 + 2, midBot - 2);
 
+    // v9: NEW department band — DATA LAB (left) + QA ROOM (right) — inserted between
+    // the lower labs (labBot) and the lounge. `dataBot` is the wall row below this new
+    // band; the lounge/reception/datacenter band now keys off `loungeWall` (= dataBot
+    // when the band exists, else labBot) instead of labBot. All derivational so legacy
+    // / short grids stay valid:
+    //   - The band is a FIXED 6 rows (labBot+1 .. labBot+5 interior, labBot+6 wall) —
+    //     enough for 2-3 desks per room + a walkable ring + a corridor door.
+    //   - It is ONLY built (hasDataBand) when that wall (labBot+6) still leaves a
+    //     HEALTHY lounge of >= MIN_LOUNGE_ROWS below it (so the lounge is never squeezed
+    //     to the point its left/right wings get walled off the spine). The shipping
+    //     54x46 grid clears this comfortably; a too-short grid (e.g. legacy 30x20 /
+    //     54x36) fails the test and collapses to the classic 4-band office unchanged.
+    var DATA_BAND_ROWS = 6;                          // interior rows (5) + south wall (1)
+    var MIN_LOUNGE_ROWS = 5;                          // rows the lounge must keep below dataBot
+    var dataBot = labBot + DATA_BAND_ROWS;           // candidate wall row below the new band
+    var loungeRows = y1 - (dataBot + 1) + 1;          // lounge interior rows if the band is built
+    var hasDataBand = (loungeRows >= MIN_LOUNGE_ROWS);
+    if (!hasDataBand) dataBot = labBot;              // collapse: behave like the classic 4-band office
+    var loungeWall = hasDataBand ? dataBot : labBot; // the wall the lounge sits below
+
     // Vertical divider walls between left/right rooms, placed OFF the corridor so
     // the corridor itself stays open. Left wall at corrX-1, right wall at corrX+1.
     var leftWallX  = corrX - 1;
@@ -10007,14 +10102,20 @@ window.App = window.App || {};
     // Horizontal wall under the boss office, then re-open the corridor crossing.
     wallH(x0, bossBot, (x1 - x0 + 1));
 
-    // Vertical divider walls span from below the boss office to the lounge wall.
-    wallV(leftWallX,  bossBot + 1, (labBot - (bossBot + 1) + 1));
-    wallV(rightWallX, bossBot + 1, (labBot - (bossBot + 1) + 1));
+    // Vertical divider walls span from below the boss office down to the LAST room
+    // wall (dataBot when the new band exists, else labBot). This splits the new band
+    // into DATA LAB (left of corrX) + QA ROOM (right of corrX) just like the bays/labs.
+    wallV(leftWallX,  bossBot + 1, (dataBot - (bossBot + 1) + 1));
+    wallV(rightWallX, bossBot + 1, (dataBot - (bossBot + 1) + 1));
 
     // Horizontal wall between upper bays and lower labs.
     wallH(x0, midBot, (x1 - x0 + 1));
-    // Horizontal wall above the lounge (full width).
+    // Horizontal wall between the lower labs and the new DATA/QA band.
     wallH(x0, labBot, (x1 - x0 + 1));
+    // Horizontal wall above the lounge (full width). When the new band exists this is
+    // dataBot (a distinct row below labBot); otherwise dataBot === labBot and this is a
+    // harmless re-paint of the same wall row (classic 4-band office).
+    wallH(x0, dataBot, (x1 - x0 + 1));
 
     // Keep the central corridor (corrX) carved FLOOR through EVERY wall row, so
     // boss→bays→labs→lounge is one continuous spine. (Re-FLOOR, overriding walls.)
@@ -10029,6 +10130,14 @@ window.App = window.App || {};
     door(leftWallX,  midBot + Math.max(2, Math.floor((labBot - midBot) / 2)));
     // Meeting room (lower-right): door in its west wall mid-band.
     door(rightWallX, midBot + Math.max(2, Math.floor((labBot - midBot) / 2)));
+    // v9: NEW band rooms — DATA LAB + QA ROOM each door onto the corridor (only when
+    // the band actually exists; on a collapsed grid dataMidRow lands on labBot's wall
+    // where doors are harmless since the rooms aren't built).
+    var dataMidRow = labBot + Math.max(2, Math.floor((dataBot - labBot) / 2));
+    if (hasDataBand) {
+      door(leftWallX,  dataMidRow);   // DATA LAB (lower-left new room) onto corridor
+      door(rightWallX, dataMidRow);   // QA ROOM (lower-right new room) onto corridor
+    }
 
     // --- 3) zone tiles (carpet / rug) -----------------------------------------
     // Boss office: cyan CARPET band across the top room.
@@ -10075,16 +10184,18 @@ window.App = window.App || {};
     paintIf(doorX - 3, y1 - 2, 7, 3, WOOD);
 
     // KITCHEN / PANTRY: tiled hygienic floor in the lounge's left third.
+    // v9: lounge floor zones key off loungeWall (= dataBot when the new band exists,
+    // else labBot) so the WOOD/TILE/GRASS lands in the LOUNGE, not the new rooms.
     var kitchenX = x0 + 1;
-    var kitchenY = labBot + 1;
+    var kitchenY = loungeWall + 1;
     paintIf(kitchenX, kitchenY, 5, Math.max(2, y1 - kitchenY + 1), TILEFLOOR);
 
     // LOUNGE core: cozy WOOD floor across the lounge center band.
-    paintIf(corrX - 5, labBot + 1, 11, Math.max(2, y1 - (labBot + 1) + 1), WOOD);
+    paintIf(corrX - 5, loungeWall + 1, 11, Math.max(2, y1 - (loungeWall + 1) + 1), WOOD);
 
     // ATRIUM: a GRASS patch in the lounge's right third (greenery zone).
     var atriumX = x1 - 5;
-    var atriumY = labBot + 1;
+    var atriumY = loungeWall + 1;
     paintIf(atriumX, atriumY, 5, Math.max(2, y1 - atriumY + 1), GRASS);
 
     // NEONFLOOR accents in the department rooms (glowing strips, walkable).
@@ -10092,6 +10203,11 @@ window.App = window.App || {};
     paintIf(corrX - 5, midBot - 1, 4, 1, NEONFLOOR);            // engineering bay strip
     paintIf(corrX + 2, midBot - 1, 4, 1, NEONFLOOR);            // design studio strip
     paintIf(corrX - 5, labBot - 1, 4, 1, NEONFLOOR);            // research lab strip
+    // v9: glowing strips along the south wall of the new DATA LAB + QA ROOM band.
+    if (hasDataBand) {
+      paintIf(corrX - 5, dataBot - 1, 4, 1, NEONFLOOR);        // data lab strip
+      paintIf(corrX + 2, dataBot - 1, 4, 1, NEONFLOOR);        // qa room strip
+    }
 
     // --- 4) furniture builder -------------------------------------------------
     var furniture = [];
@@ -10143,7 +10259,7 @@ window.App = window.App || {};
     // Desk 2x1 facing DOWN; seat directly below center.
     var bossDeskX = bossCx - 1;
     var bossDeskY = y0 + 1;
-    var bossDesk = place('desk', bossDeskX, bossDeskY, 'down');
+    var bossDesk = place('desk', bossDeskX, bossDeskY, 'down', { dept: 'boss' });
     place('chair', bossDesk.seatGx, bossDesk.seatGy, 'up');
     place('server', bossDeskX + 3, bossDeskY, 'down');           // rack beside the desk
     place('neonSign', bossCx, y0, 'down');                       // logo on back wall row
@@ -10158,17 +10274,17 @@ window.App = window.App || {};
     var engRowTop = bossBot + 2;
     var engRowBot = bossBot + Math.max(4, Math.floor((midBot - bossBot) * 0.6));
     // index 1: Engineer (seeded) — upper engineering desk
-    var engDesk = place('desk', engColX, engRowTop, 'right');
+    var engDesk = place('desk', engColX, engRowTop, 'right', { dept: 'engineer' });
     place('chair', engDesk.seatGx, engDesk.seatGy, 'left');
     // spare engineering desk (free for temps)
-    var engDesk2 = place('desk', engColX, engRowBot, 'right');
+    var engDesk2 = place('desk', engColX, engRowBot, 'right', { dept: 'engineer' });
     place('chair', engDesk2.seatGx, engDesk2.seatGy, 'left');
     // v8: third engineering desk (free for temps) — the enlarged grid makes the bay
     // tall enough for a third row of seating below engDesk2. Guarded so it is only
     // placed when an interior row remains above the room's south wall (midBot).
     var engRow3 = engRowBot + 2;
     if (engRow3 <= midBot - 1) {
-      var engDesk3 = place('desk', engColX, engRow3, 'right');
+      var engDesk3 = place('desk', engColX, engRow3, 'right', { dept: 'engineer' });
       place('chair', engDesk3.seatGx, engDesk3.seatGy, 'left');
     }
     place('server', x0, engRowTop, 'down');        // a little server rack in the bay
@@ -10184,16 +10300,16 @@ window.App = window.App || {};
     var desRowTop = bossBot + 2;
     var desRowBot = bossBot + Math.max(4, Math.floor((midBot - bossBot) * 0.6));
     // index 2: Designer (seeded) — upper design desk
-    var desDesk = place('desk', desColX, desRowTop, 'left');
+    var desDesk = place('desk', desColX, desRowTop, 'left', { dept: 'designer' });
     place('chair', desDesk.seatGx, desDesk.seatGy, 'right');
     // spare design desk (free for temps)
-    var desDesk2 = place('desk', desColX, desRowBot, 'left');
+    var desDesk2 = place('desk', desColX, desRowBot, 'left', { dept: 'designer' });
     place('chair', desDesk2.seatGx, desDesk2.seatGy, 'right');
     // v8: third design desk (free for temps) — fits in the enlarged studio below
     // desDesk2. Same guard as engineering so legacy/short grids skip it cleanly.
     var desRow3 = desRowBot + 2;
     if (desRow3 <= midBot - 1) {
-      var desDesk3 = place('desk', desColX, desRow3, 'left');
+      var desDesk3 = place('desk', desColX, desRow3, 'left', { dept: 'designer' });
       place('chair', desDesk3.seatGx, desDesk3.seatGy, 'right');
     }
     place('whiteboard', desColX, desRowTop - 1, 'down');   // studio whiteboard
@@ -10208,16 +10324,16 @@ window.App = window.App || {};
     var resRowTop = midBot + 2;
     var resRowBot = midBot + Math.max(4, Math.floor((labBot - midBot) * 0.55));
     // index 3: Researcher (seeded) — upper research desk
-    var resDesk = place('desk', resColX, resRowTop, 'right');
+    var resDesk = place('desk', resColX, resRowTop, 'right', { dept: 'researcher' });
     place('chair', resDesk.seatGx, resDesk.seatGy, 'left');
     // spare research desk (free for temps)
-    var resDesk2 = place('desk', resColX, resRowBot, 'right');
+    var resDesk2 = place('desk', resColX, resRowBot, 'right', { dept: 'researcher' });
     place('chair', resDesk2.seatGx, resDesk2.seatGy, 'left');
     // v8: third research desk (free for temps) — the enlarged lab has room for a
     // third row below resDesk2. Guarded against the lab's south wall (labBot).
     var resRow3 = resRowBot + 2;
     if (resRow3 <= labBot - 1) {
-      var resDesk3 = place('desk', resColX, resRow3, 'right');
+      var resDesk3 = place('desk', resColX, resRow3, 'right', { dept: 'researcher' });
       place('chair', resDesk3.seatGx, resDesk3.seatGy, 'left');
     }
     // research server racks (datacenter-ish cluster in the lab corner)
@@ -10240,7 +10356,56 @@ window.App = window.App || {};
     place('tv', x1 - 1, meetY - 1, 'down');                      // 2x1 presentation screen
     place('pottedTree', x1, labBot - 1, 'down');                 // corner greenery
 
-    // ===== LOUNGE / BREAK ROOM (bottom band, full width below labBot) =====
+    // ===== DATA LAB (lower-left NEW room, mirrors the research lab) =====
+    // Analyst department: desks hug the corridor (seat toward corrX) exactly like the
+    // engineering/research bays, with a server stack + monitor wall + chart whiteboard
+    // for data flavor. Only built when the new band exists (hasDataBand); the room is
+    // doored onto the corridor at dataMidRow above, and the connectivity guard below
+    // keeps the spine open, so every analyst seat is reachable from the entrance.
+    if (hasDataBand) {
+      var dataColX  = corrX - 4;                 // desk spans dataColX..dataColX+1; seat at corrX-2 (toward corridor)
+      var dataRowTop = labBot + 2;
+      var dataRowBot = labBot + Math.max(3, Math.floor((dataBot - labBot) * 0.6));
+      var dataDesk = place('desk', dataColX, dataRowTop, 'right', { dept: 'analyst' });
+      place('chair', dataDesk.seatGx, dataDesk.seatGy, 'left');
+      var dataDesk2 = place('desk', dataColX, dataRowBot, 'right', { dept: 'analyst' });
+      place('chair', dataDesk2.seatGx, dataDesk2.seatGy, 'left');
+      // third analyst desk (spare) when an interior row remains above the band's wall.
+      var dataRow3 = dataRowBot + 2;
+      if (dataRow3 <= dataBot - 1) {
+        var dataDesk3 = place('desk', dataColX, dataRow3, 'right', { dept: 'analyst' });
+        place('chair', dataDesk3.seatGx, dataDesk3.seatGy, 'left');
+      }
+      // Data-flavored decor: a server stack + a monitor/dashboard wall (tv) + a chart
+      // whiteboard, plus a plant kept OFF the desk column so it never overlaps a desk.
+      place('server', x0, dataRowTop, 'down');
+      place('server', x0, dataRowTop + 1, 'down');
+      place('tv', x0 + 1, dataRowTop, 'down');                   // 2x1 dashboard/monitor wall
+      place('whiteboard', dataColX, dataRowTop - 1, 'down');     // metrics / chart board
+      place('plant', x0 + 3, dataRowTop + 1, 'down');            // greenery clear of desks
+
+      // ===== QA ROOM (lower-right NEW room, mirrors the design studio) =====
+      // QA department: desks hug the corridor from the right (seat toward corrX), with
+      // a review whiteboard + reference bookshelf + printer for QA flavor.
+      var qaColX  = corrX + 4;                   // desk spans qaColX..qaColX+1; seat at corrX+3 (toward corridor)
+      var qaRowTop = labBot + 2;
+      var qaRowBot = labBot + Math.max(3, Math.floor((dataBot - labBot) * 0.6));
+      var qaDesk = place('desk', qaColX, qaRowTop, 'left', { dept: 'qa' });
+      place('chair', qaDesk.seatGx, qaDesk.seatGy, 'right');
+      var qaDesk2 = place('desk', qaColX, qaRowBot, 'left', { dept: 'qa' });
+      place('chair', qaDesk2.seatGx, qaDesk2.seatGy, 'right');
+      var qaRow3 = qaRowBot + 2;
+      if (qaRow3 <= dataBot - 1) {
+        var qaDesk3 = place('desk', qaColX, qaRow3, 'left', { dept: 'qa' });
+        place('chair', qaDesk3.seatGx, qaDesk3.seatGy, 'right');
+      }
+      place('whiteboard', qaColX, qaRowTop - 1, 'down');         // review / bug board
+      place('bookshelf', x1, qaRowTop, 'down');                  // 1x2 spec/reference shelf
+      place('printer', x1 - 1, qaRowBot, 'down');                // QA printer
+      place('plant', x1 - 2, qaRowBot + 1, 'down');              // greenery clear of desks
+    }
+
+    // ===== LOUNGE / BREAK ROOM (bottom band, full width below loungeWall) =====
     // Richer break room: coffee + sofas + arcade + tv + rug + potted trees, plus a
     // KITCHEN/PANTRY on the left and a GRASS ATRIUM on the right. Everything that is
     // a loiter target keeps lounge:true so World.breakSpots() still finds it.
@@ -10250,8 +10415,8 @@ window.App = window.App || {};
     // blocking lounge furniture OFF columns corrX and doorX in the two bottom rows
     // so the door->corridor path is never sealed; the connectivity guard below is a
     // final backstop. All coordinates are clamped to the interior by place().
-    var loungeTop = labBot + 1;                      // first lounge row
-    var loungeY = labBot + 2;                        // a working row inside the lounge
+    var loungeTop = loungeWall + 1;                  // first lounge row (below the last room wall)
+    var loungeY = loungeWall + 2;                    // a working row inside the lounge
     if (loungeY > y1) loungeY = y1;                  // legacy-grid safety
     var sofaY = Math.min(y1, loungeY + 1);
 
@@ -10322,11 +10487,14 @@ window.App = window.App || {};
 
     // --- 5) connectivity guard --------------------------------------------------
     // The central corridor (corrX) is the structural spine that joins every band
-    // (boss → bays → labs → lounge). It is carved FLOOR through each wall row, but
-    // decorative BLOCKING furniture placed on the corridor AT a band-crossing row
-    // (or the lounge entry just below labBot) would seal a band off. Drop any such
-    // piece so the spine is always walkable. (Furniture inside open rooms is fine.)
-    var spineRows = [bossBot, midBot, labBot, labBot + 1, labBot + 2];
+    // (boss → bays → labs → DATA/QA → lounge). It is carved FLOOR through each wall
+    // row, but decorative BLOCKING furniture placed on the corridor AT a band-crossing
+    // row (or the lounge entry just below the last room wall) would seal a band off.
+    // Drop any such piece so the spine is always walkable. (Furniture inside open
+    // rooms is fine.) v9: include the new band wall (labBot, dataBot) + the lounge
+    // entry rows just below loungeWall. When the band collapses dataBot === labBot so
+    // the extra entries are harmless duplicates.
+    var spineRows = [bossBot, midBot, labBot, dataBot, loungeWall + 1, loungeWall + 2];
     furniture = furniture.filter(function (f) {
       if (f.walkable) return true;                 // non-blocking props never seal a path
       for (var fx = f.gx; fx < f.gx + (f.w || 1); fx++) {
@@ -13571,6 +13739,10 @@ window.App = window.App || {};
 
   // defaultLayout의 desk seat들을 순서대로 모아 시드 에이전트 배치에 사용.
   // boss desk(보통 CARPET zone, dir 'down')를 우선 식별한다.
+  // DEPT-MATCHED SEATING: each desk furniture carries a .dept (the role key of its
+  // room — boss/engineer/designer/researcher/analyst/qa; set by World.defaultLayout).
+  // We copy that .dept onto each seat so the seed can match agents to their own room
+  // (seat.dept === agent.role). Legacy/empty layouts that lack .dept yield dept ''.
   function collectDeskSeats(layout) {
     var seats = [];
     var bossSeat = null;
@@ -13579,7 +13751,12 @@ window.App = window.App || {};
       var f = furn[i];
       if (!f || f.type !== 'desk') continue;
       if (typeof f.seatGx === 'number' && typeof f.seatGy === 'number') {
-        var seat = { gx: f.seatGx, gy: f.seatGy, _y: f.gy };
+        var seat = {
+          gx: f.seatGx,
+          gy: f.seatGy,
+          _y: f.gy,
+          dept: (f.dept == null) ? '' : String(f.dept),   // role key of this desk's room
+        };
         seats.push(seat);
       }
     }
@@ -13623,75 +13800,112 @@ window.App = window.App || {};
       s._ledger = null;         // WAVE 1: fresh company starts with no ledger
       s._lastRun = null;        // WAVE 1: runtime-only
 
-      // 3) place the 4 default agents at desks (§9: boss, engineer, designer, researcher)
+      // 3) place the 13 default agents at desks, DEPT-MATCHED so each role lands in
+      //    its own room (boss office / engineering bay / design studio / research lab /
+      //    data lab / qa room). Two-pass assignment over the collected desk seats.
       var collected = collectDeskSeats(s.layout);
       var seats = collected.seats;
       var roles = rolesTable();
 
-      // 시드 정의 — 색/모델은 ROLES에서 해석(§5.1, §6 defaults).
-      // Order matters: worker seats are consumed gy-sorted as
-      // [eng,des,eng,des,eng,des,res,res,res], so this order lands each role in
-      // its own room (engineers in the bay, designers in the studio, researchers
-      // in the lab) and fills the 3rd desk of each room with Generalist/Writer/QA.
+      // 시드 정의 — 색/모델은 ROLES에서 해석(§5.1, §6 defaults). 13명 로스터:
+      // Boss + 2 engineer + 2 designer + 2 researcher + 2 analyst + 2 qa + writer +
+      // generalist. The room-bound roles (engineer/designer/researcher/analyst/qa)
+      // get DEPT-MATCHED seats in PASS 1 (seat.dept === role); writer/generalist have
+      // no dedicated room and take leftover spare desks in PASS 2. Distinct names.
       var defs = [
         { name: 'Boss',         role: 'boss' },
         { name: 'Engineer',     role: 'engineer' },
-        { name: 'Designer',     role: 'designer' },
         { name: 'Engineer 2',   role: 'engineer' },
+        { name: 'Designer',     role: 'designer' },
         { name: 'Designer 2',   role: 'designer' },
-        { name: 'Generalist',   role: 'generalist' },
-        { name: 'Writer',       role: 'writer' },
         { name: 'Researcher',   role: 'researcher' },
         { name: 'Researcher 2', role: 'researcher' },
+        { name: 'Analyst',      role: 'analyst' },
+        { name: 'Analyst 2',    role: 'analyst' },
         { name: 'QA',           role: 'qa' },
+        { name: 'QA 2',         role: 'qa' },
+        { name: 'Writer',       role: 'writer' },
+        { name: 'Generalist',   role: 'generalist' },
       ];
 
-      // 좌석 할당: boss는 bossSeat 우선, 나머지는 남은 좌석을 순서대로.
-      // bossSeat을 워커 풀에서 제외하기 위해 인덱스를 추적.
+      // 좌석 풀: boss는 bossSeat 우선, 나머지는 남은(아직 점유 안 된) 좌석에서 배정.
+      // bossSeat을 워커 풀에서 제외한다(동일 셀이 두 번 쓰이지 않도록).
       var bossSeat = collected.bossSeat;
-      var workerSeats = [];
+      var freeSeats = [];
       for (var si = 0; si < seats.length; si++) {
         var seat = seats[si];
-        if (bossSeat && seat.gx === bossSeat.gx && seat.gy === bossSeat.gy && workerSeats.length === seats.length - 1) {
-          // safety; not normally reached
-        }
-        workerSeats.push(seat);
+        if (bossSeat && seat.gx === bossSeat.gx && seat.gy === bossSeat.gy) continue;  // reserved for boss
+        freeSeats.push(seat);   // shared mutable pool: claimed seats are spliced out
       }
-      // boss 좌석을 워커 풀에서 한 번 제거
-      if (bossSeat) {
-        for (var wi = 0; wi < workerSeats.length; wi++) {
-          if (workerSeats[wi].gx === bossSeat.gx && workerSeats[wi].gy === bossSeat.gy) {
-            workerSeats.splice(wi, 1);
+
+      // 한 def에 좌석을 확정 배정(좌표를 spec에 싣고 그 좌석을 풀에서 제거).
+      function claimSeat(pool, idx, spec) {
+        var seat = pool[idx];
+        pool.splice(idx, 1);            // remove so it can never be reused (no overlap)
+        spec.gx = seat.gx;
+        spec.gy = seat.gy;
+        return true;
+      }
+
+      // 각 def의 spec을 미리 만들어 두고(좌석은 아직 미정), seated 플래그로 추적.
+      var specs = [];
+      for (var di = 0; di < defs.length; di++) {
+        var d = defs[di];
+        specs.push({
+          def: d,
+          seated: false,
+          spec: {
+            name: d.name,
+            role: d.role,
+            color: (roles[d.role] && roles[d.role].color) || undefined,
+            model: (roles[d.role] && roles[d.role].model) || undefined,
+            systemPrompt: (roles[d.role] && roles[d.role].system) || undefined,
+          },
+        });
+      }
+
+      // BOSS: 항상 bossSeat에 앉힌다(있을 때).
+      for (var bi = 0; bi < specs.length; bi++) {
+        if (specs[bi].def.role !== 'boss') continue;
+        if (bossSeat && typeof bossSeat.gx === 'number') {
+          specs[bi].spec.gx = bossSeat.gx;
+          specs[bi].spec.gy = bossSeat.gy;
+        }
+        specs[bi].seated = true;   // boss handled (seat assigned or left to fallback)
+        break;
+      }
+
+      // PASS 1 — ROLE-MATCHED: in defs order, each non-boss agent claims a still-free
+      // seat whose seat.dept === agent.role (lands the agent in its own room).
+      for (var p1 = 0; p1 < specs.length; p1++) {
+        var entry1 = specs[p1];
+        if (entry1.seated) continue;                       // boss already done
+        var role1 = entry1.def.role;
+        for (var fs1 = 0; fs1 < freeSeats.length; fs1++) {
+          if (freeSeats[fs1].dept === role1) {
+            claimSeat(freeSeats, fs1, entry1.spec);
+            entry1.seated = true;
             break;
           }
         }
       }
 
-      var workerIdx = 0;
-      for (var di = 0; di < defs.length; di++) {
-        var d = defs[di];
-        var spec = {
-          name: d.name,
-          role: d.role,
-          color: (roles[d.role] && roles[d.role].color) || undefined,
-          model: (roles[d.role] && roles[d.role].model) || undefined,
-          systemPrompt: (roles[d.role] && roles[d.role].system) || undefined,
-        };
+      // PASS 2 — LEFTOVERS: any agent not yet seated (writer/generalist with no
+      // dedicated room, or a room-role that ran out of matched desks) takes any
+      // remaining free seat in order. If none remain, makeAgent's freeDeskCell
+      // fallback finds a desk; specs carry no gx/gy so that path is taken.
+      for (var p2 = 0; p2 < specs.length; p2++) {
+        var entry2 = specs[p2];
+        if (entry2.seated) continue;
+        if (freeSeats.length) {
+          claimSeat(freeSeats, 0, entry2.spec);
+        }
+        entry2.seated = true;   // either got a leftover seat or will use makeAgent fallback
+      }
 
-        // 좌석 좌표 결정
-        var cell = null;
-        if (d.role === 'boss' && bossSeat) {
-          cell = bossSeat;
-        } else if (workerSeats.length) {
-          cell = workerSeats[workerIdx % workerSeats.length];
-          workerIdx++;
-        }
-        if (cell && typeof cell.gx === 'number') {
-          spec.gx = cell.gx;
-          spec.gy = cell.gy;
-        }
-        // 좌석이 전혀 없으면 makeAgent가 freeDeskCell/폴백으로 처리.
-        makeAgent(spec);
+      // 최종 생성 — defs 순서대로. 좌석 좌표가 있으면 사용, 없으면 makeAgent 폴백.
+      for (var mk = 0; mk < specs.length; mk++) {
+        makeAgent(specs[mk].spec);
       }
 
       // 4) seed log entry

@@ -1173,6 +1173,7 @@ window.App = window.App || {};
         case 'engineer':   drawRoleEngineer(ctx, pal, color, up, side, X); break;
         case 'designer':   drawRoleDesigner(ctx, pal, color, up, side, X); break;
         case 'researcher': drawRoleResearcher(ctx, pal, color, up, side, X); break;
+        case 'analyst':    drawRoleAnalyst(ctx, pal, color, up, side, X, frame); break;
         case 'writer':     drawRoleWriter(ctx, pal, color, up, side, X); break;
         case 'qa':         drawRoleQA(ctx, pal, color, up, side, X, state); break;
         case 'generalist':
@@ -1283,6 +1284,44 @@ window.App = window.App || {};
     pr(X(13, 1), 13, 1, 1, lime, 0.8); // ring right
     pr(X(12, 1), 13, 1, 1, '#ffffff', 0.6); // glint
     pr(X(13, 1), 15, 2, 1, '#caa15a'); // handle
+  }
+
+  // --- ANALYST (teal): rectangular data-visor + bar-chart TABLET + chest chart. -
+  // Teal accent comes from `color` (config roleColor.analyst); teal is not a palette
+  // key, so we use the passed-in color directly for the neon bits and fall back to
+  // pal.cyan if it is somehow missing. Style mirrors researcher/QA: a held prop on
+  // the front/right hand, a headwear silhouette kept for the up-facing view, and a
+  // small chest icon shown front-on only.
+  function drawRoleAnalyst(ctx, pal, color, up, side, X, frame) {
+    var teal = color || pal.cyan;
+    var visor = '#0c1a22';
+    var f = (typeof frame === 'number') ? frame : frameCounter();
+    // Wide data-visor band across the brow (kept as a silhouette even facing up).
+    pr(X(4, 8), 1, 8, 2, visor);
+    pr(X(4, 8), 1, 8, 1, '#16323e', 0.7); // top bevel
+    // Glowing teal readout line on the visor edge — the focal neon for the head.
+    withGlow(ctx, teal, 4, function () { pr(X(4, 8), 2, 8, 1, teal, 0.85); });
+    if (up) return;
+    // Rectangular glasses lenses peeking below the visor (front + side).
+    pr(X(5, 2), 3, 2, 1, teal, 0.55);
+    pr(X(9, 2), 3, 2, 1, teal, 0.55);
+    pr(X(5, 1), 3, 1, 1, '#ffffff', 0.6); // lens glint
+    // Held bar-chart tablet on the front/right hand (animated mini bars).
+    var tx = X(11, 4);
+    pr(tx, 10, 4, 6, '#0a121f');           // tablet body
+    pr(tx, 10, 4, 1, '#1a2238', 0.8);      // tablet top bezel
+    var barCols = [teal, pal.lime, pal.amber];
+    for (var b = 0; b < 3; b++) {
+      var bh = 1 + (hash('an' + b + (f >> 1)) % 3); // 1..3 art-px tall, shifting
+      pr(tx + 1 + b, 14 - bh, 1, bh, barCols[b % barCols.length], 0.9);
+    }
+    pr(tx, 15, 4, 1, teal, 0.5);           // tablet baseline glow
+    if (side) return;
+    // Chest bar-chart icon (three rising bars on a baseline) — analytics motif.
+    pr(6, 13, 4, 1, teal, 0.7);            // baseline
+    pr(6, 11, 1, 2, teal, 0.85);           // short bar
+    pr(8, 10, 1, 3, teal, 0.85);           // mid bar
+    pr(10, 9, 1, 4, teal, 0.85);           // tall bar
   }
 
   // --- WRITER (amber): pencil behind ear + scarf + notepad + pen-nib icon. -----

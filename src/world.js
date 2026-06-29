@@ -446,29 +446,30 @@ window.App = window.App || {};
   };
 
   /* ===========================================================================
-   * DEFAULT LAYOUT — the seeded neon office (v8: enlarged, multi-ROOM).
-   *   Deterministic. 54×36 grid, walled outer ring, one bottom DOOR.
+   * DEFAULT LAYOUT — the seeded neon office (v9: + DATA LAB & QA ROOM band).
+   *   Deterministic. 54×46 grid, walled outer ring, one bottom DOOR.
    *
    *   Room map (top → bottom; interior walls with DOOR gaps between rooms):
    *     ┌───────── BOSS OFFICE (cyan CARPET, top-center) ─────────┐
    *     │  ENGINEERING BAY (left)   │   DESIGN STUDIO (right)      │
    *     │  RESEARCH LAB (left)      │   MEETING ROOM (purple RUG)  │
+   *     │  DATA LAB (left, analyst) │   QA ROOM (right, qa)        │  ← v9 NEW band
    *     │  LOUNGE / BREAK ROOM (coffee + sofa-chairs + plants)     │
    *     └──────────────────────────────────────────────────────────┘
    *
-   *   10 desks total (1 boss + 3 engineering + 3 design + 3 research) so a full
-   *   10-person company AND temp workers get seats. The seeded agents' desks are
-   *   placed FIRST (in this order) so Store.seed lines up:
-   *     index 0 = Boss       → bossDesk.seat
-   *     index 1 = Engineer   → engDesk.seat   (Engineering bay)
-   *     index 2 = Designer   → desDesk.seat   (Design studio)
-   *     index 3 = Researcher → resDesk.seat   (Research lab)
-   *   The remaining 6 desks (spare engineering/design/research) are free for
-   *   writer/qa/generalist + temps via freeDeskCell().
+   *   16 desks total (1 boss + 3 engineering + 3 design + 3 research + 3 analyst +
+   *   3 qa) so the full 13-person seeded roster AND temp workers get seats. Every
+   *   desk carries a `.dept` tag = its room's role key (boss/engineer/designer/
+   *   researcher/analyst/qa) so Store.seed can seat each agent in its own room.
+   *   The seeded agents' department desks are placed in room order; Store seats by
+   *   DEPT match (role -> seat.dept), so the desk *order* no longer matters for
+   *   correctness, only that enough dept-matched seats exist.
    *
    *   This builder is robust to the grid being 30×20 (legacy) / 46×30 (v2) /
-   *   54×36 (v8): it derives every position from cols/rows, never hardcoding a
-   *   size, and the three 3rd desks are guarded so short grids skip them cleanly.
+   *   54×36 (v8) / 54×46 (v9): it derives every position from cols/rows, never
+   *   hardcoding a size. The three 3rd desks per room are guarded so short grids
+   *   skip them cleanly, and the whole DATA/QA band is guarded by `hasDataBand`
+   *   so a grid too short to host it collapses back to the classic 4-band office.
    * ========================================================================= */
   World.defaultLayout = function () {
     var c = CFG();
@@ -549,6 +550,26 @@ window.App = window.App || {};
     if (midBot >= labBot) midBot = Math.max(bossBot + 2, labBot - 3);
     if (bossBot >= midBot) bossBot = Math.max(y0 + 2, midBot - 2);
 
+    // v9: NEW department band — DATA LAB (left) + QA ROOM (right) — inserted between
+    // the lower labs (labBot) and the lounge. `dataBot` is the wall row below this new
+    // band; the lounge/reception/datacenter band now keys off `loungeWall` (= dataBot
+    // when the band exists, else labBot) instead of labBot. All derivational so legacy
+    // / short grids stay valid:
+    //   - The band is a FIXED 6 rows (labBot+1 .. labBot+5 interior, labBot+6 wall) —
+    //     enough for 2-3 desks per room + a walkable ring + a corridor door.
+    //   - It is ONLY built (hasDataBand) when that wall (labBot+6) still leaves a
+    //     HEALTHY lounge of >= MIN_LOUNGE_ROWS below it (so the lounge is never squeezed
+    //     to the point its left/right wings get walled off the spine). The shipping
+    //     54x46 grid clears this comfortably; a too-short grid (e.g. legacy 30x20 /
+    //     54x36) fails the test and collapses to the classic 4-band office unchanged.
+    var DATA_BAND_ROWS = 6;                          // interior rows (5) + south wall (1)
+    var MIN_LOUNGE_ROWS = 5;                          // rows the lounge must keep below dataBot
+    var dataBot = labBot + DATA_BAND_ROWS;           // candidate wall row below the new band
+    var loungeRows = y1 - (dataBot + 1) + 1;          // lounge interior rows if the band is built
+    var hasDataBand = (loungeRows >= MIN_LOUNGE_ROWS);
+    if (!hasDataBand) dataBot = labBot;              // collapse: behave like the classic 4-band office
+    var loungeWall = hasDataBand ? dataBot : labBot; // the wall the lounge sits below
+
     // Vertical divider walls between left/right rooms, placed OFF the corridor so
     // the corridor itself stays open. Left wall at corrX-1, right wall at corrX+1.
     var leftWallX  = corrX - 1;
@@ -557,14 +578,20 @@ window.App = window.App || {};
     // Horizontal wall under the boss office, then re-open the corridor crossing.
     wallH(x0, bossBot, (x1 - x0 + 1));
 
-    // Vertical divider walls span from below the boss office to the lounge wall.
-    wallV(leftWallX,  bossBot + 1, (labBot - (bossBot + 1) + 1));
-    wallV(rightWallX, bossBot + 1, (labBot - (bossBot + 1) + 1));
+    // Vertical divider walls span from below the boss office down to the LAST room
+    // wall (dataBot when the new band exists, else labBot). This splits the new band
+    // into DATA LAB (left of corrX) + QA ROOM (right of corrX) just like the bays/labs.
+    wallV(leftWallX,  bossBot + 1, (dataBot - (bossBot + 1) + 1));
+    wallV(rightWallX, bossBot + 1, (dataBot - (bossBot + 1) + 1));
 
     // Horizontal wall between upper bays and lower labs.
     wallH(x0, midBot, (x1 - x0 + 1));
-    // Horizontal wall above the lounge (full width).
+    // Horizontal wall between the lower labs and the new DATA/QA band.
     wallH(x0, labBot, (x1 - x0 + 1));
+    // Horizontal wall above the lounge (full width). When the new band exists this is
+    // dataBot (a distinct row below labBot); otherwise dataBot === labBot and this is a
+    // harmless re-paint of the same wall row (classic 4-band office).
+    wallH(x0, dataBot, (x1 - x0 + 1));
 
     // Keep the central corridor (corrX) carved FLOOR through EVERY wall row, so
     // boss→bays→labs→lounge is one continuous spine. (Re-FLOOR, overriding walls.)
@@ -579,6 +606,14 @@ window.App = window.App || {};
     door(leftWallX,  midBot + Math.max(2, Math.floor((labBot - midBot) / 2)));
     // Meeting room (lower-right): door in its west wall mid-band.
     door(rightWallX, midBot + Math.max(2, Math.floor((labBot - midBot) / 2)));
+    // v9: NEW band rooms — DATA LAB + QA ROOM each door onto the corridor (only when
+    // the band actually exists; on a collapsed grid dataMidRow lands on labBot's wall
+    // where doors are harmless since the rooms aren't built).
+    var dataMidRow = labBot + Math.max(2, Math.floor((dataBot - labBot) / 2));
+    if (hasDataBand) {
+      door(leftWallX,  dataMidRow);   // DATA LAB (lower-left new room) onto corridor
+      door(rightWallX, dataMidRow);   // QA ROOM (lower-right new room) onto corridor
+    }
 
     // --- 3) zone tiles (carpet / rug) -----------------------------------------
     // Boss office: cyan CARPET band across the top room.
@@ -625,16 +660,18 @@ window.App = window.App || {};
     paintIf(doorX - 3, y1 - 2, 7, 3, WOOD);
 
     // KITCHEN / PANTRY: tiled hygienic floor in the lounge's left third.
+    // v9: lounge floor zones key off loungeWall (= dataBot when the new band exists,
+    // else labBot) so the WOOD/TILE/GRASS lands in the LOUNGE, not the new rooms.
     var kitchenX = x0 + 1;
-    var kitchenY = labBot + 1;
+    var kitchenY = loungeWall + 1;
     paintIf(kitchenX, kitchenY, 5, Math.max(2, y1 - kitchenY + 1), TILEFLOOR);
 
     // LOUNGE core: cozy WOOD floor across the lounge center band.
-    paintIf(corrX - 5, labBot + 1, 11, Math.max(2, y1 - (labBot + 1) + 1), WOOD);
+    paintIf(corrX - 5, loungeWall + 1, 11, Math.max(2, y1 - (loungeWall + 1) + 1), WOOD);
 
     // ATRIUM: a GRASS patch in the lounge's right third (greenery zone).
     var atriumX = x1 - 5;
-    var atriumY = labBot + 1;
+    var atriumY = loungeWall + 1;
     paintIf(atriumX, atriumY, 5, Math.max(2, y1 - atriumY + 1), GRASS);
 
     // NEONFLOOR accents in the department rooms (glowing strips, walkable).
@@ -642,6 +679,11 @@ window.App = window.App || {};
     paintIf(corrX - 5, midBot - 1, 4, 1, NEONFLOOR);            // engineering bay strip
     paintIf(corrX + 2, midBot - 1, 4, 1, NEONFLOOR);            // design studio strip
     paintIf(corrX - 5, labBot - 1, 4, 1, NEONFLOOR);            // research lab strip
+    // v9: glowing strips along the south wall of the new DATA LAB + QA ROOM band.
+    if (hasDataBand) {
+      paintIf(corrX - 5, dataBot - 1, 4, 1, NEONFLOOR);        // data lab strip
+      paintIf(corrX + 2, dataBot - 1, 4, 1, NEONFLOOR);        // qa room strip
+    }
 
     // --- 4) furniture builder -------------------------------------------------
     var furniture = [];
@@ -693,7 +735,7 @@ window.App = window.App || {};
     // Desk 2x1 facing DOWN; seat directly below center.
     var bossDeskX = bossCx - 1;
     var bossDeskY = y0 + 1;
-    var bossDesk = place('desk', bossDeskX, bossDeskY, 'down');
+    var bossDesk = place('desk', bossDeskX, bossDeskY, 'down', { dept: 'boss' });
     place('chair', bossDesk.seatGx, bossDesk.seatGy, 'up');
     place('server', bossDeskX + 3, bossDeskY, 'down');           // rack beside the desk
     place('neonSign', bossCx, y0, 'down');                       // logo on back wall row
@@ -708,17 +750,17 @@ window.App = window.App || {};
     var engRowTop = bossBot + 2;
     var engRowBot = bossBot + Math.max(4, Math.floor((midBot - bossBot) * 0.6));
     // index 1: Engineer (seeded) — upper engineering desk
-    var engDesk = place('desk', engColX, engRowTop, 'right');
+    var engDesk = place('desk', engColX, engRowTop, 'right', { dept: 'engineer' });
     place('chair', engDesk.seatGx, engDesk.seatGy, 'left');
     // spare engineering desk (free for temps)
-    var engDesk2 = place('desk', engColX, engRowBot, 'right');
+    var engDesk2 = place('desk', engColX, engRowBot, 'right', { dept: 'engineer' });
     place('chair', engDesk2.seatGx, engDesk2.seatGy, 'left');
     // v8: third engineering desk (free for temps) — the enlarged grid makes the bay
     // tall enough for a third row of seating below engDesk2. Guarded so it is only
     // placed when an interior row remains above the room's south wall (midBot).
     var engRow3 = engRowBot + 2;
     if (engRow3 <= midBot - 1) {
-      var engDesk3 = place('desk', engColX, engRow3, 'right');
+      var engDesk3 = place('desk', engColX, engRow3, 'right', { dept: 'engineer' });
       place('chair', engDesk3.seatGx, engDesk3.seatGy, 'left');
     }
     place('server', x0, engRowTop, 'down');        // a little server rack in the bay
@@ -734,16 +776,16 @@ window.App = window.App || {};
     var desRowTop = bossBot + 2;
     var desRowBot = bossBot + Math.max(4, Math.floor((midBot - bossBot) * 0.6));
     // index 2: Designer (seeded) — upper design desk
-    var desDesk = place('desk', desColX, desRowTop, 'left');
+    var desDesk = place('desk', desColX, desRowTop, 'left', { dept: 'designer' });
     place('chair', desDesk.seatGx, desDesk.seatGy, 'right');
     // spare design desk (free for temps)
-    var desDesk2 = place('desk', desColX, desRowBot, 'left');
+    var desDesk2 = place('desk', desColX, desRowBot, 'left', { dept: 'designer' });
     place('chair', desDesk2.seatGx, desDesk2.seatGy, 'right');
     // v8: third design desk (free for temps) — fits in the enlarged studio below
     // desDesk2. Same guard as engineering so legacy/short grids skip it cleanly.
     var desRow3 = desRowBot + 2;
     if (desRow3 <= midBot - 1) {
-      var desDesk3 = place('desk', desColX, desRow3, 'left');
+      var desDesk3 = place('desk', desColX, desRow3, 'left', { dept: 'designer' });
       place('chair', desDesk3.seatGx, desDesk3.seatGy, 'right');
     }
     place('whiteboard', desColX, desRowTop - 1, 'down');   // studio whiteboard
@@ -758,16 +800,16 @@ window.App = window.App || {};
     var resRowTop = midBot + 2;
     var resRowBot = midBot + Math.max(4, Math.floor((labBot - midBot) * 0.55));
     // index 3: Researcher (seeded) — upper research desk
-    var resDesk = place('desk', resColX, resRowTop, 'right');
+    var resDesk = place('desk', resColX, resRowTop, 'right', { dept: 'researcher' });
     place('chair', resDesk.seatGx, resDesk.seatGy, 'left');
     // spare research desk (free for temps)
-    var resDesk2 = place('desk', resColX, resRowBot, 'right');
+    var resDesk2 = place('desk', resColX, resRowBot, 'right', { dept: 'researcher' });
     place('chair', resDesk2.seatGx, resDesk2.seatGy, 'left');
     // v8: third research desk (free for temps) — the enlarged lab has room for a
     // third row below resDesk2. Guarded against the lab's south wall (labBot).
     var resRow3 = resRowBot + 2;
     if (resRow3 <= labBot - 1) {
-      var resDesk3 = place('desk', resColX, resRow3, 'right');
+      var resDesk3 = place('desk', resColX, resRow3, 'right', { dept: 'researcher' });
       place('chair', resDesk3.seatGx, resDesk3.seatGy, 'left');
     }
     // research server racks (datacenter-ish cluster in the lab corner)
@@ -790,7 +832,56 @@ window.App = window.App || {};
     place('tv', x1 - 1, meetY - 1, 'down');                      // 2x1 presentation screen
     place('pottedTree', x1, labBot - 1, 'down');                 // corner greenery
 
-    // ===== LOUNGE / BREAK ROOM (bottom band, full width below labBot) =====
+    // ===== DATA LAB (lower-left NEW room, mirrors the research lab) =====
+    // Analyst department: desks hug the corridor (seat toward corrX) exactly like the
+    // engineering/research bays, with a server stack + monitor wall + chart whiteboard
+    // for data flavor. Only built when the new band exists (hasDataBand); the room is
+    // doored onto the corridor at dataMidRow above, and the connectivity guard below
+    // keeps the spine open, so every analyst seat is reachable from the entrance.
+    if (hasDataBand) {
+      var dataColX  = corrX - 4;                 // desk spans dataColX..dataColX+1; seat at corrX-2 (toward corridor)
+      var dataRowTop = labBot + 2;
+      var dataRowBot = labBot + Math.max(3, Math.floor((dataBot - labBot) * 0.6));
+      var dataDesk = place('desk', dataColX, dataRowTop, 'right', { dept: 'analyst' });
+      place('chair', dataDesk.seatGx, dataDesk.seatGy, 'left');
+      var dataDesk2 = place('desk', dataColX, dataRowBot, 'right', { dept: 'analyst' });
+      place('chair', dataDesk2.seatGx, dataDesk2.seatGy, 'left');
+      // third analyst desk (spare) when an interior row remains above the band's wall.
+      var dataRow3 = dataRowBot + 2;
+      if (dataRow3 <= dataBot - 1) {
+        var dataDesk3 = place('desk', dataColX, dataRow3, 'right', { dept: 'analyst' });
+        place('chair', dataDesk3.seatGx, dataDesk3.seatGy, 'left');
+      }
+      // Data-flavored decor: a server stack + a monitor/dashboard wall (tv) + a chart
+      // whiteboard, plus a plant kept OFF the desk column so it never overlaps a desk.
+      place('server', x0, dataRowTop, 'down');
+      place('server', x0, dataRowTop + 1, 'down');
+      place('tv', x0 + 1, dataRowTop, 'down');                   // 2x1 dashboard/monitor wall
+      place('whiteboard', dataColX, dataRowTop - 1, 'down');     // metrics / chart board
+      place('plant', x0 + 3, dataRowTop + 1, 'down');            // greenery clear of desks
+
+      // ===== QA ROOM (lower-right NEW room, mirrors the design studio) =====
+      // QA department: desks hug the corridor from the right (seat toward corrX), with
+      // a review whiteboard + reference bookshelf + printer for QA flavor.
+      var qaColX  = corrX + 4;                   // desk spans qaColX..qaColX+1; seat at corrX+3 (toward corridor)
+      var qaRowTop = labBot + 2;
+      var qaRowBot = labBot + Math.max(3, Math.floor((dataBot - labBot) * 0.6));
+      var qaDesk = place('desk', qaColX, qaRowTop, 'left', { dept: 'qa' });
+      place('chair', qaDesk.seatGx, qaDesk.seatGy, 'right');
+      var qaDesk2 = place('desk', qaColX, qaRowBot, 'left', { dept: 'qa' });
+      place('chair', qaDesk2.seatGx, qaDesk2.seatGy, 'right');
+      var qaRow3 = qaRowBot + 2;
+      if (qaRow3 <= dataBot - 1) {
+        var qaDesk3 = place('desk', qaColX, qaRow3, 'left', { dept: 'qa' });
+        place('chair', qaDesk3.seatGx, qaDesk3.seatGy, 'right');
+      }
+      place('whiteboard', qaColX, qaRowTop - 1, 'down');         // review / bug board
+      place('bookshelf', x1, qaRowTop, 'down');                  // 1x2 spec/reference shelf
+      place('printer', x1 - 1, qaRowBot, 'down');                // QA printer
+      place('plant', x1 - 2, qaRowBot + 1, 'down');              // greenery clear of desks
+    }
+
+    // ===== LOUNGE / BREAK ROOM (bottom band, full width below loungeWall) =====
     // Richer break room: coffee + sofas + arcade + tv + rug + potted trees, plus a
     // KITCHEN/PANTRY on the left and a GRASS ATRIUM on the right. Everything that is
     // a loiter target keeps lounge:true so World.breakSpots() still finds it.
@@ -800,8 +891,8 @@ window.App = window.App || {};
     // blocking lounge furniture OFF columns corrX and doorX in the two bottom rows
     // so the door->corridor path is never sealed; the connectivity guard below is a
     // final backstop. All coordinates are clamped to the interior by place().
-    var loungeTop = labBot + 1;                      // first lounge row
-    var loungeY = labBot + 2;                        // a working row inside the lounge
+    var loungeTop = loungeWall + 1;                  // first lounge row (below the last room wall)
+    var loungeY = loungeWall + 2;                    // a working row inside the lounge
     if (loungeY > y1) loungeY = y1;                  // legacy-grid safety
     var sofaY = Math.min(y1, loungeY + 1);
 
@@ -872,11 +963,14 @@ window.App = window.App || {};
 
     // --- 5) connectivity guard --------------------------------------------------
     // The central corridor (corrX) is the structural spine that joins every band
-    // (boss → bays → labs → lounge). It is carved FLOOR through each wall row, but
-    // decorative BLOCKING furniture placed on the corridor AT a band-crossing row
-    // (or the lounge entry just below labBot) would seal a band off. Drop any such
-    // piece so the spine is always walkable. (Furniture inside open rooms is fine.)
-    var spineRows = [bossBot, midBot, labBot, labBot + 1, labBot + 2];
+    // (boss → bays → labs → DATA/QA → lounge). It is carved FLOOR through each wall
+    // row, but decorative BLOCKING furniture placed on the corridor AT a band-crossing
+    // row (or the lounge entry just below the last room wall) would seal a band off.
+    // Drop any such piece so the spine is always walkable. (Furniture inside open
+    // rooms is fine.) v9: include the new band wall (labBot, dataBot) + the lounge
+    // entry rows just below loungeWall. When the band collapses dataBot === labBot so
+    // the extra entries are harmless duplicates.
+    var spineRows = [bossBot, midBot, labBot, dataBot, loungeWall + 1, loungeWall + 2];
     furniture = furniture.filter(function (f) {
       if (f.walkable) return true;                 // non-blocking props never seal a path
       for (var fx = f.gx; fx < f.gx + (f.w || 1); fx++) {

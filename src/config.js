@@ -60,7 +60,8 @@ window.App = window.App || {};
     researcher: '#5dff9b',  // lime
     writer: '#ffc24d',      // amber
     qa: '#ff4d6d',          // red
-    generalist: '#9b5cff'   // purple
+    generalist: '#9b5cff',  // purple
+    analyst: '#2dd4bf'      // teal (DATA/ANALYTICS dept — distinct from amber/red/purple)
   };
 
   // ---------------------------------------------------------------------------
@@ -166,6 +167,15 @@ window.App = window.App || {};
 'Handle whatever the instruction asks as competently as possible, end-to-end. Produce the real deliverable.\n' +
 'RESULT: line = one-sentence summary of what you delivered.';
 
+  var ANALYST_BODY =
+'ROLE: Data Analyst.\n' +
+'You turn raw data into clear metrics, charts, and decision-ready insight.\n' +
+'- Compute the actual numbers (counts, sums, means, rates, deltas, percentiles); show the key figures, not vague adjectives.\n' +
+'- When a visual helps, give a concrete chart spec (type, x/y, series) or an ASCII/structural chart the team can render.\n' +
+'- State your method and any assumptions in one line (data source, time window, how you handled gaps/outliers).\n' +
+'- Rigorously separate FACT (what the data shows) from INFERENCE (what you conclude). Never fabricate numbers.\n' +
+'RESULT: line = the single most decision-relevant metric or finding.';
+
   // ---------------------------------------------------------------------------
   // v3 §ARTIFACTS — appended to every worker instruction so concrete deliverables
   // are emitted as fenced ```artifact:<filename.ext>``` blocks the Orchestrator
@@ -245,6 +255,11 @@ window.App = window.App || {};
       identity: 'You are a Generalist Operator — versatile and reliable, you take any task end-to-end.',
       plan: 'Understand the ask, pick a sensible approach, and produce the real deliverable without fuss.',
       relationships: 'You fill gaps for the whole team and adapt to whatever the Boss needs next.'
+    },
+    analyst: {
+      identity: 'You are the Analyst — numerate, skeptical, and obsessed with what the data actually says.',
+      plan: 'Pull the numbers, compute the metrics, chart the signal, and separate fact from inference.',
+      relationships: 'You hand hard numbers to the Boss and the writer, and pressure-test the researcher\'s claims with data.'
     }
   };
 
@@ -259,7 +274,9 @@ window.App = window.App || {};
 '- "designer"  : UI/UX, visual specs, layout, copy for interfaces.\n' +
 '- "researcher": gathers/synthesizes current external information (can use web search).\n' +
 '- "writer"    : long-form prose, docs, marketing, summaries.\n' +
+'- "analyst"   : computes metrics, analyzes data, builds charts and data-driven insight from numbers.\n' +
 '- "qa"        : reviews/critiques an artifact for correctness and edge cases.\n' +
+'- "generalist": anything that does not clearly fit one of the roles above.\n' +
 '\n' +
 'Decompose the goal into 1–5 subtasks (fewer is better; only split when a different role or clearly\n' +
 'parallel piece of work is genuinely needed). Order them so dependencies come first; later tasks may\n' +
@@ -567,6 +584,10 @@ window.App = window.App || {};
     generalist: {
       label: 'Generalist', color: roleColor.generalist, model: 'claude-sonnet-4-6', glyph: 'star',
       webSearchPreferred: false, system: worker(GENERALIST_BODY), persona: PERSONAS.generalist
+    },
+    analyst: {
+      label: 'Analyst', color: roleColor.analyst, model: 'claude-sonnet-4-6', glyph: 'barchart',
+      webSearchPreferred: false, system: worker(ANALYST_BODY), persona: PERSONAS.analyst
     }
   };
 
@@ -578,7 +599,7 @@ window.App = window.App || {};
     TILE: 16,            // world px per cell edge
     PIXEL: 3,            // base upscale: 1 world px -> 3 screen px @ zoom 1 (cell = 48 screen px @ zoom1)
     GRID_COLS: 54,       // v8: enlarged so each department room fits a 3rd desk (10-person company)
-    GRID_ROWS: 36,       // v8: enlarged so each department room fits a 3rd desk (10-person company)
+    GRID_ROWS: 46,       // v9: enlarged (36->46) to add a DATA LAB + QA ROOM band below the labs (13+ person company)
 
     // camera
     ZOOM_MIN: 0.5,

@@ -1288,6 +1288,10 @@ window.App = window.App || {};
 
   // defaultLayout의 desk seat들을 순서대로 모아 시드 에이전트 배치에 사용.
   // boss desk(보통 CARPET zone, dir 'down')를 우선 식별한다.
+  // DEPT-MATCHED SEATING: each desk furniture carries a .dept (the role key of its
+  // room — boss/engineer/designer/researcher/analyst/qa; set by World.defaultLayout).
+  // We copy that .dept onto each seat so the seed can match agents to their own room
+  // (seat.dept === agent.role). Legacy/empty layouts that lack .dept yield dept ''.
   function collectDeskSeats(layout) {
     var seats = [];
     var bossSeat = null;
@@ -1296,7 +1300,12 @@ window.App = window.App || {};
       var f = furn[i];
       if (!f || f.type !== 'desk') continue;
       if (typeof f.seatGx === 'number' && typeof f.seatGy === 'number') {
-        var seat = { gx: f.seatGx, gy: f.seatGy, _y: f.gy };
+        var seat = {
+          gx: f.seatGx,
+          gy: f.seatGy,
+          _y: f.gy,
+          dept: (f.dept == null) ? '' : String(f.dept),   // role key of this desk's room
+        };
         seats.push(seat);
       }
     }
@@ -1340,75 +1349,112 @@ window.App = window.App || {};
       s._ledger = null;         // WAVE 1: fresh company starts with no ledger
       s._lastRun = null;        // WAVE 1: runtime-only
 
-      // 3) place the 4 default agents at desks (§9: boss, engineer, designer, researcher)
+      // 3) place the 13 default agents at desks, DEPT-MATCHED so each role lands in
+      //    its own room (boss office / engineering bay / design studio / research lab /
+      //    data lab / qa room). Two-pass assignment over the collected desk seats.
       var collected = collectDeskSeats(s.layout);
       var seats = collected.seats;
       var roles = rolesTable();
 
-      // 시드 정의 — 색/모델은 ROLES에서 해석(§5.1, §6 defaults).
-      // Order matters: worker seats are consumed gy-sorted as
-      // [eng,des,eng,des,eng,des,res,res,res], so this order lands each role in
-      // its own room (engineers in the bay, designers in the studio, researchers
-      // in the lab) and fills the 3rd desk of each room with Generalist/Writer/QA.
+      // 시드 정의 — 색/모델은 ROLES에서 해석(§5.1, §6 defaults). 13명 로스터:
+      // Boss + 2 engineer + 2 designer + 2 researcher + 2 analyst + 2 qa + writer +
+      // generalist. The room-bound roles (engineer/designer/researcher/analyst/qa)
+      // get DEPT-MATCHED seats in PASS 1 (seat.dept === role); writer/generalist have
+      // no dedicated room and take leftover spare desks in PASS 2. Distinct names.
       var defs = [
         { name: 'Boss',         role: 'boss' },
         { name: 'Engineer',     role: 'engineer' },
-        { name: 'Designer',     role: 'designer' },
         { name: 'Engineer 2',   role: 'engineer' },
+        { name: 'Designer',     role: 'designer' },
         { name: 'Designer 2',   role: 'designer' },
-        { name: 'Generalist',   role: 'generalist' },
-        { name: 'Writer',       role: 'writer' },
         { name: 'Researcher',   role: 'researcher' },
         { name: 'Researcher 2', role: 'researcher' },
+        { name: 'Analyst',      role: 'analyst' },
+        { name: 'Analyst 2',    role: 'analyst' },
         { name: 'QA',           role: 'qa' },
+        { name: 'QA 2',         role: 'qa' },
+        { name: 'Writer',       role: 'writer' },
+        { name: 'Generalist',   role: 'generalist' },
       ];
 
-      // 좌석 할당: boss는 bossSeat 우선, 나머지는 남은 좌석을 순서대로.
-      // bossSeat을 워커 풀에서 제외하기 위해 인덱스를 추적.
+      // 좌석 풀: boss는 bossSeat 우선, 나머지는 남은(아직 점유 안 된) 좌석에서 배정.
+      // bossSeat을 워커 풀에서 제외한다(동일 셀이 두 번 쓰이지 않도록).
       var bossSeat = collected.bossSeat;
-      var workerSeats = [];
+      var freeSeats = [];
       for (var si = 0; si < seats.length; si++) {
         var seat = seats[si];
-        if (bossSeat && seat.gx === bossSeat.gx && seat.gy === bossSeat.gy && workerSeats.length === seats.length - 1) {
-          // safety; not normally reached
-        }
-        workerSeats.push(seat);
+        if (bossSeat && seat.gx === bossSeat.gx && seat.gy === bossSeat.gy) continue;  // reserved for boss
+        freeSeats.push(seat);   // shared mutable pool: claimed seats are spliced out
       }
-      // boss 좌석을 워커 풀에서 한 번 제거
-      if (bossSeat) {
-        for (var wi = 0; wi < workerSeats.length; wi++) {
-          if (workerSeats[wi].gx === bossSeat.gx && workerSeats[wi].gy === bossSeat.gy) {
-            workerSeats.splice(wi, 1);
+
+      // 한 def에 좌석을 확정 배정(좌표를 spec에 싣고 그 좌석을 풀에서 제거).
+      function claimSeat(pool, idx, spec) {
+        var seat = pool[idx];
+        pool.splice(idx, 1);            // remove so it can never be reused (no overlap)
+        spec.gx = seat.gx;
+        spec.gy = seat.gy;
+        return true;
+      }
+
+      // 각 def의 spec을 미리 만들어 두고(좌석은 아직 미정), seated 플래그로 추적.
+      var specs = [];
+      for (var di = 0; di < defs.length; di++) {
+        var d = defs[di];
+        specs.push({
+          def: d,
+          seated: false,
+          spec: {
+            name: d.name,
+            role: d.role,
+            color: (roles[d.role] && roles[d.role].color) || undefined,
+            model: (roles[d.role] && roles[d.role].model) || undefined,
+            systemPrompt: (roles[d.role] && roles[d.role].system) || undefined,
+          },
+        });
+      }
+
+      // BOSS: 항상 bossSeat에 앉힌다(있을 때).
+      for (var bi = 0; bi < specs.length; bi++) {
+        if (specs[bi].def.role !== 'boss') continue;
+        if (bossSeat && typeof bossSeat.gx === 'number') {
+          specs[bi].spec.gx = bossSeat.gx;
+          specs[bi].spec.gy = bossSeat.gy;
+        }
+        specs[bi].seated = true;   // boss handled (seat assigned or left to fallback)
+        break;
+      }
+
+      // PASS 1 — ROLE-MATCHED: in defs order, each non-boss agent claims a still-free
+      // seat whose seat.dept === agent.role (lands the agent in its own room).
+      for (var p1 = 0; p1 < specs.length; p1++) {
+        var entry1 = specs[p1];
+        if (entry1.seated) continue;                       // boss already done
+        var role1 = entry1.def.role;
+        for (var fs1 = 0; fs1 < freeSeats.length; fs1++) {
+          if (freeSeats[fs1].dept === role1) {
+            claimSeat(freeSeats, fs1, entry1.spec);
+            entry1.seated = true;
             break;
           }
         }
       }
 
-      var workerIdx = 0;
-      for (var di = 0; di < defs.length; di++) {
-        var d = defs[di];
-        var spec = {
-          name: d.name,
-          role: d.role,
-          color: (roles[d.role] && roles[d.role].color) || undefined,
-          model: (roles[d.role] && roles[d.role].model) || undefined,
-          systemPrompt: (roles[d.role] && roles[d.role].system) || undefined,
-        };
+      // PASS 2 — LEFTOVERS: any agent not yet seated (writer/generalist with no
+      // dedicated room, or a room-role that ran out of matched desks) takes any
+      // remaining free seat in order. If none remain, makeAgent's freeDeskCell
+      // fallback finds a desk; specs carry no gx/gy so that path is taken.
+      for (var p2 = 0; p2 < specs.length; p2++) {
+        var entry2 = specs[p2];
+        if (entry2.seated) continue;
+        if (freeSeats.length) {
+          claimSeat(freeSeats, 0, entry2.spec);
+        }
+        entry2.seated = true;   // either got a leftover seat or will use makeAgent fallback
+      }
 
-        // 좌석 좌표 결정
-        var cell = null;
-        if (d.role === 'boss' && bossSeat) {
-          cell = bossSeat;
-        } else if (workerSeats.length) {
-          cell = workerSeats[workerIdx % workerSeats.length];
-          workerIdx++;
-        }
-        if (cell && typeof cell.gx === 'number') {
-          spec.gx = cell.gx;
-          spec.gy = cell.gy;
-        }
-        // 좌석이 전혀 없으면 makeAgent가 freeDeskCell/폴백으로 처리.
-        makeAgent(spec);
+      // 최종 생성 — defs 순서대로. 좌석 좌표가 있으면 사용, 없으면 makeAgent 폴백.
+      for (var mk = 0; mk < specs.length; mk++) {
+        makeAgent(specs[mk].spec);
       }
 
       // 4) seed log entry

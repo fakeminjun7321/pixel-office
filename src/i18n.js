@@ -266,7 +266,14 @@ window.App = window.App || {};
       'knowledge.clear': 'Clear all',
       'knowledge.clearAsk': 'Clear all saved company knowledge? This cannot be undone.',
       'knowledge.cleared': 'Knowledge cleared.',
-      'knowledge.unavailable': 'Knowledge base unavailable'
+      'knowledge.unavailable': 'Knowledge base unavailable',
+
+      // --- roles (department labels) ---
+      'role.analyst': 'Analyst',
+
+      // --- department / room labels (Wave 4i: data lab + qa room) ---
+      'room.dataLab': 'Data Lab',
+      'room.qa': 'QA Room'
     },
 
     ko: {
@@ -472,7 +479,14 @@ window.App = window.App || {};
       'knowledge.clear': '모두 지우기',
       'knowledge.clearAsk': '저장된 회사 지식을 모두 지울까요? 되돌릴 수 없습니다.',
       'knowledge.cleared': '지식을 지웠습니다.',
-      'knowledge.unavailable': '지식 베이스를 사용할 수 없습니다'
+      'knowledge.unavailable': '지식 베이스를 사용할 수 없습니다',
+
+      // --- roles (department labels) ---
+      'role.analyst': '분석가',
+
+      // --- department / room labels (Wave 4i: data lab + qa room) ---
+      'room.dataLab': '데이터 랩',
+      'room.qa': 'QA 룸'
     }
   };
 
