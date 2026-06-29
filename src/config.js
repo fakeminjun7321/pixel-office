@@ -1092,6 +1092,120 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
+  // SELF-IMPROVE section — human-in-the-loop self-improvement engine config.
+  //   SRC_MODULES        : the EXACT module load order (mirrors build.sh, with
+  //                        'selfimprove' inserted before 'ui'). App.SelfImprove
+  //                        fetches src/<name>.js for each name and rebuilds
+  //                        index.html in the SAME order build.sh uses. The two
+  //                        MUST stay byte-for-byte in sync or a rebuild diverges.
+  //   MODULE_DESCRIPTIONS: one short purpose line per module — fed to the boss in
+  //                        the propose step (NOT the full source) so it can pick a
+  //                        target without reading every file.
+  //   SELF_IMPROVE_PROPOSE_SYSTEM : boss prompt -> STRICT JSON
+  //                        {improvement,rationale,targets[],plan}.
+  //   SELF_IMPROVE_REWRITE_PREAMBLE : engineer prompt -> STRICT JSON
+  //                        {edits:[{find,replace}],summary} of minimal, verbatim-
+  //                        unique find/replace edits.
+  // NOTHING here deploys; the engine only proposes/edits/validates in-browser and
+  // pushes ONLY on an explicit user click (App.SelfImprove.deploy). See selfimprove.js.
+  // ---------------------------------------------------------------------------
+  // EXACT module order — keep identical to build.sh's for-loop (selfimprove before ui).
+  App.config.SRC_MODULES = [
+    'config', 'i18n', 'markdown', 'tools', 'workspace', 'pixelart', 'world',
+    'api', 'store', 'agents', 'orchestrator', 'graph', 'palette', 'onboarding',
+    'audio', 'share', 'selfimprove', 'ui', 'main'
+  ];
+
+  // One-line purpose per module (every entry in SRC_MODULES has one). The propose
+  // step shows this map to the boss so it can choose 1-3 targets sensibly.
+  App.config.MODULE_DESCRIPTIONS = {
+    config:       'Constants, palette, roles, prompts, presets, and pure util helpers (App.config / App.util).',
+    i18n:         'Lightweight dependency-free UI internationalization (en/ko dictionaries, t(), apply()).',
+    markdown:     'Tiny safe markdown -> HTML renderer used for chat bubbles, artifacts, and previews.',
+    tools:        'Browser tool implementations (calc, run_js, web_fetch, workspace/file ops) exposed to workers.',
+    workspace:    'Shared multi-file workspace: read/write files, version history, diffLines, githubPush, folder save.',
+    pixelart:     'Procedural pixel-sprite + furniture + FX renderer (agents, office, glow, ambiance).',
+    world:        'Office grid/layout, tiles, furniture placement, pathfinding, and upgrade installer.',
+    api:          'Multi-provider LLM streaming (App.API.stream) with retry/backoff and a request scheduler.',
+    store:        'State persistence (localStorage), default settings, schema migration, preset application.',
+    agents:       'Agent model: roles, memory scoring, mood/relationships, XP/level, persona prompts.',
+    orchestrator: 'Boss orchestration: decompose -> delegate -> verify -> synthesize, build mode, self-repair.',
+    graph:        'Workflow / dependency graph view of the current run (tasks and their edges).',
+    palette:      'Command palette (fuzzy command launcher) overlay.',
+    onboarding:   'First-run guided tour / help overlay walking through key features.',
+    audio:        'Sound effects + ambient music (WebAudio), gated by settings.',
+    share:        'Shareable state links (hash fragment), state export/import, preset export/import.',
+    selfimprove:  'Self-improvement engine: read own source, propose/edit/validate/rebuild, deploy on user click.',
+    ui:           'The main DOM UI layer: HUD, panels, modals, rendering, and all user interaction.',
+    main:         'Boot/wiring entry point: initializes state, world, agents, UI, and the render loop.'
+  };
+
+  // Boss propose prompt - pick ONE concrete, safe, high-value improvement.
+  App.config.SELF_IMPROVE_PROPOSE_SYSTEM =
+'You maintain THIS web app\'s OWN source code (it is the app you are running inside). You are shown the list\n' +
+'of its source modules, each with a one-line purpose. Pick ONE concrete, safe, high-value improvement to make\n' +
+'right now.\n' +
+'\n' +
+'Guidelines:\n' +
+'- Prefer SMALL, SELF-CONTAINED changes in one or a few modules. Favor modules that are simpler/lower-risk.\n' +
+'- The change must be implementable as a few minimal find/replace edits to existing files — NOT a rewrite,\n' +
+'  not a new file, not a sweeping refactor. Avoid touching the most load-bearing modules (config, ui, main)\n' +
+'  unless the improvement is genuinely small and isolated there.\n' +
+'- Pick something that improves correctness, robustness, UX, accessibility, or clarity without changing the\n' +
+'  app\'s architecture or breaking existing behavior.\n' +
+'- "targets" MUST be 1 to 3 module NAMES that exist in the provided module list (use the exact name, with no\n' +
+'  path or extension).\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "improvement": "<short title of the one improvement>",\n' +
+'  "rationale": "<1-3 sentences: why this is worth doing and why it is safe/low-risk>",\n' +
+'  "targets": [<1-3 exact module names from the list>],\n' +
+'  "plan": "<concrete, specific instructions for an engineer: exactly what to change in each target module\n' +
+'           so the edits can be made as minimal find/replace operations>"\n' +
+'}\n' +
+'\n' +
+'Rules:\n' +
+'- Choose ONLY ONE improvement. Do not bundle several unrelated changes.\n' +
+'- Every name in "targets" must appear in the module list you were given.\n' +
+'- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // Engineer rewrite prompt — minimal verbatim-unique find/replace edits to ONE module.
+  App.config.SELF_IMPROVE_REWRITE_PREAMBLE =
+'You are editing exactly ONE module of a single-file web app, via minimal find/replace edits. You are given\n' +
+'the FULL current content of that module and a plan describing the change to make. Produce the smallest set of\n' +
+'edits that implement the plan correctly while preserving everything else.\n' +
+'\n' +
+'CRITICAL constraints (a violation can BREAK the entire app, so follow them exactly):\n' +
+'- Each "find" string MUST be copied VERBATIM from the current file content shown to you (exact characters,\n' +
+'  whitespace, and indentation) and MUST occur EXACTLY ONCE in that content. If a short snippet is not unique,\n' +
+'  extend it with surrounding lines until it is unique. Never invent or paraphrase a "find".\n' +
+'- Make the MINIMAL change: change only what the plan requires; do not reformat or rewrite untouched code.\n' +
+'- ASCII-ONLY source. Non-ASCII text (e.g. Korean) is allowed ONLY inside string literals as valid UTF-8.\n' +
+'- The module is inlined into one HTML file inside a <scr"+"ipt> tag, so you MUST NOT introduce a literal\n' +
+'  HTML script-closing tag or an HTML comment opener anywhere in "replace". If you need such text inside a\n' +
+'  JavaScript string, SPLIT it (for example build a closing script tag by concatenating two string pieces).\n' +
+'  Never emit a raw script-close sequence or a raw comment-open sequence as literal characters.\n' +
+'- This is a classic browser script (no import/export); keep it self-contained and defensive (guard all\n' +
+'  network/DOM/JSON access). Preserve the module\'s existing window.App.* attachment and style.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "edits": [\n' +
+'    { "find": "<exact, unique substring copied verbatim from the current file>",\n' +
+'      "replace": "<the new text to substitute in its place>" }\n' +
+'  ],\n' +
+'  "summary": "<one sentence describing what these edits change>"\n' +
+'}\n' +
+'\n' +
+'Rules:\n' +
+'- 1 to 8 edits. Every "find" must be present exactly once in the provided content.\n' +
+'- If the plan cannot be done safely with find/replace edits, return "edits": [] and explain in "summary".\n' +
+'- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // ---------------------------------------------------------------------------
   // section 2 App.util — small, pure helpers. Date.now()/Math.random() live ONLY inside
   // these functions (this is real browser code; deterministic restriction does
   // not apply here).

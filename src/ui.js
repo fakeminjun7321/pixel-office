@@ -232,6 +232,11 @@ window.App = window.App || {};
       // Global "Coffee break" control (sends all idle non-boss agents on break).
       ensureCoffeeBreakButton();
 
+      // Self-Improve entry point (only when App.SelfImprove is loaded). The app
+      // reads its own source, proposes ONE improvement, and shows diffs for the
+      // user to APPROVE before any deploy. Strictly human-in-the-loop.
+      ensureSelfImproveButton();
+
       // Mobile/responsive: wire the rail drawer toggles (shown <=820px via CSS).
       on($('btn-rail-crew'), 'click', function () { toggleRailDrawer('agent-list', 'btn-rail-crew'); });
       on($('btn-rail-log'),  'click', function () { toggleRailDrawer('log', 'btn-rail-log'); });
@@ -4770,6 +4775,368 @@ window.App = window.App || {};
     while (x < n) { out.push({ type: 'del', text: a[x] }); x++; }
     while (y < m) { out.push({ type: 'add', text: b[y] }); y++; }
     return out;
+  }
+
+  // ===========================================================================
+  // SELF-IMPROVE  (human-in-the-loop) — UI layer over App.SelfImprove.
+  // Entry point: a HUD button (injected next to the other controls) opens a modal
+  // with an optional hint + a Run button. Run calls App.SelfImprove.run(hint),
+  // which fetches the app's own source, asks the model for ONE improvement, edits
+  // the target module(s), rebuilds index.html in-browser and validates. The modal
+  // renders the proposal + per-file diffs + each file's validation status. ONLY
+  // when every file validates AND github is configured does a Deploy button
+  // appear; clicking it calls App.SelfImprove.deploy(plan) then reloads. Nothing
+  // auto-deploys. Engine missing / not served / no-github / invalid edits all
+  // surface as clear in-modal states (no deploy button). Feature-detected.
+  // ===========================================================================
+
+  // The engine is loaded as a sibling module; tolerate its absence (e.g. an older
+  // build without selfimprove.js) by feature-detecting before every use.
+  function SELF() { return App.SelfImprove; }
+  function hasSelfImprove() {
+    var S = SELF();
+    return !!(S && typeof S.run === 'function');
+  }
+
+  // Inject the Self-Improve control into the HUD toolbar (once). Mirrors
+  // ensureCoffeeBreakButton(): placed before the first separator with the primary
+  // actions. No-op when the engine isn't present or the toolbar is missing.
+  function ensureSelfImproveButton() {
+    if ($('btn-selfimprove')) return;
+    if (!hasSelfImprove()) return;
+    var controls = $('hud-controls');
+    if (!controls) return;
+    var b = el('button', 'btn');
+    b.id = 'btn-selfimprove';
+    b.type = 'button';
+    b.title = T('selfimprove.title', 'Self-Improve: the app reads its own code and proposes one upgrade');
+    b.appendChild(el('span', 'btn-ico', '✦'));
+    b.appendChild(el('span', 'btn-lbl', T('selfimprove.btn', 'Evolve')));
+    on(b, 'click', function () { UI.openSelfImprove(); });
+    var sep = controls.querySelector ? controls.querySelector('.hud-sep') : null;
+    if (sep) controls.insertBefore(b, sep);
+    else controls.appendChild(b);
+  }
+
+  // Open (or rebuild) the Self-Improve modal mounted into #modal-root. Reuses the
+  // standard modal chrome used by showFinalResult()/mountWhiteboardModal().
+  UI.openSelfImprove = function () {
+    if (!hasSelfImprove()) { UI.toast(T('selfimprove.unavailable', 'Self-Improve is unavailable.')); return; }
+    var root = $('modal-root');
+    if (!root) { UI.toast(T('selfimprove.unavailable', 'Self-Improve is unavailable.')); return; }
+    var prev = $('modal-selfimprove');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-selfimprove';
+    var scrim = el('div', 'modal-scrim');
+    var closeIt = function () { if (modal.parentNode) modal.parentNode.removeChild(modal); };
+    on(scrim, 'click', closeIt);
+
+    var card = el('div', 'modal-card modal-selfimprove-card');
+    card.appendChild(el('div', 'panel-accent'));
+
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', '✦ ' + T('selfimprove.title', 'SELF-IMPROVE')));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', closeIt);
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    body.id = 'si-body';
+
+    // --- intro + hint + run row ---
+    var intro = el('div', 'si-intro',
+      T('selfimprove.intro',
+        'The app reads its own source, proposes ONE safe improvement, edits the target module(s), rebuilds and validates — then shows you the diffs. Nothing ships until you approve.'));
+    body.appendChild(intro);
+
+    var hintRow = el('div', 'si-hint-row');
+    var hint = document.createElement('textarea');
+    hint.id = 'si-hint';
+    hint.className = 'si-hint';
+    hint.rows = 2;
+    hint.placeholder = T('selfimprove.hint.ph', 'Optional: nudge the focus (e.g. "improve accessibility of the task board")');
+    hintRow.appendChild(hint);
+    body.appendChild(hintRow);
+
+    var runRow = el('div', 'si-run-row');
+    var runBtn = el('button', 'btn btn-primary', '✦ ' + T('selfimprove.run', 'Propose an improvement'));
+    runBtn.type = 'button';
+    runBtn.id = 'si-run';
+    on(runBtn, 'click', function () { runSelfImprove(); });
+    runRow.appendChild(runBtn);
+    body.appendChild(runRow);
+
+    // --- status line (spinner / errors) ---
+    var status = el('div', 'si-status hidden');
+    status.id = 'si-status';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    body.appendChild(status);
+
+    // --- results host (proposal + diffs + validation + deploy) ---
+    var results = el('div', 'si-results');
+    results.id = 'si-results';
+    body.appendChild(results);
+
+    var foot = el('footer', 'modal-foot');
+    var close = el('button', 'btn', T('common.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', closeIt);
+    foot.appendChild(close);
+
+    card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+    applyI18n(modal);
+
+    try { hint.focus(); } catch (e) {}
+  };
+
+  // Show a status message in the modal. spinner=true prefixes a CSS spinner glyph
+  // (reuses the .overload-spin animation, ensuring its styles exist).
+  function siStatus(msg, spinner, kind) {
+    var node = $('si-status');
+    if (!node) return;
+    clear(node);
+    if (spinner) {
+      ensureOverloadStyles();
+      var sp = el('span', 'overload-spin', '⏳');
+      sp.setAttribute('aria-hidden', 'true');
+      node.appendChild(sp);
+      node.appendChild(document.createTextNode(' '));
+    }
+    node.appendChild(document.createTextNode(String(msg == null ? '' : msg)));
+    node.className = 'si-status' + (kind ? ' si-status-' + kind : '');
+    show(node);
+  }
+  function siClearStatus() { var n = $('si-status'); if (n) { clear(n); hide(n); } }
+
+  // Run the engine, then render the plan. Guards the button (no double-run) and
+  // surfaces all failure modes in-modal. NEVER deploys here.
+  function runSelfImprove() {
+    if (!hasSelfImprove()) { siStatus(T('selfimprove.unavailable', 'Self-Improve is unavailable.'), false, 'err'); return; }
+    var runBtn = $('si-run');
+    var results = $('si-results');
+    if (results) clear(results);
+    var hintEl = $('si-hint');
+    var hint = hintEl ? String(hintEl.value || '').trim() : '';
+    if (runBtn) runBtn.disabled = true;
+    siStatus(T('selfimprove.analyzing', 'Reading the app\'s own source and drafting an improvement…'), true);
+
+    var p;
+    try { p = SELF().run(hint); }
+    catch (e) {
+      if (runBtn) runBtn.disabled = false;
+      siStatus((e && e.message) || String(e), false, 'err');
+      return;
+    }
+    if (!p || typeof p.then !== 'function') {
+      if (runBtn) runBtn.disabled = false;
+      siStatus(T('selfimprove.invalid', 'The proposal could not be produced.'), false, 'err');
+      return;
+    }
+    p.then(function (plan) {
+      if (runBtn) runBtn.disabled = false;
+      renderSelfImprovePlan(plan || {});
+    }).catch(function (e) {
+      if (runBtn) runBtn.disabled = false;
+      siStatus((e && e.message) || String(e) || T('selfimprove.invalid', 'The proposal could not be produced.'), false, 'err');
+    });
+  }
+
+  // Render the engine's run() result: proposal text, per-file diffs + validation,
+  // and (only when allValid && github configured) a human-approved Deploy button.
+  function renderSelfImprovePlan(plan) {
+    var results = $('si-results');
+    if (!results) return;
+    clear(results);
+
+    // Engine-level error (e.g. file:// has no server, or proposal failure).
+    if (plan.ok === false || plan.error) {
+      var err = String(plan.error || '');
+      // The engine reports a served-context requirement when fetch fails.
+      if (/file:\/\/|served context|GitHub Pages|localhost/i.test(err)) {
+        siStatus(T('selfimprove.needServed',
+          'Self-Improve needs a served context (GitHub Pages or localhost), not file://.'), false, 'warn');
+      } else {
+        siStatus(err || T('selfimprove.invalid', 'The proposal could not be produced.'), false, 'err');
+      }
+      return;
+    }
+    siClearStatus();
+
+    // --- PROPOSAL ---
+    var prop = el('div', 'si-proposal');
+    prop.appendChild(el('div', 'si-section-label', T('selfimprove.proposal', 'PROPOSAL')));
+    if (plan.improvement) prop.appendChild(el('div', 'si-improvement', String(plan.improvement)));
+    if (plan.rationale) prop.appendChild(el('div', 'si-rationale', String(plan.rationale)));
+    var files = Array.isArray(plan.files) ? plan.files : [];
+    if (files.length) {
+      var tlist = files.map(function (f) { return (f && f.name) ? f.name : '?'; }).join(', ');
+      prop.appendChild(el('div', 'si-targets', T('selfimprove.targets', 'Targets: ') + tlist));
+    }
+    results.appendChild(prop);
+
+    // --- PER-FILE DIFFS + VALIDATION ---
+    for (var i = 0; i < files.length; i++) {
+      results.appendChild(buildSelfImproveFileBlock(files[i] || {}));
+    }
+
+    // --- DEPLOY / GATING ---
+    results.appendChild(buildSelfImproveDeploy(plan));
+  }
+
+  // One collapsible block per changed file: header (name + path + valid badge),
+  // applied/rejected edit counts, then the diff (reusing buildDiffBlock styling).
+  function buildSelfImproveFileBlock(f) {
+    var box = el('details', 'si-file');
+    box.open = true;
+    var sum = el('summary', 'si-file-head');
+    sum.appendChild(el('span', 'si-file-name', (f.name || '?') + '.js'));
+    sum.appendChild(el('span', 'si-file-path', f.path || ''));
+    var valid = f.valid || { ok: false, errors: [] };
+    var okBadge = el('span', 'si-valid ' + (valid.ok ? 'si-valid-ok' : 'si-valid-bad'),
+      valid.ok ? '✓ ' + T('selfimprove.validOk', 'valid')
+               : '✕ ' + T('selfimprove.validBad', 'invalid'));
+    sum.appendChild(okBadge);
+    box.appendChild(sum);
+
+    var bodyEl = el('div', 'si-file-body');
+
+    // Applied / rejected edit summary.
+    var applied = Array.isArray(f.applied) ? f.applied.length : 0;
+    var rejected = Array.isArray(f.rejected) ? f.rejected.length : 0;
+    var editsLine = el('div', 'si-edits',
+      T('selfimprove.editsApplied', 'edits applied: ') + applied +
+      (rejected ? ' · ' + T('selfimprove.editsRejected', 'rejected: ') + rejected : ''));
+    bodyEl.appendChild(editsLine);
+
+    // Rejected-edit reasons (so the user understands why an edit didn't land).
+    if (rejected) {
+      var rwrap = el('div', 'si-rejected');
+      for (var r = 0; r < f.rejected.length; r++) {
+        var rj = f.rejected[r] || {};
+        var why = rj.reason || rj.why || 'no unique match';
+        rwrap.appendChild(el('div', 'si-rejected-line', '⚠ ' + String(why)));
+      }
+      bodyEl.appendChild(rwrap);
+    }
+
+    // Validation errors (if any).
+    if (!valid.ok && Array.isArray(valid.errors) && valid.errors.length) {
+      var ewrap = el('div', 'si-verr');
+      for (var e = 0; e < valid.errors.length; e++) {
+        ewrap.appendChild(el('div', 'si-verr-line', '✕ ' + String(valid.errors[e])));
+      }
+      bodyEl.appendChild(ewrap);
+    }
+
+    // Diff — reuse the Files-panel diff styling (.fv-diff / .diff-line diff-*).
+    bodyEl.appendChild(buildDiffBlock(f.oldContent || '', f.newContent || ''));
+
+    box.appendChild(bodyEl);
+    return box;
+  }
+
+  // The deploy footer: gates on allValid + github config. Three blocked states
+  // (not served / no github / invalid) show a message and NO deploy button.
+  function buildSelfImproveDeploy(plan) {
+    var wrap = el('div', 'si-deploy');
+    var s = STATE();
+    var gh = (s && s.settings && s.settings.github) || {};
+    var githubReady = !!(gh.token && gh.owner && gh.repo);
+    var allValid = (plan.allValid === true);
+
+    if (!allValid) {
+      wrap.appendChild(el('div', 'si-blocked si-blocked-bad',
+        '✕ ' + T('selfimprove.invalid',
+          'Some edits failed validation — deploy is blocked. Run again to get a clean proposal.')));
+      return wrap;
+    }
+    if (!githubReady) {
+      var need = el('div', 'si-blocked si-blocked-warn',
+        '⚠ ' + T('selfimprove.needGithub',
+          'Set GitHub token, owner and repo in Settings to enable deploy.'));
+      wrap.appendChild(need);
+      var openSet = el('button', 'btn', T('selfimprove.openSettings', 'Open Settings'));
+      openSet.type = 'button';
+      on(openSet, 'click', function () { UI.openSettings(); });
+      wrap.appendChild(openSet);
+      return wrap;
+    }
+
+    // Ready: everything valid + github configured. Human clicks to deploy.
+    var ready = el('div', 'si-deploy-ready',
+      T('selfimprove.deployReady',
+        'All files validate. Deploy pushes the changed module(s) + index.html to ') +
+        gh.owner + '/' + gh.repo + ' (' + (gh.branch || 'main') + ').');
+    wrap.appendChild(ready);
+
+    var btn = el('button', 'btn btn-primary attn-pulse', '🚀 ' + T('selfimprove.deploy', 'Deploy & reload'));
+    btn.type = 'button';
+    btn.id = 'si-deploy-btn';
+    ensureOverloadStyles(); // .attn-pulse keyframes live in the overload style block
+    on(btn, 'click', function () { deploySelfImprove(plan, btn); });
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
+  // Human-approved deploy: confirm, call App.SelfImprove.deploy(plan), toast and
+  // reload on success. Re-checks allValid + github as a final guard so this never
+  // ships an unvalidated build.
+  function deploySelfImprove(plan, btn) {
+    if (!hasSelfImprove() || typeof SELF().deploy !== 'function') {
+      siStatus(T('selfimprove.unavailable', 'Self-Improve is unavailable.'), false, 'err');
+      return;
+    }
+    if (!plan || plan.allValid !== true) {
+      siStatus(T('selfimprove.invalid', 'Deploy is blocked: not all files validate.'), false, 'err');
+      return;
+    }
+    var s = STATE();
+    var gh = (s && s.settings && s.settings.github) || {};
+    if (!(gh.token && gh.owner && gh.repo)) {
+      siStatus(T('selfimprove.needGithub', 'Set GitHub token, owner and repo in Settings to enable deploy.'), false, 'warn');
+      return;
+    }
+    var files = Array.isArray(plan.files) ? plan.files : [];
+    var fileCount = files.length + 1; // +1 for index.html
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm(T('selfimprove.deployConfirm',
+          'Push ' + fileCount + ' file(s) to ' + gh.owner + '/' + gh.repo +
+          ' (' + (gh.branch || 'main') + ') and reload? This changes the live app.'))) return;
+
+    if (btn) btn.disabled = true;
+    siStatus(T('selfimprove.deploying', 'Pushing to GitHub…'), true);
+
+    var p;
+    try { p = SELF().deploy(plan); }
+    catch (e) { if (btn) btn.disabled = false; siStatus((e && e.message) || String(e), false, 'err'); return; }
+    if (!p || typeof p.then !== 'function') {
+      if (btn) btn.disabled = false;
+      siStatus(T('selfimprove.deployFail', 'Deploy failed to start.'), false, 'err');
+      return;
+    }
+    p.then(function (res) {
+      res = res || {};
+      if (res.ok === false || res.error) {
+        if (btn) btn.disabled = false;
+        siStatus(T('selfimprove.deployFail', 'Deploy failed: ') + (res.error || 'unknown'), false, 'err');
+        return;
+      }
+      siStatus(T('selfimprove.deployed', 'Deployed. Reloading…'), true, 'ok');
+      UI.toast(T('selfimprove.deployed', 'Deployed. Reloading…'), 'ok');
+      // Reload so the freshly pushed index.html is served (small delay so the
+      // toast is visible and GitHub Pages registers the commit).
+      setTimeout(function () {
+        try { if (typeof location !== 'undefined' && location.reload) location.reload(); } catch (e) {}
+      }, 900);
+    }).catch(function (e) {
+      if (btn) btn.disabled = false;
+      siStatus(T('selfimprove.deployFail', 'Deploy failed: ') + ((e && e.message) || String(e)), false, 'err');
+    });
   }
 
   function restoreFileVersion(path, idx) {

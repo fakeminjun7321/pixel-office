@@ -3078,6 +3078,120 @@ window.App = window.App || {};
   };
 
   // ---------------------------------------------------------------------------
+  // SELF-IMPROVE section — human-in-the-loop self-improvement engine config.
+  //   SRC_MODULES        : the EXACT module load order (mirrors build.sh, with
+  //                        'selfimprove' inserted before 'ui'). App.SelfImprove
+  //                        fetches src/<name>.js for each name and rebuilds
+  //                        index.html in the SAME order build.sh uses. The two
+  //                        MUST stay byte-for-byte in sync or a rebuild diverges.
+  //   MODULE_DESCRIPTIONS: one short purpose line per module — fed to the boss in
+  //                        the propose step (NOT the full source) so it can pick a
+  //                        target without reading every file.
+  //   SELF_IMPROVE_PROPOSE_SYSTEM : boss prompt -> STRICT JSON
+  //                        {improvement,rationale,targets[],plan}.
+  //   SELF_IMPROVE_REWRITE_PREAMBLE : engineer prompt -> STRICT JSON
+  //                        {edits:[{find,replace}],summary} of minimal, verbatim-
+  //                        unique find/replace edits.
+  // NOTHING here deploys; the engine only proposes/edits/validates in-browser and
+  // pushes ONLY on an explicit user click (App.SelfImprove.deploy). See selfimprove.js.
+  // ---------------------------------------------------------------------------
+  // EXACT module order — keep identical to build.sh's for-loop (selfimprove before ui).
+  App.config.SRC_MODULES = [
+    'config', 'i18n', 'markdown', 'tools', 'workspace', 'pixelart', 'world',
+    'api', 'store', 'agents', 'orchestrator', 'graph', 'palette', 'onboarding',
+    'audio', 'share', 'selfimprove', 'ui', 'main'
+  ];
+
+  // One-line purpose per module (every entry in SRC_MODULES has one). The propose
+  // step shows this map to the boss so it can choose 1-3 targets sensibly.
+  App.config.MODULE_DESCRIPTIONS = {
+    config:       'Constants, palette, roles, prompts, presets, and pure util helpers (App.config / App.util).',
+    i18n:         'Lightweight dependency-free UI internationalization (en/ko dictionaries, t(), apply()).',
+    markdown:     'Tiny safe markdown -> HTML renderer used for chat bubbles, artifacts, and previews.',
+    tools:        'Browser tool implementations (calc, run_js, web_fetch, workspace/file ops) exposed to workers.',
+    workspace:    'Shared multi-file workspace: read/write files, version history, diffLines, githubPush, folder save.',
+    pixelart:     'Procedural pixel-sprite + furniture + FX renderer (agents, office, glow, ambiance).',
+    world:        'Office grid/layout, tiles, furniture placement, pathfinding, and upgrade installer.',
+    api:          'Multi-provider LLM streaming (App.API.stream) with retry/backoff and a request scheduler.',
+    store:        'State persistence (localStorage), default settings, schema migration, preset application.',
+    agents:       'Agent model: roles, memory scoring, mood/relationships, XP/level, persona prompts.',
+    orchestrator: 'Boss orchestration: decompose -> delegate -> verify -> synthesize, build mode, self-repair.',
+    graph:        'Workflow / dependency graph view of the current run (tasks and their edges).',
+    palette:      'Command palette (fuzzy command launcher) overlay.',
+    onboarding:   'First-run guided tour / help overlay walking through key features.',
+    audio:        'Sound effects + ambient music (WebAudio), gated by settings.',
+    share:        'Shareable state links (hash fragment), state export/import, preset export/import.',
+    selfimprove:  'Self-improvement engine: read own source, propose/edit/validate/rebuild, deploy on user click.',
+    ui:           'The main DOM UI layer: HUD, panels, modals, rendering, and all user interaction.',
+    main:         'Boot/wiring entry point: initializes state, world, agents, UI, and the render loop.'
+  };
+
+  // Boss propose prompt - pick ONE concrete, safe, high-value improvement.
+  App.config.SELF_IMPROVE_PROPOSE_SYSTEM =
+'You maintain THIS web app\'s OWN source code (it is the app you are running inside). You are shown the list\n' +
+'of its source modules, each with a one-line purpose. Pick ONE concrete, safe, high-value improvement to make\n' +
+'right now.\n' +
+'\n' +
+'Guidelines:\n' +
+'- Prefer SMALL, SELF-CONTAINED changes in one or a few modules. Favor modules that are simpler/lower-risk.\n' +
+'- The change must be implementable as a few minimal find/replace edits to existing files — NOT a rewrite,\n' +
+'  not a new file, not a sweeping refactor. Avoid touching the most load-bearing modules (config, ui, main)\n' +
+'  unless the improvement is genuinely small and isolated there.\n' +
+'- Pick something that improves correctness, robustness, UX, accessibility, or clarity without changing the\n' +
+'  app\'s architecture or breaking existing behavior.\n' +
+'- "targets" MUST be 1 to 3 module NAMES that exist in the provided module list (use the exact name, with no\n' +
+'  path or extension).\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "improvement": "<short title of the one improvement>",\n' +
+'  "rationale": "<1-3 sentences: why this is worth doing and why it is safe/low-risk>",\n' +
+'  "targets": [<1-3 exact module names from the list>],\n' +
+'  "plan": "<concrete, specific instructions for an engineer: exactly what to change in each target module\n' +
+'           so the edits can be made as minimal find/replace operations>"\n' +
+'}\n' +
+'\n' +
+'Rules:\n' +
+'- Choose ONLY ONE improvement. Do not bundle several unrelated changes.\n' +
+'- Every name in "targets" must appear in the module list you were given.\n' +
+'- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // Engineer rewrite prompt — minimal verbatim-unique find/replace edits to ONE module.
+  App.config.SELF_IMPROVE_REWRITE_PREAMBLE =
+'You are editing exactly ONE module of a single-file web app, via minimal find/replace edits. You are given\n' +
+'the FULL current content of that module and a plan describing the change to make. Produce the smallest set of\n' +
+'edits that implement the plan correctly while preserving everything else.\n' +
+'\n' +
+'CRITICAL constraints (a violation can BREAK the entire app, so follow them exactly):\n' +
+'- Each "find" string MUST be copied VERBATIM from the current file content shown to you (exact characters,\n' +
+'  whitespace, and indentation) and MUST occur EXACTLY ONCE in that content. If a short snippet is not unique,\n' +
+'  extend it with surrounding lines until it is unique. Never invent or paraphrase a "find".\n' +
+'- Make the MINIMAL change: change only what the plan requires; do not reformat or rewrite untouched code.\n' +
+'- ASCII-ONLY source. Non-ASCII text (e.g. Korean) is allowed ONLY inside string literals as valid UTF-8.\n' +
+'- The module is inlined into one HTML file inside a <scr"+"ipt> tag, so you MUST NOT introduce a literal\n' +
+'  HTML script-closing tag or an HTML comment opener anywhere in "replace". If you need such text inside a\n' +
+'  JavaScript string, SPLIT it (for example build a closing script tag by concatenating two string pieces).\n' +
+'  Never emit a raw script-close sequence or a raw comment-open sequence as literal characters.\n' +
+'- This is a classic browser script (no import/export); keep it self-contained and defensive (guard all\n' +
+'  network/DOM/JSON access). Preserve the module\'s existing window.App.* attachment and style.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{\n' +
+'  "edits": [\n' +
+'    { "find": "<exact, unique substring copied verbatim from the current file>",\n' +
+'      "replace": "<the new text to substitute in its place>" }\n' +
+'  ],\n' +
+'  "summary": "<one sentence describing what these edits change>"\n' +
+'}\n' +
+'\n' +
+'Rules:\n' +
+'- 1 to 8 edits. Every "find" must be present exactly once in the provided content.\n' +
+'- If the plan cannot be done safely with find/replace edits, return "edits": [] and explain in "summary".\n' +
+'- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // ---------------------------------------------------------------------------
   // section 2 App.util — small, pure helpers. Date.now()/Math.random() live ONLY inside
   // these functions (this is real browser code; deterministic restriction does
   // not apply here).
@@ -3347,7 +3461,20 @@ window.App = window.App || {};
       'overload.banner': 'API overloaded - auto-retrying...',
       'overload.retry': 'Retry',
       'overload.useHaiku': 'Switch worker + boss to Haiku',
-      'overload.failed': 'Hit a rate limit / overload. Retry shortly, switch to Haiku, or use a smaller goal.'
+      'overload.failed': 'Hit a rate limit / overload. Retry shortly, switch to Haiku, or use a smaller goal.',
+
+      // --- self-improve (human-in-the-loop) ---
+      'selfimprove.title': 'SELF-IMPROVE',
+      'selfimprove.btn': 'Self-Improve',
+      'selfimprove.run': 'Propose Improvement',
+      'selfimprove.analyzing': 'Reading source & proposing an improvement...',
+      'selfimprove.proposal': 'PROPOSAL',
+      'selfimprove.deploy': 'Deploy & Reload',
+      'selfimprove.deployed': 'Deployed. Reloading...',
+      'selfimprove.needServed': 'Self-improve needs a served context (GitHub Pages or localhost), not file://.',
+      'selfimprove.needGithub': 'Set a GitHub token, owner, and repo in Settings to deploy.',
+      'selfimprove.invalid': 'A proposed edit failed validation - deploy is blocked.',
+      'selfimprove.hint.ph': 'Optional: hint what to improve (e.g. accessibility, a bug)...'
     },
 
     ko: {
@@ -3525,7 +3652,20 @@ window.App = window.App || {};
       'overload.banner': 'API 과부하 - 자동 재시도 중...',
       'overload.retry': '재시도',
       'overload.useHaiku': '워커·보스를 Haiku로 전환',
-      'overload.failed': 'API 한도·과부하로 실패했어요. 잠시 후 재시도하거나 Haiku로 바꾸거나 목표를 작게 나눠보세요.'
+      'overload.failed': 'API 한도·과부하로 실패했어요. 잠시 후 재시도하거나 Haiku로 바꾸거나 목표를 작게 나눠보세요.',
+
+      // --- self-improve (human-in-the-loop) ---
+      'selfimprove.title': '자가 개선',
+      'selfimprove.btn': '자가 개선',
+      'selfimprove.run': '개선안 제안',
+      'selfimprove.analyzing': '소스를 읽고 개선안을 제안하는 중...',
+      'selfimprove.proposal': '제안',
+      'selfimprove.deploy': '배포 후 새로고침',
+      'selfimprove.deployed': '배포 완료. 새로고침 중...',
+      'selfimprove.needServed': '자가 개선은 file://이 아니라 서버 환경(GitHub Pages 또는 localhost)이 필요합니다.',
+      'selfimprove.needGithub': '배포하려면 설정에서 GitHub 토큰·소유자·저장소를 입력하세요.',
+      'selfimprove.invalid': '제안된 수정이 검증을 통과하지 못해 배포가 차단되었습니다.',
+      'selfimprove.hint.ph': '선택: 개선 방향 힌트 (예: 접근성, 버그)...'
     }
   };
 
@@ -20743,6 +20883,823 @@ window.App = window.App || {};
 </script>
 <script>
 // =============================================================================
+// selfimprove.js  ->  App.SelfImprove
+// PIXEL AI COMPANY ("NEON//WORKS") -- HUMAN-IN-THE-LOOP SELF-IMPROVEMENT engine.
+//
+// The running app (served on GitHub Pages / localhost, where src/*.js are also
+// served) reads ITS OWN source, asks the model for ONE concrete, safe, high-value
+// improvement, rewrites the target module(s) via minimal find/replace edits,
+// rebuilds index.html IN-BROWSER (replicating build.sh exactly), VALIDATES every
+// changed module, and produces a plan with diffs for the UI to render.
+//
+// SAFETY (PINNED):
+//   - NOTHING auto-deploys. run() only proposes + builds a candidate. deploy()
+//     pushes to GitHub ONLY when the UI calls it on an explicit user click.
+//   - A bad edit MUST be caught: run() sets allValid=false and SKIPS the rebuild
+//     when ANY target fails validation. deploy() REFUSES when !allValid or when
+//     GitHub is not configured. The app cannot brick itself silently.
+//
+// LOAD ORDER: after share, before ui. Depends on App.config (SRC_MODULES,
+//   MODULE_DESCRIPTIONS, SELF_IMPROVE_* prompts), App.API.stream, App.Workspace
+//   (diffLines + githubPush), App.state.settings. No DOM. DEFENSIVE: every public
+//   method guards network/DOM/JSON and never throws into the rAF loop.
+//
+// CONTRACT:
+//   fetchSource()                 -> Promise<{ok,modules,shell,styles,error?}>
+//   propose(hint)                 -> Promise<{improvement,rationale,targets[],plan}>
+//   rewrite(name,content,plan)    -> Promise<{edits:[{find,replace}],summary}>
+//   applyEdits(content,edits)     -> {content,applied[],rejected[]}
+//   validate(name,content)        -> {ok,errors[]}
+//   rebuildIndex({modules,shell,styles}) -> indexHtml String
+//   diff(oldC,newC)               -> App.Workspace.diffLines(oldC,newC)
+//   run(hint)                     -> Promise<{ok,improvement,rationale,files[],
+//                                              indexHtml,allValid,error?}>
+//   deploy(plan)                  -> Promise<{ok,error?}>
+//
+// IMPORTANT (single-file inlining hazard): this module BUILDS HTML strings that
+//   contain script tags. A literal closing/opening script tag, or an HTML comment
+//   marker, in a JS string breaks the single-file inlining of THIS module. Every
+//   such token is SPLIT ('</scr'+'ipt>', '<scr'+'ipt>', '<'+'!--'). The build
+//   hazard check (grep over src/*.js for those tokens) must stay empty here.
+// =============================================================================
+
+window.App = window.App || {};
+
+(function () {
+  'use strict';
+
+  var App = window.App;
+
+  function CFG() { return App.config || {}; }
+  function SETTINGS() {
+    try {
+      return (App.state && App.state.settings) ? App.state.settings : {};
+    } catch (e) { return {}; }
+  }
+
+  // ---------------------------------------------------------------------------
+  // The canonical module load order. Mirrors build.sh + config.SRC_MODULES. We
+  // prefer config.SRC_MODULES (single source of truth) and fall back to this
+  // literal so a partial build still has a sane order. 'selfimprove' sits before
+  // 'ui' exactly as in build.sh.
+  // ---------------------------------------------------------------------------
+  var FALLBACK_MODULES = [
+    'config', 'i18n', 'markdown', 'tools', 'workspace', 'pixelart', 'world',
+    'api', 'store', 'agents', 'orchestrator', 'graph', 'palette', 'onboarding',
+    'audio', 'share', 'selfimprove', 'ui', 'main'
+  ];
+
+  function moduleList() {
+    try {
+      var arr = CFG().SRC_MODULES;
+      if (Array.isArray(arr) && arr.length) {
+        var out = [];
+        for (var i = 0; i < arr.length; i++) {
+          var n = String(arr[i] == null ? '' : arr[i]).trim();
+          if (n) out.push(n);
+        }
+        if (out.length) return out;
+      }
+    } catch (e) {}
+    return FALLBACK_MODULES.slice();
+  }
+
+  // ---------------------------------------------------------------------------
+  // FETCH HELPERS -- resolve src files against the current document so this works
+  // on GitHub Pages / localhost (served context). On file:// there is no server
+  // so the fetch fails -> we surface a clear error rather than throwing.
+  // ---------------------------------------------------------------------------
+  function srcUrl(rel) {
+    try {
+      var base = (typeof location !== 'undefined' && location.href) ? location.href : '';
+      return new URL(rel, base).href;
+    } catch (e) {
+      return rel;
+    }
+  }
+
+  function fetchText(rel) {
+    return new Promise(function (resolve, reject) {
+      try {
+        if (typeof fetch !== 'function') { reject(new Error('fetch unavailable')); return; }
+        fetch(srcUrl(rel), { method: 'GET', cache: 'no-store' })
+          .then(function (resp) {
+            if (!resp || !resp.ok) {
+              reject(new Error('HTTP ' + (resp ? resp.status : '?') + ' for ' + rel));
+              return;
+            }
+            return resp.text().then(function (txt) { resolve(String(txt == null ? '' : txt)); });
+          })
+          .catch(function (err) { reject(err || new Error('fetch failed: ' + rel)); });
+      } catch (e) {
+        reject(e || new Error('fetch failed: ' + rel));
+      }
+    });
+  }
+
+  // fetchSource() -> Promise<{ok, modules:{name:content}, shell, styles, error?}>
+  //   Fetch every module's src plus shell.html + styles.css. ANY failure (e.g.
+  //   file:// with no server) resolves {ok:false, error:'...needs a served...'}.
+  function fetchSource() {
+    return new Promise(function (resolve) {
+      try {
+        var names = moduleList();
+        var jobs = [];
+        for (var i = 0; i < names.length; i++) {
+          (function (nm) {
+            jobs.push(
+              fetchText('src/' + nm + '.js').then(function (txt) {
+                return { kind: 'module', name: nm, content: txt };
+              })
+            );
+          })(names[i]);
+        }
+        jobs.push(fetchText('src/shell.html').then(function (txt) {
+          return { kind: 'shell', content: txt };
+        }));
+        jobs.push(fetchText('src/styles.css').then(function (txt) {
+          return { kind: 'styles', content: txt };
+        }));
+
+        Promise.all(jobs).then(function (results) {
+          var modules = {};
+          var shell = '';
+          var styles = '';
+          for (var j = 0; j < results.length; j++) {
+            var r = results[j];
+            if (!r) continue;
+            if (r.kind === 'module') modules[r.name] = r.content;
+            else if (r.kind === 'shell') shell = r.content;
+            else if (r.kind === 'styles') styles = r.content;
+          }
+          resolve({ ok: true, modules: modules, shell: shell, styles: styles });
+        }).catch(function (err) {
+          resolve({
+            ok: false, modules: {}, shell: '', styles: '',
+            error: 'self-improve needs a served context (GitHub Pages or localhost), not file:// (' +
+                   ((err && err.message) ? err.message : 'fetch failed') + ')'
+          });
+        });
+      } catch (e) {
+        resolve({
+          ok: false, modules: {}, shell: '', styles: '',
+          error: 'self-improve needs a served context (GitHub Pages or localhost), not file://'
+        });
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // STREAM WRAPPER -- App.API.stream is callback-based; wrap it in a Promise that
+  //   resolves with the accumulated text. Builds creds/model opts EXACTLY like the
+  //   orchestrator (apiKey/openaiKey/geminiKey from settings + an explicit model).
+  // ---------------------------------------------------------------------------
+  function streamText(model, system, userContent) {
+    return new Promise(function (resolve, reject) {
+      try {
+        if (!App.API || typeof App.API.stream !== 'function') {
+          reject(new Error('API unavailable'));
+          return;
+        }
+        var settings = SETTINGS();
+        var acc = '';
+        var settled = false;
+        function done(val) { if (!settled) { settled = true; resolve(val); } }
+        function fail(err) { if (!settled) { settled = true; reject(err || new Error('stream error')); } }
+
+        App.API.stream({
+          apiKey: settings.apiKey,
+          openaiKey: settings.openaiKey,
+          geminiKey: settings.geminiKey,
+          model: model,
+          system: system,
+          messages: [{ role: 'user', content: String(userContent == null ? '' : userContent) }],
+          onText: function (d) { try { acc += String(d == null ? '' : d); } catch (e) {} },
+          onDone: function (res) {
+            var txt = (res && typeof res.text === 'string' && res.text) ? res.text : acc;
+            done(String(txt == null ? '' : txt));
+          },
+          onError: function (err) {
+            fail(err instanceof Error ? err : new Error((err && err.message) ? err.message : 'stream error'));
+          }
+        });
+      } catch (e) {
+        reject(e || new Error('stream failed'));
+      }
+    });
+  }
+
+  function bossModel() {
+    var s = SETTINGS();
+    return s.bossModel || CFG().BOSS_MODEL || 'claude-opus-4-8';
+  }
+  function workerModel() {
+    var s = SETTINGS();
+    return s.defaultModel || CFG().DEFAULT_MODEL || 'claude-sonnet-4-6';
+  }
+
+  // ---------------------------------------------------------------------------
+  // STRICT-JSON PARSING -- tolerant of code fences / smart quotes / trailing
+  //   commas, mirroring orchestrator.parsePlan's forgiving cleanup. Returns the
+  //   parsed object or null. Never throws.
+  // ---------------------------------------------------------------------------
+  function parseJsonObject(raw) {
+    try {
+      if (raw == null) return null;
+      var s = String(raw);
+      s = s.replace(/^```(?:json|jsonc)?\s*/i, '').replace(/```\s*$/i, '');
+      var first = s.indexOf('{');
+      var last = s.lastIndexOf('}');
+      if (first === -1 || last === -1 || last < first) return null;
+      var body = s.slice(first, last + 1);
+      body = body.replace(/,(\s*[}\]])/g, '$1');                 // trailing commas
+      body = body.replace(/[“”]/g, '"').replace(/[‘’]/g, "'"); // smart quotes
+      var obj = null;
+      try { obj = JSON.parse(body); }
+      catch (e) {
+        var bal = braceBalancedPrefix(body);
+        if (bal) { try { obj = JSON.parse(bal); } catch (e2) { obj = null; } }
+      }
+      return (obj && typeof obj === 'object') ? obj : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function braceBalancedPrefix(str) {
+    var depth = 0, end = -1, inStr = false, esc = false;
+    for (var i = 0; i < str.length; i++) {
+      var ch = str[i];
+      if (inStr) {
+        if (esc) { esc = false; }
+        else if (ch === '\\') { esc = true; }
+        else if (ch === '"') { inStr = false; }
+        continue;
+      }
+      if (ch === '"') { inStr = true; continue; }
+      if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    return (end !== -1) ? str.slice(0, end + 1) : null;
+  }
+
+  function strOr(v, fallback) {
+    if (v == null) return fallback || '';
+    var s = String(v).trim();
+    return s || (fallback || '');
+  }
+
+  // ---------------------------------------------------------------------------
+  // MODULE DESCRIPTIONS digest -- name + one-line purpose for every module (NOT
+  //   the full content). Prefer config.MODULE_DESCRIPTIONS; fall back to a bare
+  //   list so propose() still works on a partial build.
+  // ---------------------------------------------------------------------------
+  function moduleDescriptionsText() {
+    var names = moduleList();
+    var desc = CFG().MODULE_DESCRIPTIONS || {};
+    var lines = [];
+    for (var i = 0; i < names.length; i++) {
+      var nm = names[i];
+      var d = '';
+      try { if (desc && desc[nm] != null) d = String(desc[nm]).trim(); } catch (e) {}
+      lines.push('- ' + nm + (d ? (': ' + d) : ''));
+    }
+    return lines.join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
+  // propose(hint) -> Promise<{improvement, rationale, targets:[names], plan}>
+  //   ONE boss-model call. system = SELF_IMPROVE_PROPOSE_SYSTEM, user = the module
+  //   descriptions + optional hint. targets normalized to 1-3 EXISTING module names.
+  // ---------------------------------------------------------------------------
+  function propose(hint) {
+    return new Promise(function (resolve, reject) {
+      try {
+        var sys = CFG().SELF_IMPROVE_PROPOSE_SYSTEM;
+        if (!sys) { reject(new Error('SELF_IMPROVE_PROPOSE_SYSTEM missing')); return; }
+        var names = moduleList();
+        var nameSet = {};
+        for (var i = 0; i < names.length; i++) nameSet[names[i]] = true;
+
+        var hintStr = strOr(hint, '');
+        var user =
+          'These are the modules that make up THIS app (each line: module name + one-line purpose).\n' +
+          'Pick exactly ONE concrete, safe, high-value improvement and name 1-3 target module(s) to edit.\n\n' +
+          'MODULES:\n' + moduleDescriptionsText() +
+          (hintStr ? ('\n\nUSER HINT (optional steer):\n' + hintStr) : '') +
+          '\n\nReply with the STRICT JSON described in your instructions now.';
+
+        streamText(bossModel(), sys, user).then(function (raw) {
+          var obj = parseJsonObject(raw);
+          if (!obj) { reject(new Error('proposal JSON unreadable')); return; }
+
+          // normalize targets -> 1-3 EXISTING module names, de-duped, order kept.
+          var targets = [];
+          var seen = {};
+          var src = Array.isArray(obj.targets) ? obj.targets : [];
+          for (var j = 0; j < src.length; j++) {
+            var nm = strOr(src[j], '');
+            if (!nm) continue;
+            if (!nameSet[nm]) continue;        // must exist in SRC_MODULES
+            if (seen[nm]) continue;
+            seen[nm] = true;
+            targets.push(nm);
+            if (targets.length >= 3) break;
+          }
+          if (!targets.length) { reject(new Error('proposal named no valid target modules')); return; }
+
+          resolve({
+            improvement: strOr(obj.improvement, 'Improvement'),
+            rationale: strOr(obj.rationale, ''),
+            targets: targets,
+            plan: strOr(obj.plan, '')
+          });
+        }).catch(function (err) {
+          reject(err || new Error('propose failed'));
+        });
+      } catch (e) {
+        reject(e || new Error('propose failed'));
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // rewrite(name, currentContent, plan) -> Promise<{edits:[{find,replace}], summary}>
+  //   ONE worker-model call. system = SELF_IMPROVE_REWRITE_PREAMBLE + the full
+  //   current content of the target + the plan. Returns STRICT JSON edits where
+  //   each find is a VERBATIM, exactly-once substring of the current file.
+  // ---------------------------------------------------------------------------
+  function rewrite(name, currentContent, plan) {
+    return new Promise(function (resolve, reject) {
+      try {
+        var pre = CFG().SELF_IMPROVE_REWRITE_PREAMBLE;
+        if (!pre) { reject(new Error('SELF_IMPROVE_REWRITE_PREAMBLE missing')); return; }
+        var content = String(currentContent == null ? '' : currentContent);
+        var sys = pre +
+          '\n\nThe module you are editing is: ' + String(name || '?') + ' (src/' + String(name || '?') + '.js).';
+
+        var user =
+          'IMPROVEMENT PLAN (what to change in THIS module):\n' + strOr(plan, '(no plan text)') +
+          '\n\nFULL CURRENT CONTENT OF src/' + String(name || '?') + '.js (between the markers):\n' +
+          '<<<<<<<<<< BEGIN FILE\n' + content + '\n>>>>>>>>>> END FILE\n\n' +
+          'Produce the minimal find/replace edits. Each "find" MUST be copied verbatim from the file above ' +
+          'and occur EXACTLY once. Reply with the STRICT JSON described in your instructions now.';
+
+        streamText(workerModel(), sys, user).then(function (raw) {
+          var obj = parseJsonObject(raw);
+          if (!obj) { reject(new Error('rewrite JSON unreadable')); return; }
+          var edits = [];
+          var src = Array.isArray(obj.edits) ? obj.edits : [];
+          for (var i = 0; i < src.length; i++) {
+            var e = src[i];
+            if (!e || typeof e !== 'object') continue;
+            if (typeof e.find !== 'string' || !e.find.length) continue;
+            var rep = (typeof e.replace === 'string') ? e.replace : String(e.replace == null ? '' : e.replace);
+            edits.push({ find: e.find, replace: rep });
+          }
+          resolve({ edits: edits, summary: strOr(obj.summary, '') });
+        }).catch(function (err) {
+          reject(err || new Error('rewrite failed'));
+        });
+      } catch (e) {
+        reject(e || new Error('rewrite failed'));
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // applyEdits(currentContent, edits) -> {content, applied:[], rejected:[]}
+  //   For each edit, apply ONLY when the find occurs EXACTLY once (split length
+  //   === 2). Otherwise reject (with a reason). NEVER partial-match. Edits apply
+  //   sequentially against the evolving content.
+  // ---------------------------------------------------------------------------
+  function applyEdits(currentContent, edits) {
+    var content = String(currentContent == null ? '' : currentContent);
+    var applied = [];
+    var rejected = [];
+    try {
+      var list = Array.isArray(edits) ? edits : [];
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i] || {};
+        var find = (typeof e.find === 'string') ? e.find : '';
+        var replace = (typeof e.replace === 'string') ? e.replace
+          : String(e.replace == null ? '' : e.replace);
+        if (!find) {
+          rejected.push({ find: find, replace: replace, reason: 'empty find' });
+          continue;
+        }
+        var parts = content.split(find);
+        if (parts.length === 2) {
+          content = parts[0] + replace + parts[1];   // exactly-once replace
+          applied.push({ find: find, replace: replace });
+        } else if (parts.length < 2) {
+          rejected.push({ find: find, replace: replace, reason: 'find not present' });
+        } else {
+          rejected.push({ find: find, replace: replace, reason: 'find occurs ' + (parts.length - 1) + ' times (must be exactly once)' });
+        }
+      }
+    } catch (e) {
+      // leave content as-is; surface nothing destructive
+    }
+    return { content: content, applied: applied, rejected: rejected };
+  }
+
+  // ---------------------------------------------------------------------------
+  // validate(name, content) -> {ok, errors:[]}
+  //   For .js modules: (1) syntax check via new Function(content); (2) HAZARD
+  //   check for a literal closing-script tag or HTML comment marker (these break
+  //   single-file inlining); (3) empty check. ok = errors.length === 0.
+  //   Hazard regexes are built so THIS file contains no raw tokens itself.
+  // ---------------------------------------------------------------------------
+  var SCRIPT_CLOSE_RE = new RegExp('<\\/scr' + 'ipt', 'i');
+  var SCRIPT_OPEN_RE = new RegExp('<scr' + 'ipt', 'i');
+  var COMMENT_OPEN_RE = new RegExp('<' + '!--');
+
+  function validate(name, content) {
+    var errors = [];
+    try {
+      var c = String(content == null ? '' : content);
+      if (!c.trim()) {
+        errors.push('empty');
+        return { ok: false, errors: errors };
+      }
+      // syntax: compile as a function body (classic <script> semantics).
+      try {
+        // eslint-disable-next-line no-new-func
+        new Function(c);
+      } catch (e) {
+        errors.push('syntax: ' + ((e && e.message) ? e.message : 'parse error'));
+      }
+      // hazard: a real closing/opening script tag or HTML comment marker literal
+      // breaks single-file inlining (the HTML tokenizer closes the inlined block).
+      if (SCRIPT_CLOSE_RE.test(c)) errors.push('hazard literal: closing script tag (split it, e.g. "</scr"+"ipt>")');
+      else if (SCRIPT_OPEN_RE.test(c)) errors.push('hazard literal: opening script tag (split it, e.g. "<scr"+"ipt>")');
+      if (COMMENT_OPEN_RE.test(c)) errors.push('hazard literal: HTML comment marker (split it, e.g. "<"+"!--")');
+    } catch (e) {
+      errors.push('validate error: ' + ((e && e.message) ? e.message : 'unknown'));
+    }
+    return { ok: errors.length === 0, errors: errors };
+  }
+
+  // ---------------------------------------------------------------------------
+  // rebuildIndex({modules, shell, styles}) -> indexHtml String
+  //   Replicate build.sh EXACTLY: doctype + html(lang ko) + head(meta charset,
+  //   meta viewport, title from document.title, style) + body(shell + one
+  //   script block per module in SRC_MODULES order). Script tags are SPLIT so
+  //   this builder source never contains a raw token.
+  // ---------------------------------------------------------------------------
+  function htmlTitle() {
+    try {
+      if (typeof document !== 'undefined' && document.title) return String(document.title);
+    } catch (e) {}
+    return 'PIXEL AI COMPANY';
+  }
+
+  function rebuildIndex(parts) {
+    try {
+      var p = parts || {};
+      var modules = (p.modules && typeof p.modules === 'object') ? p.modules : {};
+      var shell = String(p.shell == null ? '' : p.shell);
+      var styles = String(p.styles == null ? '' : p.styles);
+      var names = moduleList();
+
+      var SO = '<scr' + 'ipt>';
+      var SC = '</scr' + 'ipt>';
+      var NL = '\n';
+
+      // Mirror build.sh EXACTLY for byte-identical output: each echo'd line gets a
+      // single trailing newline; cat'd file contents (styles/shell/module code) are
+      // appended VERBATIM (they already carry their own trailing newline), so no
+      // extra blank lines creep in and `bash build.sh` reproduces this file 1:1.
+      var out = '';
+      out += '<!DOCTYPE html>' + NL;
+      out += '<html lang="ko">' + NL;
+      out += '<head>' + NL;
+      out += '<meta charset="utf-8">' + NL;
+      out += '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">' + NL;
+      out += '<title>' + htmlTitle() + '</title>' + NL;
+      out += '<style>' + NL;
+      out += styles;                       // cat (verbatim, keeps its trailing newline)
+      out += '</style>' + NL;
+      out += '</head>' + NL;
+      out += '<body>' + NL;
+      out += shell;                        // cat (verbatim)
+      for (var i = 0; i < names.length; i++) {
+        var nm = names[i];
+        var code = (typeof modules[nm] === 'string') ? modules[nm] : null;
+        if (code == null) continue;        // skip absent modules (optional feature files)
+        out += SO + NL;
+        out += code;                       // cat (verbatim)
+        out += SC + NL;
+      }
+      out += '</body>' + NL;
+      out += '</html>' + NL;
+      return out;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // diff(oldC, newC) -> reuse App.Workspace.diffLines (LCS line diff).
+  function diff(oldC, newC) {
+    try {
+      if (App.Workspace && typeof App.Workspace.diffLines === 'function') {
+        return App.Workspace.diffLines(oldC, newC);
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // run(hint) -> Promise<{ok, improvement, rationale, files[], indexHtml,
+  //                        allValid, error?}>
+  //   Orchestrate: fetch -> propose -> rewrite each target -> applyEdits ->
+  //   validate -> rebuildIndex (ONLY if every changed file is valid). Returns the
+  //   plan for the UI. Does NOT deploy. SAFETY: allValid=false + NO rebuild when
+  //   any target fails validation.
+  // ---------------------------------------------------------------------------
+  function run(hint) {
+    return new Promise(function (resolve) {
+      function fail(msg) {
+        resolve({ ok: false, improvement: '', rationale: '', files: [], indexHtml: '', allValid: false, error: msg });
+      }
+      try {
+        fetchSource().then(function (src) {
+          if (!src || !src.ok) {
+            fail((src && src.error) || 'self-improve needs a served context (GitHub Pages or localhost), not file://');
+            return;
+          }
+          propose(hint).then(function (prop) {
+            var targets = (prop && Array.isArray(prop.targets)) ? prop.targets : [];
+            // keep only targets we actually fetched (defensive).
+            var valid = [];
+            for (var ti = 0; ti < targets.length; ti++) {
+              if (typeof src.modules[targets[ti]] === 'string') valid.push(targets[ti]);
+            }
+            if (!valid.length) { fail('no fetchable target modules in proposal'); return; }
+
+            // rewrite each target sequentially (bounded; gentle on rate limits).
+            var files = [];
+            var changedModules = {};   // name -> newContent for rebuild
+
+            function step(idx) {
+              if (idx >= valid.length) { finalize(); return; }
+              var name = valid[idx];
+              var oldContent = String(src.modules[name] == null ? '' : src.modules[name]);
+              rewrite(name, oldContent, prop.plan).then(function (rw) {
+                var res = applyEdits(oldContent, (rw && rw.edits) || []);
+                var newContent = res.content;
+                var v = validate(name, newContent);
+                // a file with zero applied edits is effectively unchanged -> flag as invalid
+                // so the user is not asked to deploy a no-op (and so the proposal is honest).
+                if (!res.applied.length) {
+                  v = { ok: false, errors: v.errors.concat(['no edits applied (all ' + res.rejected.length + ' rejected)']) };
+                }
+                files.push({
+                  name: name,
+                  path: 'src/' + name + '.js',
+                  oldContent: oldContent,
+                  newContent: newContent,
+                  diff: diff(oldContent, newContent),
+                  valid: v,
+                  applied: res.applied,
+                  rejected: res.rejected,
+                  summary: (rw && rw.summary) || ''
+                });
+                if (v.ok) changedModules[name] = newContent;
+                step(idx + 1);
+              }).catch(function (err) {
+                // record a failed file so the UI shows what went wrong; allValid -> false.
+                files.push({
+                  name: name,
+                  path: 'src/' + name + '.js',
+                  oldContent: oldContent,
+                  newContent: oldContent,
+                  diff: [],
+                  valid: { ok: false, errors: ['rewrite failed: ' + ((err && err.message) ? err.message : 'error')] },
+                  applied: [],
+                  rejected: [],
+                  summary: ''
+                });
+                step(idx + 1);
+              });
+            }
+
+            function finalize() {
+              var allValid = files.length > 0;
+              for (var fi = 0; fi < files.length; fi++) {
+                if (!files[fi].valid || !files[fi].valid.ok) { allValid = false; break; }
+              }
+              var indexHtml = '';
+              // SAFETY: only rebuild when EVERY changed file is valid.
+              if (allValid) {
+                // merge changed modules over the fetched originals for the rebuild.
+                var merged = {};
+                for (var k in src.modules) {
+                  if (Object.prototype.hasOwnProperty.call(src.modules, k)) merged[k] = src.modules[k];
+                }
+                for (var c in changedModules) {
+                  if (Object.prototype.hasOwnProperty.call(changedModules, c)) merged[c] = changedModules[c];
+                }
+                indexHtml = rebuildIndex({ modules: merged, shell: src.shell, styles: src.styles });
+                // final guard: the assembled index must be non-empty.
+                if (!indexHtml) allValid = false;
+              }
+              resolve({
+                ok: true,
+                improvement: (prop && prop.improvement) || '',
+                rationale: (prop && prop.rationale) || '',
+                files: files,
+                indexHtml: indexHtml,
+                allValid: allValid
+              });
+            }
+
+            step(0);
+          }).catch(function (err) {
+            fail('propose failed: ' + ((err && err.message) ? err.message : 'error'));
+          });
+        }).catch(function (err) {
+          fail('fetch failed: ' + ((err && err.message) ? err.message : 'error'));
+        });
+      } catch (e) {
+        fail((e && e.message) ? e.message : 'self-improve failed');
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // deploy(plan) -> Promise<{ok, error?}>
+  //   REFUSES unless plan.allValid AND github (token+owner+repo) is configured.
+  //   Pushes the changed src/<name>.js files (newContent) + index.html
+  //   (plan.indexHtml) via App.Workspace.githubPush. NEVER auto-called; the UI
+  //   invokes this on an explicit user click, then reloads on success.
+  // ---------------------------------------------------------------------------
+  function deploy(plan) {
+    return new Promise(function (resolve) {
+      try {
+        if (!plan || typeof plan !== 'object') {
+          resolve({ ok: false, error: 'no plan' });
+          return;
+        }
+        if (!plan.allValid) {
+          resolve({ ok: false, error: 'plan is not valid — refusing to deploy' });
+          return;
+        }
+        if (!plan.indexHtml) {
+          resolve({ ok: false, error: 'no rebuilt index.html — refusing to deploy' });
+          return;
+        }
+        var gh = (SETTINGS().github) || {};
+        var token = strOr(gh.token, '');
+        var owner = strOr(gh.owner, '');
+        var repo = strOr(gh.repo, '');
+        var branch = strOr(gh.branch, '') || 'main';
+        if (!token || !owner || !repo) {
+          resolve({ ok: false, error: 'GitHub not configured (token/owner/repo required)' });
+          return;
+        }
+        if (!App.Workspace || typeof App.Workspace.githubPush !== 'function') {
+          resolve({ ok: false, error: 'workspace push unavailable' });
+          return;
+        }
+
+        // Build the list of files to push: each VALID changed module + index.html.
+        var files = Array.isArray(plan.files) ? plan.files : [];
+        var toPush = [];
+        for (var i = 0; i < files.length; i++) {
+          var f = files[i];
+          if (!f || !f.valid || !f.valid.ok) continue;
+          if (!f.path || typeof f.newContent !== 'string') continue;
+          toPush.push({ path: f.path, content: f.newContent });
+        }
+        if (!toPush.length) {
+          resolve({ ok: false, error: 'no valid changed files to deploy' });
+          return;
+        }
+        toPush.push({ path: 'index.html', content: String(plan.indexHtml) });
+
+        // githubPush pushes the whole workspace (App.Workspace.list()); to push an
+        // ARBITRARY set of files we pass them explicitly if the signature supports
+        // it, else fall back to a temporary workspace write + push of just these.
+        pushFiles(toPush, { token: token, owner: owner, repo: repo, branch: branch }).then(function (r) {
+          if (r && r.ok) resolve({ ok: true, results: r.results });
+          else resolve({ ok: false, error: (r && r.error) ? r.error : 'push failed', results: r && r.results });
+        }).catch(function (err) {
+          resolve({ ok: false, error: (err && err.message) ? err.message : 'push failed' });
+        });
+      } catch (e) {
+        resolve({ ok: false, error: (e && e.message) ? e.message : 'deploy failed' });
+      }
+    });
+  }
+
+  // pushFiles(list, creds) -> Promise<{ok, results, error?}>. Uses the GitHub REST
+  //   contents API directly (mirrors Workspace.githubPush) so we push EXACTLY the
+  //   given {path,content} set (NOT the whole workspace). Sequential + bounded +
+  //   never throws (rejects only on no-fetch). Each file: GET sha (if present) then
+  //   PUT base64(utf8) content.
+  function pushFiles(list, creds) {
+    return new Promise(function (resolve) {
+      try {
+        if (typeof fetch !== 'function') { resolve({ ok: false, results: [], error: 'fetch unavailable' }); return; }
+        var token = creds.token, owner = creds.owner, repo = creds.repo, branch = creds.branch || 'main';
+        var apiBase = 'https://api.github.com/repos/' +
+          encodeURIComponent(owner) + '/' + encodeURIComponent(repo) + '/contents/';
+
+        function authHeaders(extra) {
+          var h = {
+            'Authorization': 'Bearer ' + token,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+          };
+          if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) h[k] = extra[k];
+          return h;
+        }
+        function encPath(p) {
+          return String(p).split('/').map(function (s) { return encodeURIComponent(s); }).join('/');
+        }
+        function getUrl(p) { return apiBase + encPath(p) + '?ref=' + encodeURIComponent(branch); }
+        function putUrl(p) { return apiBase + encPath(p); }
+        function b64(content) {
+          try {
+            if (App.Workspace && typeof App.Workspace.toBase64Utf8 === 'function') {
+              return App.Workspace.toBase64Utf8(content);
+            }
+          } catch (e) {}
+          // last-resort base64 (ASCII-safe; Workspace.toBase64Utf8 should exist).
+          try { return (typeof btoa === 'function') ? btoa(unescape(encodeURIComponent(content))) : ''; }
+          catch (e2) { return ''; }
+        }
+
+        var results = [];
+        var anyOk = false;
+
+        function next(idx) {
+          if (idx >= list.length) { resolve({ ok: anyOk, results: results }); return; }
+          var it = list[idx];
+          var p = it.path;
+          var sha = null;
+          fetch(getUrl(p), { method: 'GET', headers: authHeaders() })
+            .then(function (resp) {
+              if (resp && resp.ok) {
+                return resp.json().then(function (j) { if (j && j.sha) sha = j.sha; }).catch(function () {});
+              }
+              return null;
+            })
+            .catch(function () {})
+            .then(function () {
+              var body = {
+                message: 'NEON//WORKS self-improve: update ' + p,
+                content: b64(String(it.content == null ? '' : it.content)),
+                branch: branch
+              };
+              if (sha) body.sha = sha;
+              return fetch(putUrl(p), {
+                method: 'PUT',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(body)
+              });
+            })
+            .then(function (resp) {
+              var ok = !!(resp && resp.ok);
+              if (ok) anyOk = true;
+              results.push({ path: p, status: ok ? 'ok' : ('error ' + (resp ? resp.status : 0)) });
+            })
+            .catch(function (err) {
+              results.push({ path: p, status: 'error ' + ((err && err.message) ? err.message : 'network') });
+            })
+            .then(function () { next(idx + 1); });
+        }
+        next(0);
+      } catch (e) {
+        resolve({ ok: false, results: [], error: (e && e.message) ? e.message : 'fatal' });
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ATTACH
+  // ---------------------------------------------------------------------------
+  App.SelfImprove = {
+    fetchSource: fetchSource,
+    propose: propose,
+    rewrite: rewrite,
+    applyEdits: applyEdits,
+    validate: validate,
+    rebuildIndex: rebuildIndex,
+    diff: diff,
+    run: run,
+    deploy: deploy,
+    // helpers exposed for reuse / testing (additive, non-spec)
+    moduleList: moduleList,
+    parseJsonObject: parseJsonObject
+  };
+
+})();
+</script>
+<script>
+// =============================================================================
 // ui.js  →  App.UI
 // PIXEL AI COMPANY ("NEON//WORKS") — DOM overlays, modals, input, camera controls.
 //
@@ -20975,6 +21932,11 @@ window.App = window.App || {};
 
       // Global "Coffee break" control (sends all idle non-boss agents on break).
       ensureCoffeeBreakButton();
+
+      // Self-Improve entry point (only when App.SelfImprove is loaded). The app
+      // reads its own source, proposes ONE improvement, and shows diffs for the
+      // user to APPROVE before any deploy. Strictly human-in-the-loop.
+      ensureSelfImproveButton();
 
       // Mobile/responsive: wire the rail drawer toggles (shown <=820px via CSS).
       on($('btn-rail-crew'), 'click', function () { toggleRailDrawer('agent-list', 'btn-rail-crew'); });
@@ -25514,6 +26476,368 @@ window.App = window.App || {};
     while (x < n) { out.push({ type: 'del', text: a[x] }); x++; }
     while (y < m) { out.push({ type: 'add', text: b[y] }); y++; }
     return out;
+  }
+
+  // ===========================================================================
+  // SELF-IMPROVE  (human-in-the-loop) — UI layer over App.SelfImprove.
+  // Entry point: a HUD button (injected next to the other controls) opens a modal
+  // with an optional hint + a Run button. Run calls App.SelfImprove.run(hint),
+  // which fetches the app's own source, asks the model for ONE improvement, edits
+  // the target module(s), rebuilds index.html in-browser and validates. The modal
+  // renders the proposal + per-file diffs + each file's validation status. ONLY
+  // when every file validates AND github is configured does a Deploy button
+  // appear; clicking it calls App.SelfImprove.deploy(plan) then reloads. Nothing
+  // auto-deploys. Engine missing / not served / no-github / invalid edits all
+  // surface as clear in-modal states (no deploy button). Feature-detected.
+  // ===========================================================================
+
+  // The engine is loaded as a sibling module; tolerate its absence (e.g. an older
+  // build without selfimprove.js) by feature-detecting before every use.
+  function SELF() { return App.SelfImprove; }
+  function hasSelfImprove() {
+    var S = SELF();
+    return !!(S && typeof S.run === 'function');
+  }
+
+  // Inject the Self-Improve control into the HUD toolbar (once). Mirrors
+  // ensureCoffeeBreakButton(): placed before the first separator with the primary
+  // actions. No-op when the engine isn't present or the toolbar is missing.
+  function ensureSelfImproveButton() {
+    if ($('btn-selfimprove')) return;
+    if (!hasSelfImprove()) return;
+    var controls = $('hud-controls');
+    if (!controls) return;
+    var b = el('button', 'btn');
+    b.id = 'btn-selfimprove';
+    b.type = 'button';
+    b.title = T('selfimprove.title', 'Self-Improve: the app reads its own code and proposes one upgrade');
+    b.appendChild(el('span', 'btn-ico', '✦'));
+    b.appendChild(el('span', 'btn-lbl', T('selfimprove.btn', 'Evolve')));
+    on(b, 'click', function () { UI.openSelfImprove(); });
+    var sep = controls.querySelector ? controls.querySelector('.hud-sep') : null;
+    if (sep) controls.insertBefore(b, sep);
+    else controls.appendChild(b);
+  }
+
+  // Open (or rebuild) the Self-Improve modal mounted into #modal-root. Reuses the
+  // standard modal chrome used by showFinalResult()/mountWhiteboardModal().
+  UI.openSelfImprove = function () {
+    if (!hasSelfImprove()) { UI.toast(T('selfimprove.unavailable', 'Self-Improve is unavailable.')); return; }
+    var root = $('modal-root');
+    if (!root) { UI.toast(T('selfimprove.unavailable', 'Self-Improve is unavailable.')); return; }
+    var prev = $('modal-selfimprove');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-selfimprove';
+    var scrim = el('div', 'modal-scrim');
+    var closeIt = function () { if (modal.parentNode) modal.parentNode.removeChild(modal); };
+    on(scrim, 'click', closeIt);
+
+    var card = el('div', 'modal-card modal-selfimprove-card');
+    card.appendChild(el('div', 'panel-accent'));
+
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', '✦ ' + T('selfimprove.title', 'SELF-IMPROVE')));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', closeIt);
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    body.id = 'si-body';
+
+    // --- intro + hint + run row ---
+    var intro = el('div', 'si-intro',
+      T('selfimprove.intro',
+        'The app reads its own source, proposes ONE safe improvement, edits the target module(s), rebuilds and validates — then shows you the diffs. Nothing ships until you approve.'));
+    body.appendChild(intro);
+
+    var hintRow = el('div', 'si-hint-row');
+    var hint = document.createElement('textarea');
+    hint.id = 'si-hint';
+    hint.className = 'si-hint';
+    hint.rows = 2;
+    hint.placeholder = T('selfimprove.hint.ph', 'Optional: nudge the focus (e.g. "improve accessibility of the task board")');
+    hintRow.appendChild(hint);
+    body.appendChild(hintRow);
+
+    var runRow = el('div', 'si-run-row');
+    var runBtn = el('button', 'btn btn-primary', '✦ ' + T('selfimprove.run', 'Propose an improvement'));
+    runBtn.type = 'button';
+    runBtn.id = 'si-run';
+    on(runBtn, 'click', function () { runSelfImprove(); });
+    runRow.appendChild(runBtn);
+    body.appendChild(runRow);
+
+    // --- status line (spinner / errors) ---
+    var status = el('div', 'si-status hidden');
+    status.id = 'si-status';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    body.appendChild(status);
+
+    // --- results host (proposal + diffs + validation + deploy) ---
+    var results = el('div', 'si-results');
+    results.id = 'si-results';
+    body.appendChild(results);
+
+    var foot = el('footer', 'modal-foot');
+    var close = el('button', 'btn', T('common.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', closeIt);
+    foot.appendChild(close);
+
+    card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+    applyI18n(modal);
+
+    try { hint.focus(); } catch (e) {}
+  };
+
+  // Show a status message in the modal. spinner=true prefixes a CSS spinner glyph
+  // (reuses the .overload-spin animation, ensuring its styles exist).
+  function siStatus(msg, spinner, kind) {
+    var node = $('si-status');
+    if (!node) return;
+    clear(node);
+    if (spinner) {
+      ensureOverloadStyles();
+      var sp = el('span', 'overload-spin', '⏳');
+      sp.setAttribute('aria-hidden', 'true');
+      node.appendChild(sp);
+      node.appendChild(document.createTextNode(' '));
+    }
+    node.appendChild(document.createTextNode(String(msg == null ? '' : msg)));
+    node.className = 'si-status' + (kind ? ' si-status-' + kind : '');
+    show(node);
+  }
+  function siClearStatus() { var n = $('si-status'); if (n) { clear(n); hide(n); } }
+
+  // Run the engine, then render the plan. Guards the button (no double-run) and
+  // surfaces all failure modes in-modal. NEVER deploys here.
+  function runSelfImprove() {
+    if (!hasSelfImprove()) { siStatus(T('selfimprove.unavailable', 'Self-Improve is unavailable.'), false, 'err'); return; }
+    var runBtn = $('si-run');
+    var results = $('si-results');
+    if (results) clear(results);
+    var hintEl = $('si-hint');
+    var hint = hintEl ? String(hintEl.value || '').trim() : '';
+    if (runBtn) runBtn.disabled = true;
+    siStatus(T('selfimprove.analyzing', 'Reading the app\'s own source and drafting an improvement…'), true);
+
+    var p;
+    try { p = SELF().run(hint); }
+    catch (e) {
+      if (runBtn) runBtn.disabled = false;
+      siStatus((e && e.message) || String(e), false, 'err');
+      return;
+    }
+    if (!p || typeof p.then !== 'function') {
+      if (runBtn) runBtn.disabled = false;
+      siStatus(T('selfimprove.invalid', 'The proposal could not be produced.'), false, 'err');
+      return;
+    }
+    p.then(function (plan) {
+      if (runBtn) runBtn.disabled = false;
+      renderSelfImprovePlan(plan || {});
+    }).catch(function (e) {
+      if (runBtn) runBtn.disabled = false;
+      siStatus((e && e.message) || String(e) || T('selfimprove.invalid', 'The proposal could not be produced.'), false, 'err');
+    });
+  }
+
+  // Render the engine's run() result: proposal text, per-file diffs + validation,
+  // and (only when allValid && github configured) a human-approved Deploy button.
+  function renderSelfImprovePlan(plan) {
+    var results = $('si-results');
+    if (!results) return;
+    clear(results);
+
+    // Engine-level error (e.g. file:// has no server, or proposal failure).
+    if (plan.ok === false || plan.error) {
+      var err = String(plan.error || '');
+      // The engine reports a served-context requirement when fetch fails.
+      if (/file:\/\/|served context|GitHub Pages|localhost/i.test(err)) {
+        siStatus(T('selfimprove.needServed',
+          'Self-Improve needs a served context (GitHub Pages or localhost), not file://.'), false, 'warn');
+      } else {
+        siStatus(err || T('selfimprove.invalid', 'The proposal could not be produced.'), false, 'err');
+      }
+      return;
+    }
+    siClearStatus();
+
+    // --- PROPOSAL ---
+    var prop = el('div', 'si-proposal');
+    prop.appendChild(el('div', 'si-section-label', T('selfimprove.proposal', 'PROPOSAL')));
+    if (plan.improvement) prop.appendChild(el('div', 'si-improvement', String(plan.improvement)));
+    if (plan.rationale) prop.appendChild(el('div', 'si-rationale', String(plan.rationale)));
+    var files = Array.isArray(plan.files) ? plan.files : [];
+    if (files.length) {
+      var tlist = files.map(function (f) { return (f && f.name) ? f.name : '?'; }).join(', ');
+      prop.appendChild(el('div', 'si-targets', T('selfimprove.targets', 'Targets: ') + tlist));
+    }
+    results.appendChild(prop);
+
+    // --- PER-FILE DIFFS + VALIDATION ---
+    for (var i = 0; i < files.length; i++) {
+      results.appendChild(buildSelfImproveFileBlock(files[i] || {}));
+    }
+
+    // --- DEPLOY / GATING ---
+    results.appendChild(buildSelfImproveDeploy(plan));
+  }
+
+  // One collapsible block per changed file: header (name + path + valid badge),
+  // applied/rejected edit counts, then the diff (reusing buildDiffBlock styling).
+  function buildSelfImproveFileBlock(f) {
+    var box = el('details', 'si-file');
+    box.open = true;
+    var sum = el('summary', 'si-file-head');
+    sum.appendChild(el('span', 'si-file-name', (f.name || '?') + '.js'));
+    sum.appendChild(el('span', 'si-file-path', f.path || ''));
+    var valid = f.valid || { ok: false, errors: [] };
+    var okBadge = el('span', 'si-valid ' + (valid.ok ? 'si-valid-ok' : 'si-valid-bad'),
+      valid.ok ? '✓ ' + T('selfimprove.validOk', 'valid')
+               : '✕ ' + T('selfimprove.validBad', 'invalid'));
+    sum.appendChild(okBadge);
+    box.appendChild(sum);
+
+    var bodyEl = el('div', 'si-file-body');
+
+    // Applied / rejected edit summary.
+    var applied = Array.isArray(f.applied) ? f.applied.length : 0;
+    var rejected = Array.isArray(f.rejected) ? f.rejected.length : 0;
+    var editsLine = el('div', 'si-edits',
+      T('selfimprove.editsApplied', 'edits applied: ') + applied +
+      (rejected ? ' · ' + T('selfimprove.editsRejected', 'rejected: ') + rejected : ''));
+    bodyEl.appendChild(editsLine);
+
+    // Rejected-edit reasons (so the user understands why an edit didn't land).
+    if (rejected) {
+      var rwrap = el('div', 'si-rejected');
+      for (var r = 0; r < f.rejected.length; r++) {
+        var rj = f.rejected[r] || {};
+        var why = rj.reason || rj.why || 'no unique match';
+        rwrap.appendChild(el('div', 'si-rejected-line', '⚠ ' + String(why)));
+      }
+      bodyEl.appendChild(rwrap);
+    }
+
+    // Validation errors (if any).
+    if (!valid.ok && Array.isArray(valid.errors) && valid.errors.length) {
+      var ewrap = el('div', 'si-verr');
+      for (var e = 0; e < valid.errors.length; e++) {
+        ewrap.appendChild(el('div', 'si-verr-line', '✕ ' + String(valid.errors[e])));
+      }
+      bodyEl.appendChild(ewrap);
+    }
+
+    // Diff — reuse the Files-panel diff styling (.fv-diff / .diff-line diff-*).
+    bodyEl.appendChild(buildDiffBlock(f.oldContent || '', f.newContent || ''));
+
+    box.appendChild(bodyEl);
+    return box;
+  }
+
+  // The deploy footer: gates on allValid + github config. Three blocked states
+  // (not served / no github / invalid) show a message and NO deploy button.
+  function buildSelfImproveDeploy(plan) {
+    var wrap = el('div', 'si-deploy');
+    var s = STATE();
+    var gh = (s && s.settings && s.settings.github) || {};
+    var githubReady = !!(gh.token && gh.owner && gh.repo);
+    var allValid = (plan.allValid === true);
+
+    if (!allValid) {
+      wrap.appendChild(el('div', 'si-blocked si-blocked-bad',
+        '✕ ' + T('selfimprove.invalid',
+          'Some edits failed validation — deploy is blocked. Run again to get a clean proposal.')));
+      return wrap;
+    }
+    if (!githubReady) {
+      var need = el('div', 'si-blocked si-blocked-warn',
+        '⚠ ' + T('selfimprove.needGithub',
+          'Set GitHub token, owner and repo in Settings to enable deploy.'));
+      wrap.appendChild(need);
+      var openSet = el('button', 'btn', T('selfimprove.openSettings', 'Open Settings'));
+      openSet.type = 'button';
+      on(openSet, 'click', function () { UI.openSettings(); });
+      wrap.appendChild(openSet);
+      return wrap;
+    }
+
+    // Ready: everything valid + github configured. Human clicks to deploy.
+    var ready = el('div', 'si-deploy-ready',
+      T('selfimprove.deployReady',
+        'All files validate. Deploy pushes the changed module(s) + index.html to ') +
+        gh.owner + '/' + gh.repo + ' (' + (gh.branch || 'main') + ').');
+    wrap.appendChild(ready);
+
+    var btn = el('button', 'btn btn-primary attn-pulse', '🚀 ' + T('selfimprove.deploy', 'Deploy & reload'));
+    btn.type = 'button';
+    btn.id = 'si-deploy-btn';
+    ensureOverloadStyles(); // .attn-pulse keyframes live in the overload style block
+    on(btn, 'click', function () { deploySelfImprove(plan, btn); });
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
+  // Human-approved deploy: confirm, call App.SelfImprove.deploy(plan), toast and
+  // reload on success. Re-checks allValid + github as a final guard so this never
+  // ships an unvalidated build.
+  function deploySelfImprove(plan, btn) {
+    if (!hasSelfImprove() || typeof SELF().deploy !== 'function') {
+      siStatus(T('selfimprove.unavailable', 'Self-Improve is unavailable.'), false, 'err');
+      return;
+    }
+    if (!plan || plan.allValid !== true) {
+      siStatus(T('selfimprove.invalid', 'Deploy is blocked: not all files validate.'), false, 'err');
+      return;
+    }
+    var s = STATE();
+    var gh = (s && s.settings && s.settings.github) || {};
+    if (!(gh.token && gh.owner && gh.repo)) {
+      siStatus(T('selfimprove.needGithub', 'Set GitHub token, owner and repo in Settings to enable deploy.'), false, 'warn');
+      return;
+    }
+    var files = Array.isArray(plan.files) ? plan.files : [];
+    var fileCount = files.length + 1; // +1 for index.html
+    if (typeof window !== 'undefined' && window.confirm &&
+        !window.confirm(T('selfimprove.deployConfirm',
+          'Push ' + fileCount + ' file(s) to ' + gh.owner + '/' + gh.repo +
+          ' (' + (gh.branch || 'main') + ') and reload? This changes the live app.'))) return;
+
+    if (btn) btn.disabled = true;
+    siStatus(T('selfimprove.deploying', 'Pushing to GitHub…'), true);
+
+    var p;
+    try { p = SELF().deploy(plan); }
+    catch (e) { if (btn) btn.disabled = false; siStatus((e && e.message) || String(e), false, 'err'); return; }
+    if (!p || typeof p.then !== 'function') {
+      if (btn) btn.disabled = false;
+      siStatus(T('selfimprove.deployFail', 'Deploy failed to start.'), false, 'err');
+      return;
+    }
+    p.then(function (res) {
+      res = res || {};
+      if (res.ok === false || res.error) {
+        if (btn) btn.disabled = false;
+        siStatus(T('selfimprove.deployFail', 'Deploy failed: ') + (res.error || 'unknown'), false, 'err');
+        return;
+      }
+      siStatus(T('selfimprove.deployed', 'Deployed. Reloading…'), true, 'ok');
+      UI.toast(T('selfimprove.deployed', 'Deployed. Reloading…'), 'ok');
+      // Reload so the freshly pushed index.html is served (small delay so the
+      // toast is visible and GitHub Pages registers the commit).
+      setTimeout(function () {
+        try { if (typeof location !== 'undefined' && location.reload) location.reload(); } catch (e) {}
+      }, 900);
+    }).catch(function (e) {
+      if (btn) btn.disabled = false;
+      siStatus(T('selfimprove.deployFail', 'Deploy failed: ') + ((e && e.message) || String(e)), false, 'err');
+    });
   }
 
   function restoreFileVersion(path, idx) {

@@ -239,7 +239,20 @@ window.App = window.App || {};
       'overload.banner': 'API overloaded - auto-retrying...',
       'overload.retry': 'Retry',
       'overload.useHaiku': 'Switch worker + boss to Haiku',
-      'overload.failed': 'Hit a rate limit / overload. Retry shortly, switch to Haiku, or use a smaller goal.'
+      'overload.failed': 'Hit a rate limit / overload. Retry shortly, switch to Haiku, or use a smaller goal.',
+
+      // --- self-improve (human-in-the-loop) ---
+      'selfimprove.title': 'SELF-IMPROVE',
+      'selfimprove.btn': 'Self-Improve',
+      'selfimprove.run': 'Propose Improvement',
+      'selfimprove.analyzing': 'Reading source & proposing an improvement...',
+      'selfimprove.proposal': 'PROPOSAL',
+      'selfimprove.deploy': 'Deploy & Reload',
+      'selfimprove.deployed': 'Deployed. Reloading...',
+      'selfimprove.needServed': 'Self-improve needs a served context (GitHub Pages or localhost), not file://.',
+      'selfimprove.needGithub': 'Set a GitHub token, owner, and repo in Settings to deploy.',
+      'selfimprove.invalid': 'A proposed edit failed validation - deploy is blocked.',
+      'selfimprove.hint.ph': 'Optional: hint what to improve (e.g. accessibility, a bug)...'
     },
 
     ko: {
@@ -417,7 +430,20 @@ window.App = window.App || {};
       'overload.banner': 'API 과부하 - 자동 재시도 중...',
       'overload.retry': '재시도',
       'overload.useHaiku': '워커·보스를 Haiku로 전환',
-      'overload.failed': 'API 한도·과부하로 실패했어요. 잠시 후 재시도하거나 Haiku로 바꾸거나 목표를 작게 나눠보세요.'
+      'overload.failed': 'API 한도·과부하로 실패했어요. 잠시 후 재시도하거나 Haiku로 바꾸거나 목표를 작게 나눠보세요.',
+
+      // --- self-improve (human-in-the-loop) ---
+      'selfimprove.title': '자가 개선',
+      'selfimprove.btn': '자가 개선',
+      'selfimprove.run': '개선안 제안',
+      'selfimprove.analyzing': '소스를 읽고 개선안을 제안하는 중...',
+      'selfimprove.proposal': '제안',
+      'selfimprove.deploy': '배포 후 새로고침',
+      'selfimprove.deployed': '배포 완료. 새로고침 중...',
+      'selfimprove.needServed': '자가 개선은 file://이 아니라 서버 환경(GitHub Pages 또는 localhost)이 필요합니다.',
+      'selfimprove.needGithub': '배포하려면 설정에서 GitHub 토큰·소유자·저장소를 입력하세요.',
+      'selfimprove.invalid': '제안된 수정이 검증을 통과하지 못해 배포가 차단되었습니다.',
+      'selfimprove.hint.ph': '선택: 개선 방향 힌트 (예: 접근성, 버그)...'
     }
   };
 
