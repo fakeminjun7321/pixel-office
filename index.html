@@ -14599,6 +14599,13 @@ window.App = window.App || {};
     var wantWeb = !!(settings.webSearch && roleDef.webSearchPreferred);
     var tools = wantWeb && CFG().WEB_SEARCH_TOOL ? [CFG().WEB_SEARCH_TOOL] : undefined;
 
+    // Serialize per-agent chat: abort any in-flight chat stream first, so a rapid
+    // second message can't interleave two responses into the same bubble/transcript.
+    if (agent._chatStream && typeof agent._chatStream.abort === 'function') {
+      try { agent._chatStream.abort(); } catch (e) {}
+    }
+    agent._chatStream = null;
+
     agent.busy = true;
     Agents.setState(agent, wantWeb ? 'searching' : 'coding');
     Agents.say(agent, '…', 2000);
@@ -14610,11 +14617,13 @@ window.App = window.App || {};
     var handle = App.API.stream({
       apiKey: settings.apiKey,
       openaiKey: settings.openaiKey,
+      geminiKey: settings.geminiKey,
       model: agent.model || settings.defaultModel,
       system: (agent.systemPrompt || '') +
-        '\n\n[CHAT MODE] You are chatting 1:1 with a teammate. Reply IN CHARACTER, briefly, like a real ' +
-        'coworker. Understand everyday/social messages too (relationships, mood, small talk, breaks, getting ' +
-        "along with the boss) - not only work tasks. Reply in the user's language (Korean or English).",
+        '\n\n[CHAT MODE] You are chatting 1:1 with a teammate. Reply IN CHARACTER and KEEP IT SHORT -- ' +
+        '2-5 sentences or a brief bullet list; do not over-explain or dump a long guide. Understand ' +
+        'everyday/social messages too (relationships, mood, small talk, breaks, getting along with the ' +
+        "boss), not only work tasks. Reply in the user's language (Korean or English).",
       messages: agent.conversation.slice(),
       tools: tools,
       onState: function (st) {
@@ -14660,8 +14669,13 @@ window.App = window.App || {};
         try { if (App.UI && App.UI.refreshAgentList) App.UI.refreshAgentList(); } catch (e) {}
         try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
         if (s && s._activeStreams) delete s._activeStreams[agent.id];
+        if (agent._chatStream === handle) agent._chatStream = null;
       },
       onError: function (err) {
+        // Superseded by a newer chat message (aborted) -> stay silent so the two
+        // responses don't interleave; the newer stream keeps running.
+        if (err && err.type === 'abort') { if (agent._chatStream === handle) agent._chatStream = null; return; }
+        if (agent._chatStream === handle) agent._chatStream = null;
         agent.busy = false;
         Agents.setState(agent, 'idle');
         var msg = (err && err.message) || 'error';
@@ -14682,6 +14696,7 @@ window.App = window.App || {};
     });
 
     if (s && s._activeStreams) s._activeStreams[agent.id] = handle;
+    agent._chatStream = handle;
     return handle || noop;
   };
 
