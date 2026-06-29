@@ -21306,10 +21306,14 @@ window.App = window.App || {};
       } catch (e) {
         errors.push('syntax: ' + ((e && e.message) ? e.message : 'parse error'));
       }
-      // hazard: a real closing/opening script tag or HTML comment marker literal
-      // breaks single-file inlining (the HTML tokenizer closes the inlined block).
+      // hazard: only a real CLOSING script tag or an HTML comment-open marker breaks
+      // single-file inlining (the same two tokens build.sh greps for). A bare OPENING
+      // script tag is NOT a hazard -- script content is raw-text and only ends at a
+      // closing tag -- and it legitimately appears in comments across modules, so
+      // flagging it would block almost every edit. (The obscure script-data double-
+      // escape needs a preceding comment-open marker, which we block below, so a lone
+      // opening tag is safe.)
       if (SCRIPT_CLOSE_RE.test(c)) errors.push('hazard literal: closing script tag (split it, e.g. "</scr"+"ipt>")');
-      else if (SCRIPT_OPEN_RE.test(c)) errors.push('hazard literal: opening script tag (split it, e.g. "<scr"+"ipt>")');
       if (COMMENT_OPEN_RE.test(c)) errors.push('hazard literal: HTML comment marker (split it, e.g. "<"+"!--")');
     } catch (e) {
       errors.push('validate error: ' + ((e && e.message) ? e.message : 'unknown'));
