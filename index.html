@@ -2631,11 +2631,6 @@ window.App = window.App || {};
     OPENAI_URL: 'https://api.openai.com/v1/chat/completions',   // v2: OpenAI chat-completions endpoint
     // Gemini generative-language API base. api.js builds <base><model>:streamGenerateContent?alt=sse.
     GEMINI_URL: 'https://generativelanguage.googleapis.com/v1beta/models/',
-    // v2: local subscription proxy (companion.py). The companion is OPT-IN and OFF
-    // by default (store defaultSettings().useCompanion === false), so a fresh or
-    // migrated company talks to the cloud API directly and never depends on a local
-    // server. The user explicitly enables it via the Settings companion toggle.
-    COMPANION_URL: 'http://localhost:8787/v1/messages',
     API_VERSION: '2023-06-01',
     DEFAULT_MODEL: 'claude-sonnet-4-6',          // worker default
     BOSS_MODEL:    'claude-opus-4-8',            // boss default
@@ -3445,11 +3440,6 @@ window.App = window.App || {};
       'share.preset.export': 'Export Preset',
       'share.preset.import': 'Import Preset',
 
-      // --- companion server (contract F) ---
-      'companion.label': 'Mac Companion',
-      'companion.on': 'On',
-      'companion.off': 'Off',
-      'companion.hint': 'Run the local mac-companion server to read your files and run your tools.',
 
       // --- common state words ---
       'state.queued': 'queued',
@@ -3638,10 +3628,6 @@ window.App = window.App || {};
       'share.preset.export': '프리셋 내보내기',
       'share.preset.import': '프리셋 가져오기',
 
-      'companion.label': '맥 컴패니언',
-      'companion.on': '켜짐',
-      'companion.off': '꺼짐',
-      'companion.hint': '로컬 mac-companion 서버를 실행하면 내 파일을 읽고 내 도구를 실행할 수 있습니다.',
 
       'state.queued': '대기',
       'state.running': '진행 중',
@@ -11302,9 +11288,7 @@ window.App = window.App || {};
   function attemptAnthropic(opts, controller) {
     var cfg = App.config || {};
     var st = (App.state && App.state.settings) || {};
-    var useCompanion = !!(st.useCompanion && st.companionUrl);  // local subscription proxy
-    var API_URL = useCompanion ? st.companionUrl
-      : (cfg.API_URL || 'https://api.anthropic.com/v1/messages');
+    var API_URL = cfg.API_URL || 'https://api.anthropic.com/v1/messages';
     var API_VERSION = cfg.API_VERSION || '2023-06-01';
     var MAX_TOKENS = cfg.MAX_TOKENS || 4096;
 
@@ -11323,13 +11307,10 @@ window.App = window.App || {};
       messages: Array.isArray(opts.messages) ? opts.messages : [],
       stream: true,
     };
-    // Companion proxy ignores server tools (no web_search via the CLI path).
-    var sentTools = !useCompanion && Array.isArray(opts.tools) && opts.tools.length > 0;
+    var sentTools = Array.isArray(opts.tools) && opts.tools.length > 0;
     if (sentTools) body.tools = opts.tools;
 
-    var headers = useCompanion
-      ? { 'content-type': 'application/json' }   // companion needs no key/version headers
-      : {
+    var headers = {
           'x-api-key': opts.apiKey,
           'anthropic-version': API_VERSION,
           'anthropic-dangerous-direct-browser-access': 'true',
@@ -11734,11 +11715,8 @@ window.App = window.App || {};
         return noopHandle();
       }
     } else {
-      // Companion mode (local subscription proxy) needs no Anthropic key.
-      var _s = (App.state && App.state.settings) || {};
-      var _companion = !!(_s.useCompanion && _s.companionUrl);
-      if (!opts.apiKey && !_companion) {
-        onError({ type: 'no_key', message: 'Set your API key in Settings (or enable the companion)' });
+      if (!opts.apiKey) {
+        onError({ type: 'no_key', message: 'Set your API key in Settings' });
         return noopHandle();
       }
     }
@@ -12039,8 +12017,6 @@ window.App = window.App || {};
       openaiKey: '',                                   // v2: OpenAI key (for gpt-* models)
       geminiKey: '',                                   // Gemini API key (for gemini-* models)
       safeMode: false,                                 // SAFE MODE: serialize requests + widen spacing to avoid rate-limit/overload (OFF by default; keeps Opus)
-      useCompanion: false,                             // v2: route Claude models through local subscription proxy (OPT-IN; OFF by default)
-      companionUrl: c.COMPANION_URL || 'http://localhost:8787/v1/messages',
       defaultModel: c.DEFAULT_MODEL || 'claude-sonnet-4-6',
       bossModel: c.BOSS_MODEL || 'claude-opus-4-8',
       webSearch: true,
@@ -14520,7 +14496,7 @@ window.App = window.App || {};
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
     if (prov === 'gemini') return !!set.geminiKey;
     if (prov === 'openai') return !!set.openaiKey;
-    return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+    return !!set.apiKey;
   }
 
   // find the boss agent (for "보스/boss" mentions).
@@ -14599,8 +14575,8 @@ window.App = window.App || {};
 
     // No credentials → friendly bubble, no network. Provider/companion-aware (§10).
     if (!hasCredsFor(agent.model || settings.defaultModel)) {
-      Agents.say(agent, '🔑 add an API key (or enable the companion) in Settings', 4000);
-      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
+      Agents.say(agent, '🔑 add an API key in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key in Settings'); } catch (e) {}
       try {
         if (App.Store && App.Store.pushLog) App.Store.pushLog({
           from: agent.name, to: 'system', kind: 'error', text: 'NO_KEY (direct chat)',
@@ -15271,7 +15247,7 @@ window.App = window.App || {};
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
     if (prov === 'gemini') return !!set.geminiKey;
     if (prov === 'openai') return !!set.openaiKey;
-    return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+    return !!set.apiKey;
   }
 
   // ===========================================================================
@@ -15691,8 +15667,8 @@ window.App = window.App || {};
     if (!hasCredsFor((boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL)) {
       root.status = 'error';
       root.error = 'NO_KEY';
-      if (boss) ag.say(boss, '🔑 add an API key (or enable the companion) in Settings', 4000);
-      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
+      if (boss) ag.say(boss, '🔑 add an API key in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key in Settings'); } catch (e) {}
       log('Boss', 'system', 'error', 'NO_KEY — cannot plan.');
       refreshBoard();
       return;
@@ -16106,7 +16082,7 @@ window.App = window.App || {};
 
     // No credentials path (defend; provider/companion-aware so GPT & companion work).
     if (!hasCredsFor(agent.model || settings.defaultModel)) {
-      ag.say(agent, '🔑 add an API key (or enable the companion) in Settings', 4000);
+      ag.say(agent, '🔑 add an API key in Settings', 4000);
       failTask(task, 'NO_KEY');
       return;
     }
@@ -17528,8 +17504,8 @@ window.App = window.App || {};
     if (!hasCredsFor((boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL)) {
       root.status = 'error';
       root.error = 'NO_KEY';
-      if (boss) ag.say(boss, '🔑 add an API key (or enable the companion) in Settings', 4000);
-      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
+      if (boss) ag.say(boss, '🔑 add an API key in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key in Settings'); } catch (e) {}
       log('Boss', 'system', 'error', 'NO_KEY — cannot build.');
       refreshBoard();
       return;
@@ -18410,7 +18386,7 @@ window.App = window.App || {};
         if (!agent) { resolve('ERROR: could not allocate a sub-worker'); return; }
 
         var model = agent.model || settings.defaultModel;
-        if (!hasCredsFor(model)) { cullTempAgent(agent); resolve('ERROR: NO_KEY — add an API key (or enable the companion) in Settings'); return; }
+        if (!hasCredsFor(model)) { cullTempAgent(agent); resolve('ERROR: NO_KEY — add an API key in Settings'); return; }
 
         _subActive++;
         var settled = false;
@@ -22787,7 +22763,7 @@ window.App = window.App || {};
     if (!s) return;
     var set = s.settings || (s.settings = {});
     var pool = [];
-    var hasAnthropic = !!set.apiKey || (set.useCompanion && set.companionUrl);
+    var hasAnthropic = !!set.apiKey;
     if (hasAnthropic) {
       pool.push('claude-haiku-4-5-20251001');
       pool.push('claude-sonnet-4-6');
@@ -23524,14 +23500,9 @@ window.App = window.App || {};
     // Inject (once) + load the Gemini key field next to the OpenAI key.
     ensureGeminiKeyField();
     var gemI = $('set-gemini-key'); if (gemI) { gemI.value = settings.geminiKey || ''; gemI.type = 'password'; }
-    // Inject (once) + load the local-companion toggle + URL.
-    ensureCompanionField();
     // Inject (once) the EN/KO language toggle.
     ensureLangField();
     highlightSegmented($('set-lang'), 'data-lang', currentLang());
-    var ctog = $('set-companion-toggle'); if (ctog) ctog.checked = !!settings.useCompanion;
-    updateCompanionStatus(); // sync the ON/OFF badge with the loaded toggle
-    var curl = $('set-companion-url'); if (curl) curl.value = settings.companionUrl || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var dm = $('set-default-model'); if (dm) dm.value = settings.defaultModel || CFG().DEFAULT_MODEL;
     var bm = $('set-boss-model'); if (bm) bm.value = settings.bossModel || CFG().BOSS_MODEL;
     // Inject (once) + load the SAFE MODE toggle + Distribute-by-role button right
@@ -28083,13 +28054,34 @@ window.App = window.App || {};
   // ---------------------------------------------------------------------------
   // loop
   // ---------------------------------------------------------------------------
+  // officeActive(s) — is anything visually changing? Drives the idle FPS throttle.
+  function officeActive(s) {
+    try {
+      if (!s) return true;
+      if (s.layoutEdit || s.followAgentId) return true;
+      var ags = s.agents || [];
+      for (var i = 0; i < ags.length; i++) {
+        var a = ags[i];
+        if (!a) continue;
+        if (a.state === 'walking' || a.busy || a.bubble) return true;
+        if (a.path && a.path.length) return true;
+      }
+      var tk = s.tasks || [];
+      for (var j = 0; j < tk.length; j++) { if (tk[j] && tk[j].status === 'running') return true; }
+      return false;
+    } catch (e) { return true; }
+  }
+
   Main.loop = function (ts) {
     if (!_running) return;
     var now = (typeof ts === 'number') ? ts
       : ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
-    // ECO (heat): cap the loop to ~40fps. A skipped frame is just a cheap time-check
-    // + reschedule, so we shed ~1/3 of the per-frame sim+canvas-render cost vs 60fps.
-    if ((now - _last) < (CFG().ECO_FRAME_MS || 24)) { requestAnimationFrame(Main.loop); return; }
+    // ECO (heat): ADAPTIVE FPS cap. An ACTIVE office (agents walking / tasks running)
+    // renders smoothly (~40fps); an IDLE office renders slowly (~6fps) so a tab left
+    // open barely uses CPU. Skipped frames are just a cheap time-check + reschedule.
+    var _s0 = STATE();
+    var _minFrame = officeActive(_s0) ? (CFG().ECO_FRAME_MS || 24) : (CFG().ECO_IDLE_FRAME_MS || 170);
+    if ((now - _last) < _minFrame) { requestAnimationFrame(Main.loop); return; }
     var dt = (now - _last) / 1000;
     _last = now;
     if (!(dt >= 0)) dt = 0;

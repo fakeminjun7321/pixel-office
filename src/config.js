@@ -645,11 +645,6 @@ window.App = window.App || {};
     OPENAI_URL: 'https://api.openai.com/v1/chat/completions',   // v2: OpenAI chat-completions endpoint
     // Gemini generative-language API base. api.js builds <base><model>:streamGenerateContent?alt=sse.
     GEMINI_URL: 'https://generativelanguage.googleapis.com/v1beta/models/',
-    // v2: local subscription proxy (companion.py). The companion is OPT-IN and OFF
-    // by default (store defaultSettings().useCompanion === false), so a fresh or
-    // migrated company talks to the cloud API directly and never depends on a local
-    // server. The user explicitly enables it via the Settings companion toggle.
-    COMPANION_URL: 'http://localhost:8787/v1/messages',
     API_VERSION: '2023-06-01',
     DEFAULT_MODEL: 'claude-sonnet-4-6',          // worker default
     BOSS_MODEL:    'claude-opus-4-8',            // boss default

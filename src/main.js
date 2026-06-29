@@ -230,13 +230,34 @@ window.App = window.App || {};
   // ---------------------------------------------------------------------------
   // loop
   // ---------------------------------------------------------------------------
+  // officeActive(s) — is anything visually changing? Drives the idle FPS throttle.
+  function officeActive(s) {
+    try {
+      if (!s) return true;
+      if (s.layoutEdit || s.followAgentId) return true;
+      var ags = s.agents || [];
+      for (var i = 0; i < ags.length; i++) {
+        var a = ags[i];
+        if (!a) continue;
+        if (a.state === 'walking' || a.busy || a.bubble) return true;
+        if (a.path && a.path.length) return true;
+      }
+      var tk = s.tasks || [];
+      for (var j = 0; j < tk.length; j++) { if (tk[j] && tk[j].status === 'running') return true; }
+      return false;
+    } catch (e) { return true; }
+  }
+
   Main.loop = function (ts) {
     if (!_running) return;
     var now = (typeof ts === 'number') ? ts
       : ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
-    // ECO (heat): cap the loop to ~40fps. A skipped frame is just a cheap time-check
-    // + reschedule, so we shed ~1/3 of the per-frame sim+canvas-render cost vs 60fps.
-    if ((now - _last) < (CFG().ECO_FRAME_MS || 24)) { requestAnimationFrame(Main.loop); return; }
+    // ECO (heat): ADAPTIVE FPS cap. An ACTIVE office (agents walking / tasks running)
+    // renders smoothly (~40fps); an IDLE office renders slowly (~6fps) so a tab left
+    // open barely uses CPU. Skipped frames are just a cheap time-check + reschedule.
+    var _s0 = STATE();
+    var _minFrame = officeActive(_s0) ? (CFG().ECO_FRAME_MS || 24) : (CFG().ECO_IDLE_FRAME_MS || 170);
+    if ((now - _last) < _minFrame) { requestAnimationFrame(Main.loop); return; }
     var dt = (now - _last) / 1000;
     _last = now;
     if (!(dt >= 0)) dt = 0;

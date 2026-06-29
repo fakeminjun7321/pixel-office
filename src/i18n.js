@@ -223,11 +223,6 @@ window.App = window.App || {};
       'share.preset.export': 'Export Preset',
       'share.preset.import': 'Import Preset',
 
-      // --- companion server (contract F) ---
-      'companion.label': 'Mac Companion',
-      'companion.on': 'On',
-      'companion.off': 'Off',
-      'companion.hint': 'Run the local mac-companion server to read your files and run your tools.',
 
       // --- common state words ---
       'state.queued': 'queued',
@@ -416,10 +411,6 @@ window.App = window.App || {};
       'share.preset.export': '프리셋 내보내기',
       'share.preset.import': '프리셋 가져오기',
 
-      'companion.label': '맥 컴패니언',
-      'companion.on': '켜짐',
-      'companion.off': '꺼짐',
-      'companion.hint': '로컬 mac-companion 서버를 실행하면 내 파일을 읽고 내 도구를 실행할 수 있습니다.',
 
       'state.queued': '대기',
       'state.running': '진행 중',

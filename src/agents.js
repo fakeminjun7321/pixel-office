@@ -806,7 +806,7 @@ window.App = window.App || {};
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
     if (prov === 'gemini') return !!set.geminiKey;
     if (prov === 'openai') return !!set.openaiKey;
-    return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+    return !!set.apiKey;
   }
 
   // find the boss agent (for "보스/boss" mentions).
@@ -885,8 +885,8 @@ window.App = window.App || {};
 
     // No credentials → friendly bubble, no network. Provider/companion-aware (§10).
     if (!hasCredsFor(agent.model || settings.defaultModel)) {
-      Agents.say(agent, '🔑 add an API key (or enable the companion) in Settings', 4000);
-      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
+      Agents.say(agent, '🔑 add an API key in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key in Settings'); } catch (e) {}
       try {
         if (App.Store && App.Store.pushLog) App.Store.pushLog({
           from: agent.name, to: 'system', kind: 'error', text: 'NO_KEY (direct chat)',

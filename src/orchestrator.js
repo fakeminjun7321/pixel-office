@@ -395,7 +395,7 @@ window.App = window.App || {};
       : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
     if (prov === 'gemini') return !!set.geminiKey;
     if (prov === 'openai') return !!set.openaiKey;
-    return !!set.apiKey || !!(set.useCompanion && set.companionUrl);
+    return !!set.apiKey;
   }
 
   // ===========================================================================
@@ -815,8 +815,8 @@ window.App = window.App || {};
     if (!hasCredsFor((boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL)) {
       root.status = 'error';
       root.error = 'NO_KEY';
-      if (boss) ag.say(boss, '🔑 add an API key (or enable the companion) in Settings', 4000);
-      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
+      if (boss) ag.say(boss, '🔑 add an API key in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key in Settings'); } catch (e) {}
       log('Boss', 'system', 'error', 'NO_KEY — cannot plan.');
       refreshBoard();
       return;
@@ -1230,7 +1230,7 @@ window.App = window.App || {};
 
     // No credentials path (defend; provider/companion-aware so GPT & companion work).
     if (!hasCredsFor(agent.model || settings.defaultModel)) {
-      ag.say(agent, '🔑 add an API key (or enable the companion) in Settings', 4000);
+      ag.say(agent, '🔑 add an API key in Settings', 4000);
       failTask(task, 'NO_KEY');
       return;
     }
@@ -2652,8 +2652,8 @@ window.App = window.App || {};
     if (!hasCredsFor((boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL)) {
       root.status = 'error';
       root.error = 'NO_KEY';
-      if (boss) ag.say(boss, '🔑 add an API key (or enable the companion) in Settings', 4000);
-      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key (or enable the companion) in Settings'); } catch (e) {}
+      if (boss) ag.say(boss, '🔑 add an API key in Settings', 4000);
+      try { if (App.UI && App.UI.toast) App.UI.toast('Add an API key in Settings'); } catch (e) {}
       log('Boss', 'system', 'error', 'NO_KEY — cannot build.');
       refreshBoard();
       return;
@@ -3534,7 +3534,7 @@ window.App = window.App || {};
         if (!agent) { resolve('ERROR: could not allocate a sub-worker'); return; }
 
         var model = agent.model || settings.defaultModel;
-        if (!hasCredsFor(model)) { cullTempAgent(agent); resolve('ERROR: NO_KEY — add an API key (or enable the companion) in Settings'); return; }
+        if (!hasCredsFor(model)) { cullTempAgent(agent); resolve('ERROR: NO_KEY — add an API key in Settings'); return; }
 
         _subActive++;
         var settled = false;

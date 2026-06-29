@@ -1086,7 +1086,7 @@ window.App = window.App || {};
     if (!s) return;
     var set = s.settings || (s.settings = {});
     var pool = [];
-    var hasAnthropic = !!set.apiKey || (set.useCompanion && set.companionUrl);
+    var hasAnthropic = !!set.apiKey;
     if (hasAnthropic) {
       pool.push('claude-haiku-4-5-20251001');
       pool.push('claude-sonnet-4-6');
@@ -1823,14 +1823,9 @@ window.App = window.App || {};
     // Inject (once) + load the Gemini key field next to the OpenAI key.
     ensureGeminiKeyField();
     var gemI = $('set-gemini-key'); if (gemI) { gemI.value = settings.geminiKey || ''; gemI.type = 'password'; }
-    // Inject (once) + load the local-companion toggle + URL.
-    ensureCompanionField();
     // Inject (once) the EN/KO language toggle.
     ensureLangField();
     highlightSegmented($('set-lang'), 'data-lang', currentLang());
-    var ctog = $('set-companion-toggle'); if (ctog) ctog.checked = !!settings.useCompanion;
-    updateCompanionStatus(); // sync the ON/OFF badge with the loaded toggle
-    var curl = $('set-companion-url'); if (curl) curl.value = settings.companionUrl || (CFG().COMPANION_URL || 'http://localhost:8787/v1/messages');
     var dm = $('set-default-model'); if (dm) dm.value = settings.defaultModel || CFG().DEFAULT_MODEL;
     var bm = $('set-boss-model'); if (bm) bm.value = settings.bossModel || CFG().BOSS_MODEL;
     // Inject (once) + load the SAFE MODE toggle + Distribute-by-role button right
