@@ -237,6 +237,16 @@ window.App = window.App || {};
       // user to APPROVE before any deploy. Strictly human-in-the-loop.
       ensureSelfImproveButton();
 
+      // BUILD TEMPLATES (contract E): a small picker of config.BUILD_TEMPLATES near
+      // the Build button. Picking one fills the goal input + kicks off the build via
+      // the existing dispatchBuild/runBuild path. Only shown when templates exist.
+      ensureTemplatesButton();
+
+      // KNOWLEDGE viewer (contract F): a HUD button that opens a list of the
+      // cross-project company knowledge (state.knowledge) with a clear-all action.
+      // Only shown when the Store knowledge API is present.
+      ensureKnowledgeButton();
+
       // Mobile/responsive: wire the rail drawer toggles (shown <=820px via CSS).
       on($('btn-rail-crew'), 'click', function () { toggleRailDrawer('agent-list', 'btn-rail-crew'); });
       on($('btn-rail-log'),  'click', function () { toggleRailDrawer('log', 'btn-rail-log'); });
@@ -3325,6 +3335,289 @@ window.App = window.App || {};
     UI.toast(T('shop.bought', 'Installed: ') + (up.name || up.id), 'ok');
     renderShop();
     refreshHud();
+  }
+
+  // ===========================================================================
+  // BUILD TEMPLATES (contract E) — a small picker of config.BUILD_TEMPLATES near
+  // the Build button. Each template carries {id,label,icon,goal,hint}; picking one
+  // fills the goal input with template.goal and immediately starts a build through
+  // the SAME path the Build button uses (dispatchBuild -> Orchestrator.runBuild).
+  // Feature-detected: when config.BUILD_TEMPLATES is empty/absent the HUD button is
+  // never injected, so older builds are unaffected. Everything is guarded.
+  // ===========================================================================
+  function buildTemplates() {
+    var t = CFG().BUILD_TEMPLATES;
+    return (t && t.length) ? t : [];
+  }
+
+  // Inject the "Templates" HUD button next to the Build button (mirrors the
+  // SelfImprove button pattern: appended into #hud-controls before the .hud-sep).
+  function ensureTemplatesButton() {
+    if ($('btn-templates')) return;
+    if (!buildTemplates().length) return;
+    var controls = $('hud-controls');
+    if (!controls) return;
+    var b = el('button', 'btn');
+    b.id = 'btn-templates';
+    b.type = 'button';
+    b.title = T('templates.title', 'Start from a project template');
+    b.setAttribute('aria-label', T('templates.title', 'Start from a project template'));
+    b.appendChild(el('span', 'btn-ico', '▤')); // squared grid glyph
+    b.appendChild(el('span', 'btn-lbl', T('templates.btn', 'Templates')));
+    on(b, 'click', function () { UI.openTemplates(); });
+    // Sit right after the Build button when present, else before the separator.
+    var buildBtn = $('btn-build');
+    if (buildBtn && buildBtn.parentNode === controls && buildBtn.nextSibling) {
+      controls.insertBefore(b, buildBtn.nextSibling);
+    } else {
+      var sep = controls.querySelector ? controls.querySelector('.hud-sep') : null;
+      if (sep) controls.insertBefore(b, sep);
+      else controls.appendChild(b);
+    }
+  }
+
+  // Open (or rebuild) the Build Templates modal in #modal-root. Reuses the standard
+  // modal chrome (scrim + modal-card + panel-accent) used by the Shop/Artifacts.
+  UI.openTemplates = function () {
+    var tpls = buildTemplates();
+    if (!tpls.length) { UI.toast(T('templates.empty', 'No project templates available.')); return; }
+    var root = $('modal-root');
+    if (!root) { UI.toast(T('templates.empty', 'No project templates available.')); return; }
+    var prev = $('modal-templates');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-templates';
+    var scrim = el('div', 'modal-scrim');
+    on(scrim, 'click', function () { closeTemplates(); });
+
+    var card = el('div', 'modal-card');
+    card.appendChild(el('div', 'panel-accent'));
+
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', '▤ ' + T('templates.modalTitle', 'PROJECT TEMPLATES')));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', function () { closeTemplates(); });
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    var intro = el('div', 'tpl-intro', T('templates.intro',
+      'Pick a starting point. The builder turns it into a real, runnable multi-file project.'));
+    body.appendChild(intro);
+    var list = el('div', 'tpl-list'); list.id = 'tpl-list';
+    body.appendChild(list);
+
+    var foot = el('footer', 'modal-foot');
+    var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', function () { closeTemplates(); });
+    foot.appendChild(close);
+
+    card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+
+    renderTemplates();
+    applyI18n(modal);
+  };
+
+  function closeTemplates() {
+    var m = $('modal-templates');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
+  function renderTemplates() {
+    var list = $('tpl-list');
+    if (!list) return;
+    clear(list);
+    var tpls = buildTemplates();
+    if (!tpls.length) {
+      list.appendChild(el('div', 'pe-empty', T('templates.empty', 'No project templates available.')));
+      return;
+    }
+    for (var i = 0; i < tpls.length; i++) {
+      (function (tpl) {
+        if (!tpl) return;
+        var item = el('button', 'tpl-item');
+        item.type = 'button';
+        var ico = el('span', 'tpl-ico', tpl.icon || '■');
+        item.appendChild(ico);
+        var text = el('div', 'tpl-text');
+        text.appendChild(el('div', 'tpl-name', tpl.label || tpl.id || 'Template'));
+        if (tpl.hint) text.appendChild(el('div', 'tpl-hint', tpl.hint));
+        item.appendChild(text);
+        item.title = String(tpl.goal || tpl.hint || tpl.label || '');
+        on(item, 'click', function () { pickTemplate(tpl); });
+        list.appendChild(item);
+      })(tpls[i]);
+    }
+  }
+
+  // Fill the goal input with the template's prompt then start a build through the
+  // SAME path the Build button uses, so there is no duplicated pipeline. We write
+  // the goal into the HUD input (dispatchBuild reads HUD first, then board) and
+  // call dispatchBuild(); it consumes the input, opens the board, and runs
+  // Orchestrator.runBuild. Falls back to a direct runBuild if dispatchBuild is gone.
+  function pickTemplate(tpl) {
+    var goal = String((tpl && tpl.goal) || '').trim();
+    if (!goal) { UI.toast(T('templates.empty', 'No project templates available.')); return; }
+    closeTemplates();
+    var hud = $('hud-task-input');
+    if (hud) { hud.value = goal; }
+    else {
+      var board = $('board-input');
+      if (board) board.value = goal;
+    }
+    try {
+      if (hud || $('board-input')) { dispatchBuild(); }
+      else if (ORCH() && ORCH().runBuild) { _lastGoal = { text: goal, mode: 'build' }; ORCH().runBuild(goal); UI.openTaskBoard(); }
+      else { UI.showError(T('build.unavailable', 'Build mode is unavailable.')); return; }
+    } catch (e) { UI.showError('Build failed to start: ' + (e && e.message)); return; }
+    UI.toast(T('templates.started', 'Building: ') + (tpl.label || tpl.id || ''));
+  }
+
+  // ===========================================================================
+  // KNOWLEDGE VIEWER (contract F) — list the cross-project company knowledge base
+  // (App.state.knowledge: {id,text,tags,project,ts}[]) with a clear-all button.
+  // Reads via App.Store.getKnowledge() when available, else the raw state array.
+  // Feature-detected: the HUD button is only injected when the Store knowledge API
+  // (getKnowledge) is present, so older store.js builds are unaffected.
+  // ===========================================================================
+  function hasKnowledgeApi() {
+    try { return !!(App.Store && typeof App.Store.getKnowledge === 'function'); }
+    catch (e) { return false; }
+  }
+
+  // All knowledge entries (most-recent first), defensively. Prefers the Store API
+  // (no query -> recency order) but falls back to the raw state.knowledge array.
+  function allKnowledge() {
+    try {
+      if (App.Store && typeof App.Store.getKnowledge === 'function') {
+        var cap = CFG().KNOWLEDGE_CAP;
+        var k = (typeof cap === 'number' && cap > 0) ? cap : 60;
+        var out = App.Store.getKnowledge('', k);
+        if (Array.isArray(out)) return out;
+      }
+    } catch (e) {}
+    var s = STATE();
+    var raw = (s && Array.isArray(s.knowledge)) ? s.knowledge.slice() : [];
+    raw.reverse(); // newest first to match getKnowledge() recency order
+    return raw;
+  }
+
+  function ensureKnowledgeButton() {
+    if ($('btn-knowledge')) return;
+    if (!hasKnowledgeApi()) return;
+    var controls = $('hud-controls');
+    if (!controls) return;
+    var b = el('button', 'btn');
+    b.id = 'btn-knowledge';
+    b.type = 'button';
+    b.title = T('knowledge.title', 'Company knowledge — learnings saved across projects');
+    b.setAttribute('aria-label', T('knowledge.title', 'Company knowledge'));
+    b.appendChild(el('span', 'btn-ico', '💡')); // light-bulb
+    b.appendChild(el('span', 'btn-lbl', T('knowledge.btn', 'Knowledge')));
+    on(b, 'click', function () { UI.openKnowledge(); });
+    var sep = controls.querySelector ? controls.querySelector('.hud-sep') : null;
+    if (sep) controls.insertBefore(b, sep);
+    else controls.appendChild(b);
+  }
+
+  UI.openKnowledge = function () {
+    var root = $('modal-root');
+    if (!root) { UI.toast(T('knowledge.unavailable', 'Knowledge base unavailable')); return; }
+    var prev = $('modal-knowledge');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-knowledge';
+    var scrim = el('div', 'modal-scrim');
+    on(scrim, 'click', function () { closeKnowledge(); });
+
+    var card = el('div', 'modal-card');
+    card.appendChild(el('div', 'panel-accent'));
+
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', '💡 ' + T('knowledge.modalTitle', 'COMPANY KNOWLEDGE')));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', function () { closeKnowledge(); });
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    var intro = el('div', 'kn-intro', T('knowledge.intro',
+      'Reusable learnings the Boss distills after each build. Workers can recall these on new goals.'));
+    body.appendChild(intro);
+    var list = el('div', 'kn-list'); list.id = 'kn-list';
+    body.appendChild(list);
+
+    var foot = el('footer', 'modal-foot');
+    var clearBtn = el('button', 'btn', '✕ ' + T('knowledge.clear', 'Clear all'));
+    clearBtn.type = 'button';
+    clearBtn.id = 'kn-clear';
+    on(clearBtn, 'click', function () { clearKnowledge(); });
+    var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', function () { closeKnowledge(); });
+    foot.appendChild(clearBtn); foot.appendChild(close);
+
+    card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+
+    renderKnowledge();
+    applyI18n(modal);
+  };
+
+  function closeKnowledge() {
+    var m = $('modal-knowledge');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
+  function renderKnowledge() {
+    var list = $('kn-list');
+    if (!list) return;
+    clear(list);
+    var entries = allKnowledge();
+    var clearBtn = $('kn-clear');
+    if (!entries.length) {
+      list.appendChild(el('div', 'pe-empty', T('knowledge.empty',
+        'No saved knowledge yet. Finish a build and the Boss distills 1-3 reusable learnings here.')));
+      if (clearBtn) clearBtn.disabled = true;
+      return;
+    }
+    if (clearBtn) clearBtn.disabled = false;
+    for (var i = 0; i < entries.length; i++) {
+      (function (entry) {
+        if (!entry) return;
+        var item = el('div', 'kn-item');
+        var txt = el('div', 'kn-text', String(entry.text || ''));
+        item.appendChild(txt);
+        var meta = el('div', 'kn-meta');
+        if (entry.project) meta.appendChild(el('span', 'kn-project', String(entry.project)));
+        if (entry.tags && entry.tags.length) {
+          meta.appendChild(el('span', 'kn-tags', String(entry.tags.join(' · '))));
+        }
+        if (meta.childNodes.length) item.appendChild(meta);
+        list.appendChild(item);
+      })(entries[i]);
+    }
+  }
+
+  // Clear-all: the knowledge contract defines no clearKnowledge() Store method, so
+  // we empty App.state.knowledge directly (guarded) and persist via App.Store.save.
+  // Confirmed first; idempotent; never throws.
+  function clearKnowledge() {
+    var s = STATE();
+    var has = (s && Array.isArray(s.knowledge) && s.knowledge.length);
+    if (!has) { renderKnowledge(); return; }
+    try {
+      if (typeof window !== 'undefined' && window.confirm &&
+          !window.confirm(T('knowledge.clearAsk', 'Clear all saved company knowledge? This cannot be undone.'))) return;
+    } catch (e) {}
+    try { s.knowledge.length = 0; } catch (e) { s.knowledge = []; }
+    try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
+    UI.toast(T('knowledge.cleared', 'Knowledge cleared.'), 'ok');
+    renderKnowledge();
   }
 
   // ===========================================================================

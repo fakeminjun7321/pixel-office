@@ -400,6 +400,90 @@ window.App = window.App || {};
     return { facts: facts, plan: plan, progress: progress, updated: updated };
   }
 
+  // KNOWLEDGE: cap helper for the company-wide cross-project knowledge base
+  // (App.state.knowledge). Default 60 (config.KNOWLEDGE_CAP).
+  function knowledgeCap() {
+    var n = cfg().KNOWLEDGE_CAP;
+    return (typeof n === 'number' && n > 0) ? n : 60;
+  }
+
+  // KNOWLEDGE: default number of entries getKnowledge() returns when k is omitted
+  // (config.KNOWLEDGE_INJECT_K, default 4).
+  function knowledgeInjectK() {
+    var n = cfg().KNOWLEDGE_INJECT_K;
+    return (typeof n === 'number' && n > 0) ? Math.floor(n) : 4;
+  }
+
+  // KNOWLEDGE: sanitize a persisted tags array -> unique non-empty lowercased
+  // strings (cap 8 so a single entry cannot bloat the blob). Never throws.
+  function normalizeTags(arr) {
+    var out = [];
+    if (!Array.isArray(arr)) return out;
+    var seen = {};
+    for (var i = 0; i < arr.length && out.length < 8; i++) {
+      var v = arr[i];
+      if (v == null) continue;
+      var s = String(v).trim().toLowerCase();
+      if (!s) continue;
+      if (Object.prototype.hasOwnProperty.call(seen, s)) continue;
+      seen[s] = 1;
+      out.push(s);
+    }
+    return out;
+  }
+
+  // KNOWLEDGE: sanitize one knowledge entry -> {id, text, tags[], project, ts}.
+  // Coerces every field, clamps text length, drops entries with empty text.
+  // Returns null when there is nothing meaningful to keep. Never throws.
+  function normalizeKnowledgeEntry(e) {
+    if (!e || typeof e !== 'object') return null;
+    var TEXT_MAX = 600;   // a learning is a short reusable note, not a document
+    var text = (e.text == null) ? '' : String(e.text).trim();
+    if (!text) return null;
+    if (text.length > TEXT_MAX) text = text.slice(0, TEXT_MAX);
+    return {
+      id: e.id ? String(e.id) : uid('kn'),
+      text: text,
+      tags: normalizeTags(e.tags),
+      project: (e.project == null) ? '' : String(e.project),
+      ts: (typeof e.ts === 'number' && isFinite(e.ts)) ? e.ts : nowMs(),
+    };
+  }
+
+  // KNOWLEDGE: normalize + cap a knowledge array (keep most recent KNOWLEDGE_CAP,
+  // oldest dropped). Order preserved (assumed oldest..newest). Never throws.
+  function normalizeKnowledge(arr) {
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var ne = normalizeKnowledgeEntry(arr[i]);
+      if (ne) out.push(ne);
+    }
+    var cap = knowledgeCap();
+    if (out.length > cap) out = out.slice(out.length - cap);   // keep newest
+    return out;
+  }
+
+  // KNOWLEDGE: lowercase token set for simple keyword-overlap ranking. Splits on
+  // any non-alphanumeric run (handles unicode word chars loosely via the regex),
+  // drops 1-char tokens. Returns a plain { token: 1 } map. Never throws.
+  function knowledgeTokens(str) {
+    var map = {};
+    try {
+      var s = String(str == null ? '' : str).toLowerCase();
+      // Split on any run of NON-word chars. Keep ASCII alphanumerics AND any
+      // codepoint >= U+00C0 (covers accented Latin, CJK, Hangul, etc.) so that
+      // Korean/non-Latin learnings still tokenize. The class is built via
+      // RegExp with \u-escapes so this source stays pure ASCII (build-safe).
+      var parts = s.split(new RegExp('[^a-z0-9\\u00C0-\\uFFFF]+'));
+      for (var i = 0; i < parts.length; i++) {
+        var p = parts[i];
+        if (p && p.length > 1) map[p] = 1;
+      }
+    } catch (e) { /* return whatever we have */ }
+    return map;
+  }
+
   // WAVE 3: cap helper for the structured run-event trace (App.state.trace).
   function traceCap() {
     var n = cfg().TRACE_CAP;
@@ -546,6 +630,7 @@ window.App = window.App || {};
       artifacts: [],          // v3: Artifact[] (persisted, capped at ARTIFACT_MAX)
       trace: [],              // WAVE 3: structured run-event trace (persisted, capped at TRACE_CAP)
       files: {},              // v5: project workspace (path -> {content,lang,updatedBy,t}); persisted, capped at MAX_PROJECT_FILES
+      knowledge: [],          // KNOWLEDGE: cross-project company memory ({id,text,tags,project,ts}[]); persisted, capped at KNOWLEDGE_CAP
       credits: 0,             // Wave 4a: shared credit pool (earned per task; spent in the office shop)
       upgrades: [],           // Wave 4a: purchased OFFICE_UPGRADES ids (applied to layout on load)
       camera: defaultCamera(),
@@ -583,6 +668,7 @@ window.App = window.App || {};
     if (!Array.isArray(s.artifacts)) s.artifacts = [];
     if (!Array.isArray(s.trace)) s.trace = [];                   // WAVE 3: run-event trace
     if (!s.files || typeof s.files !== 'object') s.files = {};   // v5: project workspace map
+    if (!Array.isArray(s.knowledge)) s.knowledge = [];           // KNOWLEDGE: cross-project memory
     if (typeof s.credits !== 'number' || !isFinite(s.credits)) s.credits = 0;   // Wave 4a
     if (!Array.isArray(s.upgrades)) s.upgrades = [];                            // Wave 4a
     if (!s.camera || typeof s.camera !== 'object') s.camera = def.camera;
@@ -790,6 +876,9 @@ window.App = window.App || {};
     // v5: project workspace — normalize + cap (fresh plain map, no live refs)
     var files = normalizeFiles(s.files);
 
+    // KNOWLEDGE: cross-project company memory — normalize + cap newest KNOWLEDGE_CAP
+    var knowledge = normalizeKnowledge(s.knowledge);
+
     // layout: deep clone so we never persist live references
     var layout = deepClone(s.layout) || emptyLayout();
 
@@ -818,6 +907,7 @@ window.App = window.App || {};
       artifacts: artifacts,
       trace: trace,           // WAVE 3: structured run-event trace
       files: files,           // v5: project workspace
+      knowledge: knowledge,   // KNOWLEDGE: cross-project company memory
       credits: credits,       // Wave 4a: shared credit pool
       upgrades: upgrades,     // Wave 4a: purchased office-upgrade ids
       layout: layout,
@@ -933,6 +1023,12 @@ window.App = window.App || {};
     for (var nfk in rebuiltFiles) {
       if (Object.prototype.hasOwnProperty.call(rebuiltFiles, nfk)) s.files[nfk] = rebuiltFiles[nfk];
     }
+
+    // --- KNOWLEDGE: cross-project company memory (normalize + cap; migrate -> []) ---
+    var rebuiltKnowledge = normalizeKnowledge(blob.knowledge);
+    if (!Array.isArray(s.knowledge)) s.knowledge = [];
+    s.knowledge.length = 0;   // clear in place to preserve the array reference
+    for (var kj = 0; kj < rebuiltKnowledge.length; kj++) s.knowledge.push(rebuiltKnowledge[kj]);
 
     // --- Wave 4a: gamification economy (credits + purchased upgrade ids) ---
     s.credits = normalizeCount(blob.credits, 0);
@@ -1089,6 +1185,7 @@ window.App = window.App || {};
       if (v < 7) {
         if (typeof blob.credits !== 'number' || !isFinite(blob.credits)) blob.credits = 0;
         if (!Array.isArray(blob.upgrades)) blob.upgrades = [];
+        if (!Array.isArray(blob.knowledge)) blob.knowledge = [];   // KNOWLEDGE: cross-project memory (load normalizer fills defaults)
         if (blob.settings && typeof blob.settings === 'object') {
           if (typeof blob.settings.bgm === 'undefined') blob.settings.bgm = false;
         }
@@ -1226,6 +1323,8 @@ window.App = window.App || {};
       for (var fk in s.files) {
         if (Object.prototype.hasOwnProperty.call(s.files, fk)) delete s.files[fk];
       }
+      if (!Array.isArray(s.knowledge)) s.knowledge = [];
+      s.knowledge.length = 0;   // KNOWLEDGE: fresh company starts with no saved learnings (clear in place)
       s.credits = 0;            // Wave 4a: fresh company starts with no credits
       s.upgrades = [];          // Wave 4a: and no purchased upgrades
       s.settings = defaultSettings();
@@ -1418,7 +1517,7 @@ window.App = window.App || {};
     } catch (e) {
       logErr('exportJSON', e);
       // 빈 회사라도 유효한 JSON 반환
-      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], files: {}, credits: 0, upgrades: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
+      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], files: {}, knowledge: [], credits: 0, upgrades: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
     }
   }
 
@@ -1763,6 +1862,100 @@ window.App = window.App || {};
   }
 
   // ---------------------------------------------------------------------------
+  // KNOWLEDGE BASE (contract A) — cross-project company memory. Lives on
+  // App.state.knowledge ({id,text,tags[],project,ts}[]), persisted + capped at
+  // KNOWLEDGE_CAP. Orchestrator distills LEARNINGS here after a build finalizes;
+  // workers read them back via the recall_knowledge tool / decompose injection.
+  // Both methods are defensive and NEVER throw (the rAF loop must stay alive).
+  // ---------------------------------------------------------------------------
+
+  // addKnowledge(text, meta?) -> the stored entry (or null on empty/failure).
+  // Assigns id/ts; meta may set tags/project. No-ops on blank text. Caps the
+  // array (oldest dropped) and persists (debounced so rapid adds coalesce).
+  function addKnowledge(text, meta) {
+    try {
+      var s = ensureState();
+      if (!Array.isArray(s.knowledge)) s.knowledge = [];
+      var m = (meta && typeof meta === 'object') ? meta : {};
+      var entry = normalizeKnowledgeEntry({
+        text: text,
+        tags: m.tags,
+        project: m.project,
+        // id/ts intentionally derived by the normalizer (fresh entry)
+      });
+      if (!entry) return null;   // blank text -> no-op
+      s.knowledge.push(entry);
+      // cap newest KNOWLEDGE_CAP (oldest dropped)
+      var cap = knowledgeCap();
+      if (s.knowledge.length > cap) {
+        s.knowledge.splice(0, s.knowledge.length - cap);
+      }
+      saveDebounced();
+      return entry;
+    } catch (e) {
+      logErr('addKnowledge', e);
+      return null;
+    }
+  }
+
+  // getKnowledge(query?, k?) -> array of up to k entries (default
+  // KNOWLEDGE_INJECT_K). With a query, rank by lowercased keyword overlap
+  // (token intersection of query vs entry text+tags+project); ties + no-query
+  // fall back to most-recent first. Returns shallow copies. Never throws.
+  function getKnowledge(query, k) {
+    try {
+      var s = ensureState();
+      var list = Array.isArray(s.knowledge) ? s.knowledge : [];
+      var lim = (typeof k === 'number' && isFinite(k) && k > 0) ? Math.floor(k) : knowledgeInjectK();
+      if (!list.length) return [];
+
+      var q = (query == null) ? '' : String(query).trim();
+      var rows = [];
+      var i, e;
+
+      if (!q) {
+        // most-recent first
+        for (i = list.length - 1; i >= 0 && rows.length < lim; i--) {
+          e = list[i];
+          if (e && typeof e === 'object') {
+            rows.push({ id: e.id, text: e.text, tags: (e.tags || []).slice(), project: e.project, ts: e.ts });
+          }
+        }
+        return rows;
+      }
+
+      // keyword-overlap ranking
+      var qTokens = knowledgeTokens(q);
+      var scored = [];
+      for (i = 0; i < list.length; i++) {
+        e = list[i];
+        if (!e || typeof e !== 'object') continue;
+        var hay = String(e.text || '') + ' ' + ((e.tags || []).join(' ')) + ' ' + String(e.project || '');
+        var hTokens = knowledgeTokens(hay);
+        var overlap = 0;
+        for (var t in qTokens) {
+          if (Object.prototype.hasOwnProperty.call(qTokens, t) &&
+              Object.prototype.hasOwnProperty.call(hTokens, t)) overlap++;
+        }
+        scored.push({ e: e, score: overlap, idx: i });
+      }
+      // sort: higher overlap first, then most-recent (higher idx) as tie-break.
+      scored.sort(function (a, b) {
+        if (b.score !== a.score) return b.score - a.score;
+        return b.idx - a.idx;
+      });
+      for (i = 0; i < scored.length && rows.length < lim; i++) {
+        e = scored[i].e;
+        rows.push({ id: e.id, text: e.text, tags: (e.tags || []).slice(), project: e.project, ts: e.ts });
+      }
+      return rows;
+    } catch (e2) {
+      logErr('getKnowledge', e2);
+      return [];
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // PUBLIC API (§7.4 + compat alias §7.10)
   // ---------------------------------------------------------------------------
 
@@ -1784,6 +1977,9 @@ window.App = window.App || {};
     deleteSession: deleteSession,
     // WAVE A: swap the agent roster for a config preset.
     applyPreset: applyPreset,
+    // KNOWLEDGE (contract A): cross-project company memory.
+    addKnowledge: addKnowledge,
+    getKnowledge: getKnowledge,
   };
 
   // §7.10 REQUIRED compat alias: orch.md used App.Store.log

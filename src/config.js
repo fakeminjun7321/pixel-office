@@ -1201,6 +1201,131 @@ window.App = window.App || {};
 '- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
 
   // ---------------------------------------------------------------------------
+  // KNOWLEDGE BASE section (cross-project company memory) — store.js owns the data
+  // (App.state.knowledge = [{id,text,tags,project,ts}]); orchestrator distills
+  // LEARNINGS after a build finalizes and injects relevant ones when decomposing a
+  // new goal; tools.js exposes recall_knowledge. These are the shared knobs/prompt.
+  //   KNOWLEDGE_CAP        : max entries retained in App.state.knowledge (oldest
+  //                          dropped past this; Store normalize/migrate enforces).
+  //   KNOWLEDGE_INJECT_K   : how many entries Store.getKnowledge returns by default
+  //                          (also how many recall_knowledge / decompose-injection use).
+  //   KNOWLEDGE_SUMMARIZE_SYSTEM : boss prompt run once after a goal/build finalizes
+  //                          to distill 1-3 short, reusable LEARNINGS as STRICT JSON
+  //                          {learnings:[strings]}. Kept generic + transferable.
+  // ---------------------------------------------------------------------------
+  App.config.KNOWLEDGE_CAP = 60;
+  App.config.KNOWLEDGE_INJECT_K = 4;
+
+  App.config.KNOWLEDGE_SUMMARIZE_SYSTEM =
+'You are the BOSS of an autonomous AI company doing a brief retrospective. You are given the user\'s goal and\n' +
+'the work your team just delivered for it. Distill the 1-3 most useful, REUSABLE lessons — the kind of\n' +
+'general engineering/design/process insight that would help the team on a DIFFERENT future project, not a\n' +
+'fact specific only to this one goal.\n' +
+'\n' +
+'Each learning: one short, self-contained, declarative sentence (a heuristic, gotcha, pattern, or decision\n' +
+'rule). Make it concrete enough to act on, general enough to transfer. Do NOT restate the goal, summarize the\n' +
+'deliverable, or praise the work. If there is no genuinely transferable lesson, return an empty array.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{ "learnings": [<0-3 short reusable lesson strings>] }\n' +
+'\n' +
+'Rules:\n' +
+'- 0 to 3 items. Prefer fewer, higher-signal lessons over filler.\n' +
+'- Each item is ONE plain sentence; no numbering, no markdown, no leading dash.\n' +
+'- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // ---------------------------------------------------------------------------
+  // CONSULT section — bounds for the consult_teammate tool (tools.js). A worker
+  // may ask ONE specialized teammate a single question mid-task; the tool makes one
+  // bounded API.stream call as that teammate (their systemPrompt/persona + model)
+  // and returns the answer. CONSULT_MAX_TOKENS caps that reply so it stays cheap.
+  // ---------------------------------------------------------------------------
+  App.config.CONSULT_MAX_TOKENS = 700;
+
+  // ---------------------------------------------------------------------------
+  // BUILD TEMPLATES section — one-click starting points for PROJECT BUILD mode
+  // (ui.js renders a picker near the Build button; on pick it fills the goal input
+  // with template.goal and kicks off the build via dispatchBuild/runBuild). Each
+  // entry: { id, label, icon(emoji), goal, hint }. The goal is a STRONG, concrete
+  // build prompt that yields a real, runnable, multi-file project — not a vague
+  // one-liner. hint is a short helper line shown under the label in the picker.
+  // i18n keys for label/hint live in i18n.js; goal text stays here (it is the
+  // actual build instruction, language-neutral enough to drive the boss).
+  // ---------------------------------------------------------------------------
+  App.config.BUILD_TEMPLATES = [
+    {
+      id: 'game',
+      label: 'Arcade Game',
+      icon: '🎮',
+      goal: 'Build a complete, polished browser arcade game that runs by opening index.html with no build step or external libraries. ' +
+            'Use an HTML5 canvas with a real game loop (requestAnimationFrame), keyboard/touch controls, a scoring system, increasing ' +
+            'difficulty, collision detection, sound-free juice (particles, screen shake, color flashes), a start screen, a game-over ' +
+            'screen with restart, and a high score persisted in localStorage. Pick one cohesive concept (e.g. a neon space shooter or an ' +
+            'endless dodger) and implement it fully. Split the code into index.html, css/style.css, and js/game.js, plus a README.md ' +
+            'explaining the controls and how to play. Everything must actually work when opened in a browser.',
+      hint: 'Canvas game, controls, score, juice'
+    },
+    {
+      id: 'dashboard',
+      label: 'Data Dashboard',
+      icon: '📊',
+      goal: 'Build a responsive analytics dashboard web app that runs by opening index.html with no build step or external CDN dependencies. ' +
+            'Generate realistic sample data in JavaScript and render at least three distinct visualizations (e.g. a line chart, a bar chart, ' +
+            'and KPI stat cards) drawn on canvas or as styled DOM/SVG — implement the charts yourself, do not pull in a chart library. ' +
+            'Include a sidebar or top nav, a filter/date-range control that actually updates the charts, a data table with sorting, and a ' +
+            'clean dark theme. Split into index.html, css/style.css, js/data.js (sample data + helpers), and js/app.js (rendering + ' +
+            'interaction), plus a README.md. The dashboard must be interactive and fully functional offline.',
+      hint: 'Charts, KPIs, filters, dark theme'
+    },
+    {
+      id: 'landing',
+      label: 'Landing Page',
+      icon: '🚀',
+      goal: 'Build a modern, conversion-focused product landing page that runs by opening index.html with no build step or external ' +
+            'dependencies. Invent a plausible product (name, tagline, value prop) and include: a hero with a headline, subhead, and ' +
+            'call-to-action button; a features grid (at least three features with icons drawn via inline SVG or CSS); a social-proof / ' +
+            'testimonials section; a simple pricing table; an FAQ; and a footer. Make it fully responsive with a mobile nav, add tasteful ' +
+            'scroll-reveal animations and hover states in CSS, and ensure the CTA buttons and any form have working interactions. Split into ' +
+            'index.html, css/style.css, and js/main.js, plus a README.md. It must look polished and render correctly on mobile and desktop.',
+      hint: 'Hero, features, pricing, responsive'
+    },
+    {
+      id: 'tool',
+      label: 'Utility Tool',
+      icon: '🛠️',
+      goal: 'Build a genuinely useful single-purpose browser utility that runs by opening index.html with no build step or external ' +
+            'dependencies. Pick one focused tool (e.g. a markdown-to-HTML previewer, a JSON formatter/validator, a unit/currency converter, ' +
+            'or a pomodoro timer) and implement it completely with real logic — not a mockup. Include live input handling, instant output, ' +
+            'sensible validation and error states, a copy-to-clipboard or download action where relevant, persistence of the last input in ' +
+            'localStorage, keyboard shortcuts, and a clean accessible UI. Split into index.html, css/style.css, and js/app.js, plus a ' +
+            'README.md describing what the tool does and how to use it. Every feature must actually work.',
+      hint: 'Real logic, live I/O, persistence'
+    },
+    {
+      id: 'clone',
+      label: 'App Clone',
+      icon: '📋',
+      goal: 'Build a working clone of a small, well-known productivity app that runs by opening index.html with no build step or external ' +
+            'dependencies. Pick one (e.g. a Trello-style kanban board, a Todoist-style task manager, or a Notion-style note pad) and ' +
+            'implement its core flow for real: creating, editing, reordering (drag-and-drop where it fits), completing, and deleting items, ' +
+            'with all state persisted in localStorage so it survives a refresh. Include multiple lists/columns or categories, a clean ' +
+            'responsive layout, empty states, and keyboard support. Split into index.html, css/style.css, js/store.js (localStorage data ' +
+            'layer), and js/app.js (UI + interactions), plus a README.md. The clone must be fully interactive and usable, not a static mockup.',
+      hint: 'Kanban/todo/notes, drag, persistence'
+    }
+  ];
+
+  // templateById(id) -> the BUILD_TEMPLATES entry or null. Convenience for UI.
+  App.config.templateById = function (id) {
+    var arr = App.config.BUILD_TEMPLATES || [];
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i] && arr[i].id === id) return arr[i];
+    }
+    return null;
+  };
+
+  // ---------------------------------------------------------------------------
   // section 2 App.util — small, pure helpers. Date.now()/Math.random() live ONLY inside
   // these functions (this is real browser code; deterministic restriction does
   // not apply here).

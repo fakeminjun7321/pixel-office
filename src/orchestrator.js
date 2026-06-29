@@ -845,6 +845,10 @@ window.App = window.App || {};
     if (personaP) { pre.push(personaP); pre.push(''); }
     var memP = memoryBlock(boss, userText);
     if (memP) { pre.push(memP); pre.push(''); }
+    // Contract D: relevant cross-project learnings (prose ABOVE the GOAL line, so the
+    //   strict-JSON plan the boss returns is never corrupted). '' on a fresh company.
+    var learnP = pastLearningsBlock(userText);
+    if (learnP) { pre.push(learnP); pre.push(''); }
     // Contract C: attached input files digest (empty string when no attachments).
     if (attDigest) { pre.push(attDigest); pre.push(''); }
     var userMsg = pre.join('\n') + 'GOAL:\n' + userText + '\n\nReturn the JSON plan now.';
@@ -1148,7 +1152,12 @@ window.App = window.App || {};
       //   when api.js lacks rateState. Explicit-agent callers (QA revise, etc.)
       //   are never throttled here so in-flight work keeps progressing.
       if (cooldownActive()) return;
-      agent = ag.findIdle(task.role) || spawnTempWorker(task.role);
+      // Contract C: prefer the best idle role-match (level + memory relevance) over
+      //   the FIRST idle one. pickBestAgent falls back to findIdle internally, so a
+      //   single match (or none) behaves EXACTLY like before; only a tie of 2+ idle
+      //   agents of the same role changes (we pick the strongest). spawnTempWorker is
+      //   still the final fallback when no idle role-match exists.
+      agent = pickBestAgent(task.role, task) || spawnTempWorker(task.role);
     }
     if (!agent) return; // couldn't get an agent; remain queued for a later tick
 
@@ -1175,6 +1184,52 @@ window.App = window.App || {};
 
     runWorker(task);
   };
+
+  // pickBestAgent(role, task) — Contract C: among IDLE, non-busy, role-matching
+  //   agents, pick the strongest for this task by
+  //     score = level (primary) + memory-relevance (Agents.scoreMemories length) + tiny tie-break.
+  //   Reuses the same idle-finding predicate as Agents.findIdle (role===role && state
+  //   'idle' && !busy). When 0 or 1 candidate matches, returns EXACTLY what findIdle
+  //   would (null or that single agent) so there is NO behavior change vs today —
+  //   the ranking only matters when 2+ idle agents share a role. Cheap + fully
+  //   guarded: any failure falls back to findIdle(role). Never throws.
+  function pickBestAgent(role, task) {
+    var ag = AGENTS();
+    try {
+      var s = STATE();
+      if (!ag || !s || !Array.isArray(s.agents)) return ag ? ag.findIdle(role) : null;
+      // Collect idle role-matches with the SAME predicate findIdle uses.
+      var cands = [];
+      for (var i = 0; i < s.agents.length; i++) {
+        var a = s.agents[i];
+        if (a && a.role === role && a.state === 'idle' && !a.busy) cands.push(a);
+      }
+      if (!cands.length) return ag.findIdle ? ag.findIdle(role) : null;
+      if (cands.length === 1) return cands[0];   // single match → identical to findIdle
+
+      var query = (task && (task.desc || task.title)) || '';
+      var best = null, bestScore = -Infinity;
+      for (var c = 0; c < cands.length; c++) {
+        var cand = cands[c];
+        var lvl = (typeof cand.level === 'number' && isFinite(cand.level)) ? cand.level : 1;
+        var rel = 0;
+        try {
+          if (ag.scoreMemories && Array.isArray(cand.memories) && cand.memories.length) {
+            var hits = ag.scoreMemories(query, cand.memories) || [];
+            rel = hits.length;   // # of relevant memories surfaced for this task
+          }
+        } catch (e) {}
+        // level dominates; memory relevance breaks ties between equal levels; the
+        // tiny index term keeps selection STABLE (first-declared wins on a full tie,
+        // matching findIdle's first-match order).
+        var score = (lvl * 100) + rel - (c * 0.001);
+        if (score > bestScore) { bestScore = score; best = cand; }
+      }
+      return best || (ag.findIdle ? ag.findIdle(role) : null);
+    } catch (e) {
+      try { return ag && ag.findIdle ? ag.findIdle(role) : null; } catch (e2) { return null; }
+    }
+  }
 
   function spawnTempWorker(role) {
     var ag = AGENTS();
@@ -2104,6 +2159,133 @@ window.App = window.App || {};
     return (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL;
   }
 
+  // ===========================================================================
+  // COMPANY KNOWLEDGE BASE (Contract D) — cross-project learnings.
+  //   knowledgeInjectK(): config K for how many past learnings to inject (default 4).
+  //   pastLearningsBlock(goal): a "## RELEVANT PAST LEARNINGS" preamble built from
+  //     App.Store.getKnowledge(goal) — '' when the store helper is absent or empty
+  //     (so the boss decompose/build prompt is BYTE-identical to before on a fresh
+  //     company). Bounded + guarded; never throws; never corrupts the strict-JSON
+  //     manifest the boss returns (it is plain prose ABOVE the GOAL line).
+  //   accumulateKnowledge(root): after a goal/build finalizes, make ONE boss-model
+  //     stream call (config.KNOWLEDGE_SUMMARIZE_SYSTEM) to distill 1-3 reusable
+  //     LEARNINGS as strict JSON {learnings:[...]} → App.Store.addKnowledge each.
+  //     Creds-guarded, fires-and-forgets (NEVER blocks delivery), bounded to one call.
+  // ===========================================================================
+  function knowledgeInjectK() {
+    var n = CFG().KNOWLEDGE_INJECT_K;
+    return (typeof n === 'number' && isFinite(n) && n > 0) ? (n | 0) : 4;
+  }
+
+  // pastLearningsBlock(goal) — feature-detect App.Store.getKnowledge; '' if absent/empty.
+  function pastLearningsBlock(goal) {
+    try {
+      if (!App.Store || typeof App.Store.getKnowledge !== 'function') return '';
+      var entries = App.Store.getKnowledge(String(goal == null ? '' : goal), knowledgeInjectK());
+      if (!Array.isArray(entries) || !entries.length) return '';
+      var lines = [];
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var txt = e && (typeof e === 'string' ? e : e.text);
+        if (!txt) continue;
+        lines.push('- ' + truncate(String(txt), 200));
+      }
+      if (!lines.length) return '';
+      return '## RELEVANT PAST LEARNINGS (from earlier company projects)\n' +
+        lines.join('\n') +
+        '\n(These are hints from past work; apply only what fits this goal.)';
+    } catch (e) { return ''; }
+  }
+
+  // parseLearnings(raw) → string[] (tolerant strict-JSON {learnings:[...]}; capped 3).
+  function parseLearnings(raw) {
+    try {
+      if (!raw) return [];
+      var s = String(raw).replace(/^```(?:json|jsonc)?\s*/i, '').replace(/```\s*$/i, '');
+      var first = s.indexOf('{'), last = s.lastIndexOf('}');
+      if (first === -1 || last === -1 || last < first) return [];
+      var body = s.slice(first, last + 1).replace(/,(\s*[}\]])/g, '$1')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+      var obj = null;
+      try { obj = JSON.parse(body); }
+      catch (e) { var bal = braceBalancedPrefix(body); if (bal) { try { obj = JSON.parse(bal); } catch (e2) { obj = null; } } }
+      if (!obj || typeof obj !== 'object' || !Array.isArray(obj.learnings)) return [];
+      var out = [];
+      for (var i = 0; i < obj.learnings.length; i++) {
+        if (obj.learnings[i] == null) continue;
+        var t = String(obj.learnings[i]).trim();
+        if (t) out.push(truncate(t, 240));
+        if (out.length >= 3) break;
+      }
+      return out;
+    } catch (e) { return []; }
+  }
+
+  // accumulateKnowledge(root) — ONE bounded boss call to distill learnings, stored
+  //   via App.Store.addKnowledge. Fire-and-forget: called AFTER the root is already
+  //   marked done, so it can NEVER block or delay delivery. Guards:
+  //     - root._knowledgeDone (once per root)
+  //     - hasCredsFor(boss) + a config system prompt
+  //     - App.Store.addKnowledge present
+  //     - real work happened (>=1 terminal child)
+  function accumulateKnowledge(root) {
+    try {
+      if (!root || root._knowledgeDone) return;
+      if (!App.Store || typeof App.Store.addKnowledge !== 'function') return;
+      var sys = CFG().KNOWLEDGE_SUMMARIZE_SYSTEM;
+      var model = bossModelFor();
+      if (!sys || !hasCredsFor(model)) return;
+      if (!App.API || typeof App.API.stream !== 'function') return;  // don't consume the one-shot flag if we can't actually call
+      // Only if there was real work to learn from.
+      var kids = childrenOf(root.id);
+      if (!kids.length) return;
+      root._knowledgeDone = true;   // claim BEFORE the async call (one shot)
+
+      var settings = (STATE() && STATE().settings) || {};
+      var boss = ensureBoss();
+      var project = String(root.desc || root.title || '');
+      var content = "PROJECT GOAL:\n" + project +
+        "\n\nWHAT THE TEAM PRODUCED:\n" + truncate(gatherWorkerResults(root), 6000) +
+        "\n\nDistill 1-3 short, REUSABLE learnings for future projects. " +
+        "Reply with the strict JSON described in your instructions.";
+      var acc = '';
+      var handle = App.API.stream({
+        apiKey: settings.apiKey,
+        openaiKey: settings.openaiKey,
+        geminiKey: settings.geminiKey,
+        model: model,
+        system: sys,
+        messages: [{ role: 'user', content: content }],
+        onText: function (d) { acc += d; },
+        onDone: function (res) {
+          var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_knowledge'];
+          if (boss && res && res.usage) {
+            boss.stats.tokensIn += (res.usage.input_tokens || 0);
+            boss.stats.tokensOut += (res.usage.output_tokens || 0);
+          }
+          var learnings = parseLearnings((res && res.text) || acc);
+          var saved = 0;
+          for (var i = 0; i < learnings.length; i++) {
+            try {
+              App.Store.addKnowledge(learnings[i], { project: truncate(project, 80) });
+              saved++;
+            } catch (e) {}
+          }
+          if (saved) {
+            try { log('Boss', 'system', 'system', '📚 learned ' + saved + ' thing' + (saved === 1 ? '' : 's') + ' for next time'); } catch (e) {}
+            try { traceEvt({ type: 'knowledge', role: 'boss', taskId: root.id, text: 'saved ' + saved + ' learnings' }); } catch (e) {}
+            saveSoon();
+          }
+        },
+        onError: function () {
+          var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_knowledge'];
+          // never surface / never block on a knowledge-distill failure.
+        },
+      });
+      var s = STATE(); if (s && s._activeStreams) s._activeStreams['__boss_knowledge'] = handle;
+    } catch (e) {}
+  }
+
   // prepareSynthesis(root) — orchestrate the optional pre-synth phases, then synth.
   function prepareSynthesis(root) {
     try {
@@ -2488,6 +2670,9 @@ window.App = window.App || {};
         try { if (App.UI && App.UI.notifyDone) App.UI.notifyDone(rootTask); } catch (e) {}
         saveSoon();
         if (s && s._activeStreams) delete s._activeStreams['__boss_synth'];
+        // Contract D: distill reusable learnings (fire-and-forget; AFTER delivery so
+        //   it can never block/delay the final answer). One bounded boss call, guarded.
+        try { accumulateKnowledge(rootTask); } catch (e) {}
       },
       onError: function (err) {
         var msg = (err && err.message) || 'error';
@@ -2688,6 +2873,10 @@ window.App = window.App || {};
     if (personaP) { pre.push(personaP); pre.push(''); }
     var memP = memoryBlock(boss, userText);
     if (memP) { pre.push(memP); pre.push(''); }
+    // Contract D: relevant cross-project learnings (prose ABOVE the GOAL line, so the
+    //   strict-JSON file manifest the boss returns is never corrupted). '' on fresh.
+    var learnP = pastLearningsBlock(userText);
+    if (learnP) { pre.push(learnP); pre.push(''); }
     // Contract C: attached input files digest (empty string when no attachments).
     if (attDigest) { pre.push(attDigest); pre.push(''); }
     var userMsg = pre.join('\n') + 'PROJECT GOAL:\n' + userText + '\n\nReturn the JSON file manifest now.';
@@ -3114,6 +3303,10 @@ window.App = window.App || {};
     try { if (App.UI && App.UI.openFiles) App.UI.openFiles(); } catch (e) {}
     try { if (App.UI && App.UI.notifyDone) App.UI.notifyDone(root); } catch (e) {}
     saveSoon();
+
+    // Contract D: distill reusable learnings from this build (fire-and-forget; AFTER
+    //   the root is done + Files opened, so it never blocks delivery). One boss call.
+    try { accumulateKnowledge(root); } catch (e) {}
 
     // SELF-REPAIR: when the project has an HTML entry, run it once and auto-fix any
     //   runtime errors (bounded). Guarded by ENABLE_SELF_REPAIR; never blocks/throws.
@@ -3731,6 +3924,11 @@ window.App = window.App || {};
   // PUBLISH + §7.10 REQUIRED compat aliases
   // ===========================================================================
   App.Orchestrator = Orchestrator;
+
+  // Contract C/D: expose the new level/memory-aware picker + knowledge distiller
+  //   (additive; assign() uses pickBestAgent internally — these are for tests/UI).
+  Orchestrator.pickBestAgent = pickBestAgent;
+  Orchestrator.accumulateKnowledge = accumulateKnowledge;
 
   Orchestrator.enqueue = Orchestrator.enqueueTask;     // orch.md name
   Orchestrator.runSubtask = function (task) { return runWorker(task); }; // orch.md name

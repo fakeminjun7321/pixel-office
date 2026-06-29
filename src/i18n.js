@@ -247,7 +247,26 @@ window.App = window.App || {};
       'selfimprove.needServed': 'Self-improve needs a served context (GitHub Pages or localhost), not file://.',
       'selfimprove.needGithub': 'Set a GitHub token, owner, and repo in Settings to deploy.',
       'selfimprove.invalid': 'A proposed edit failed validation - deploy is blocked.',
-      'selfimprove.hint.ph': 'Optional: hint what to improve (e.g. accessibility, a bug)...'
+      'selfimprove.hint.ph': 'Optional: hint what to improve (e.g. accessibility, a bug)...',
+
+      // --- build templates (contract E) ---
+      'templates.btn': 'Templates',
+      'templates.title': 'Start from a project template',
+      'templates.modalTitle': 'PROJECT TEMPLATES',
+      'templates.intro': 'Pick a starting point. The builder turns it into a real, runnable multi-file project.',
+      'templates.empty': 'No project templates available.',
+      'templates.started': 'Building: ',
+
+      // --- company knowledge (contract F) ---
+      'knowledge.btn': 'Knowledge',
+      'knowledge.title': 'Company knowledge - learnings saved across projects',
+      'knowledge.modalTitle': 'COMPANY KNOWLEDGE',
+      'knowledge.intro': 'Reusable learnings the Boss distills after each build. Workers can recall these on new goals.',
+      'knowledge.empty': 'No saved knowledge yet. Finish a build and the Boss distills 1-3 reusable learnings here.',
+      'knowledge.clear': 'Clear all',
+      'knowledge.clearAsk': 'Clear all saved company knowledge? This cannot be undone.',
+      'knowledge.cleared': 'Knowledge cleared.',
+      'knowledge.unavailable': 'Knowledge base unavailable'
     },
 
     ko: {
@@ -434,7 +453,26 @@ window.App = window.App || {};
       'selfimprove.needServed': '자가 개선은 file://이 아니라 서버 환경(GitHub Pages 또는 localhost)이 필요합니다.',
       'selfimprove.needGithub': '배포하려면 설정에서 GitHub 토큰·소유자·저장소를 입력하세요.',
       'selfimprove.invalid': '제안된 수정이 검증을 통과하지 못해 배포가 차단되었습니다.',
-      'selfimprove.hint.ph': '선택: 개선 방향 힌트 (예: 접근성, 버그)...'
+      'selfimprove.hint.ph': '선택: 개선 방향 힌트 (예: 접근성, 버그)...',
+
+      // --- build templates (contract E) ---
+      'templates.btn': '템플릿',
+      'templates.title': '프로젝트 템플릿으로 시작',
+      'templates.modalTitle': '프로젝트 템플릿',
+      'templates.intro': '시작점을 고르세요. 빌더가 실제로 실행되는 멀티파일 프로젝트로 만들어줍니다.',
+      'templates.empty': '사용 가능한 프로젝트 템플릿이 없습니다.',
+      'templates.started': '빌드 중: ',
+
+      // --- company knowledge (contract F) ---
+      'knowledge.btn': '지식',
+      'knowledge.title': '회사 지식 - 프로젝트 전반에서 저장된 학습',
+      'knowledge.modalTitle': '회사 지식',
+      'knowledge.intro': '빌드가 끝날 때마다 보스가 정리한 재사용 가능한 학습입니다. 새 목표에서 워커가 참고할 수 있습니다.',
+      'knowledge.empty': '아직 저장된 지식이 없습니다. 빌드를 마치면 보스가 재사용할 학습 1~3개를 여기에 정리합니다.',
+      'knowledge.clear': '모두 지우기',
+      'knowledge.clearAsk': '저장된 회사 지식을 모두 지울까요? 되돌릴 수 없습니다.',
+      'knowledge.cleared': '지식을 지웠습니다.',
+      'knowledge.unavailable': '지식 베이스를 사용할 수 없습니다'
     }
   };
 

@@ -1052,6 +1052,173 @@ window.App = window.App || {};
   }
 
   // ---------------------------------------------------------------------------
+  // agent/api helpers — soft access to App.state.agents + creds. Never throw.
+  // ---------------------------------------------------------------------------
+  function agentList() {
+    try { return (App.state && Array.isArray(App.state.agents)) ? App.state.agents : []; }
+    catch (e) { return []; }
+  }
+
+  // Resolve a teammate by role key first, then case-insensitive name match.
+  function resolveTeammate(ref) {
+    ref = String(ref == null ? '' : ref).trim();
+    if (!ref) return null;
+    var list = agentList();
+    var i;
+    // 1) exact role key match (case-insensitive).
+    var lower = ref.toLowerCase();
+    for (i = 0; i < list.length; i++) {
+      var a = list[i];
+      if (a && a.role && String(a.role).toLowerCase() === lower) return a;
+    }
+    // 2) case-insensitive name match.
+    for (i = 0; i < list.length; i++) {
+      var b = list[i];
+      if (b && b.name && String(b.name).toLowerCase() === lower) return b;
+    }
+    return null;
+  }
+
+  // Has usable creds for a model? Defer to Agents.hasCredsFor when present;
+  // otherwise mirror the provider-aware check using settings keys.
+  function creds(model) {
+    try {
+      if (App.Agents && typeof App.Agents.hasCredsFor === 'function') {
+        return !!App.Agents.hasCredsFor(model);
+      }
+    } catch (e) {}
+    try {
+      var set = settings();
+      var cfg = App.config || {};
+      var prov = (cfg.providerOf ? cfg.providerOf(model)
+        : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
+      if (prov === 'gemini') return !!set.geminiKey;
+      if (prov === 'openai') return !!set.openaiKey;
+      return !!set.apiKey;
+    } catch (e2) { return false; }
+  }
+
+  function defaultModel() {
+    try { return settings().defaultModel || ''; }
+    catch (e) { return ''; }
+  }
+
+  // ---------------------------------------------------------------------------
+  // consult_teammate — a worker asks a specialized teammate one bounded question.
+  // Resolves the target agent (role key first, else name), then makes ONE
+  // App.API.stream call using THAT agent's systemPrompt + model and the question
+  // as a single user message. Bounded by config.CONSULT_MAX_TOKENS and a hard
+  // ~30s safety timeout so a stuck call can never hang the tool loop. Defensive:
+  // never throws, always resolves.
+  // ---------------------------------------------------------------------------
+  function consultTeammate(teammate, question) {
+    question = String(question == null ? '' : question).trim();
+    if (!question) return Promise.resolve(fail('question is required'));
+
+    var target;
+    try { target = resolveTeammate(teammate); }
+    catch (e) { target = null; }
+    if (!target) return Promise.resolve(fail('no teammate matching "' + String(teammate == null ? '' : teammate) + '"'));
+
+    var model = target.model || defaultModel();
+    if (!model) return Promise.resolve(fail('teammate has no model configured'));
+    if (!creds(model)) return Promise.resolve(fail('no API credentials for ' + model + ' (set a key in Settings)'));
+
+    if (!App.API || typeof App.API.stream !== 'function') {
+      return Promise.resolve(fail('API unavailable'));
+    }
+
+    var cfg = App.config || {};
+    var maxTokens = (typeof cfg.CONSULT_MAX_TOKENS === 'number' && cfg.CONSULT_MAX_TOKENS > 0)
+      ? cfg.CONSULT_MAX_TOKENS : 700;
+
+    var set = settings();
+    var name = target.name || target.role || 'teammate';
+    var role = target.role || '';
+    // Compose the system from systemPrompt plus persona identity when present.
+    var sys = String(target.systemPrompt || '');
+    try {
+      if (target.persona && target.persona.identity) {
+        sys += (sys ? '\n\n' : '') + String(target.persona.identity);
+      }
+    } catch (ep) {}
+    if (!sys) sys = 'You are ' + name + ', a helpful ' + (role || 'teammate') + '.';
+
+    return new Promise(function (resolve) {
+      var acc = '', settled = false, timer = null, handle = null;
+
+      function done(res) {
+        if (settled) return;
+        settled = true;
+        if (timer) { clearTimeout(timer); timer = null; }
+        try { if (handle && typeof handle.abort === 'function') handle.abort(); } catch (e) {}
+        resolve(res);
+      }
+
+      // Hard safety timeout — independent of the stream's own logic.
+      timer = setTimeout(function () {
+        var partial = acc.trim();
+        if (partial) done(ok(name + ' (' + role + '): ' + partial + '\n...(consult timed out)'));
+        else done(fail('consult timed out'));
+      }, 30000);
+
+      try {
+        handle = App.API.stream({
+          apiKey: set.apiKey,
+          openaiKey: set.openaiKey,
+          geminiKey: set.geminiKey,
+          model: model,
+          system: sys,
+          messages: [{ role: 'user', content: question }],
+          maxTokens: maxTokens,
+          onText: function (d) { acc += d; },
+          onDone: function (res) {
+            var answer = ((res && res.text) || acc || '').trim();
+            if (!answer) { done(fail('teammate returned no answer')); return; }
+            done(ok(name + ' (' + role + '): ' + answer));
+          },
+          onError: function (err) {
+            var msg = (err && err.message) ? err.message : 'consult failed';
+            done(fail('consult error: ' + msg));
+          }
+        });
+      } catch (e) {
+        done(fail('consult error: ' + (e && e.message ? e.message : e)));
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // recall_knowledge — read the company cross-project knowledge base. Returns up
+  // to config.KNOWLEDGE_INJECT_K entries (ranked by the query when given) joined
+  // as text. Never throws; degrades to a friendly message when empty/unavailable.
+  // ---------------------------------------------------------------------------
+  function recallKnowledge(query) {
+    query = String(query == null ? '' : query);
+    var none = 'no saved knowledge yet';
+    try {
+      if (!App.Store || typeof App.Store.getKnowledge !== 'function') return ok(none);
+      var cfg = App.config || {};
+      var k = (typeof cfg.KNOWLEDGE_INJECT_K === 'number' && cfg.KNOWLEDGE_INJECT_K > 0)
+        ? cfg.KNOWLEDGE_INJECT_K : 4;
+      var entries = App.Store.getKnowledge(query, k) || [];
+      if (!entries.length) return ok(none);
+      var lines = [];
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var text = (e && e.text != null) ? String(e.text) : String(e == null ? '' : e);
+        if (!text.trim()) continue;
+        var proj = (e && e.project) ? (' [' + String(e.project) + ']') : '';
+        lines.push('- ' + text + proj);
+      }
+      if (!lines.length) return ok(none);
+      return ok(lines.join('\n'));
+    } catch (e) {
+      return ok(none);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // public: enabled()
   // ---------------------------------------------------------------------------
   function enabled() {
@@ -1292,6 +1459,32 @@ window.App = window.App || {};
           },
           required: ['role', 'instruction']
         }
+      },
+      {
+        name: 'consult_teammate',
+        description: 'Ask a specialized teammate one focused question mid-task and get their answer in their own voice. ' +
+          'The teammate is resolved by role (e.g. "designer", "researcher", "qa") or by name. Use this for quick expert input ' +
+          'without delegating a whole subtask: e.g. ask the researcher for a fact, the designer for a layout opinion, or QA for an edge case.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            teammate: { type: 'string', description: 'The role key (e.g. "designer", "researcher", "engineer", "qa", "writer") or the name of the teammate to consult.' },
+            question: { type: 'string', description: 'A single self-contained question for the teammate to answer.' }
+          },
+          required: ['teammate', 'question']
+        }
+      },
+      {
+        name: 'recall_knowledge',
+        description: 'Recall reusable LEARNINGS the company has saved from past projects (the cross-project knowledge base). ' +
+          'Pass a query to retrieve the most relevant learnings, or omit it for the most recent. Use this before starting work to reuse hard-won lessons.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Optional topic to rank learnings by (keyword overlap). Omit to get the most recent learnings.' }
+          },
+          required: []
+        }
       }
     ];
   }
@@ -1339,6 +1532,10 @@ window.App = window.App || {};
           return httpRequest(input.method, input.url, input.headers, input.body, input.max_chars);
         case 'spawn_subtask':
           return spawnSubtask(input.role, input.instruction);
+        case 'consult_teammate':
+          return consultTeammate(input.teammate !== undefined ? input.teammate : input.role, input.question);
+        case 'recall_knowledge':
+          return Promise.resolve(recallKnowledge(input.query !== undefined ? input.query : ''));
         default:
           return Promise.resolve(fail('unknown tool: ' + name));
       }
@@ -1366,6 +1563,9 @@ window.App = window.App || {};
     _packageDocs: packageDocs,
     _httpRequest: httpRequest,
     _hostOf: hostOf,
-    _hostAllowed: hostAllowed
+    _hostAllowed: hostAllowed,
+    _consultTeammate: consultTeammate,
+    _recallKnowledge: recallKnowledge,
+    _resolveTeammate: resolveTeammate
   };
 })();

@@ -3187,6 +3187,131 @@ window.App = window.App || {};
 '- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
 
   // ---------------------------------------------------------------------------
+  // KNOWLEDGE BASE section (cross-project company memory) — store.js owns the data
+  // (App.state.knowledge = [{id,text,tags,project,ts}]); orchestrator distills
+  // LEARNINGS after a build finalizes and injects relevant ones when decomposing a
+  // new goal; tools.js exposes recall_knowledge. These are the shared knobs/prompt.
+  //   KNOWLEDGE_CAP        : max entries retained in App.state.knowledge (oldest
+  //                          dropped past this; Store normalize/migrate enforces).
+  //   KNOWLEDGE_INJECT_K   : how many entries Store.getKnowledge returns by default
+  //                          (also how many recall_knowledge / decompose-injection use).
+  //   KNOWLEDGE_SUMMARIZE_SYSTEM : boss prompt run once after a goal/build finalizes
+  //                          to distill 1-3 short, reusable LEARNINGS as STRICT JSON
+  //                          {learnings:[strings]}. Kept generic + transferable.
+  // ---------------------------------------------------------------------------
+  App.config.KNOWLEDGE_CAP = 60;
+  App.config.KNOWLEDGE_INJECT_K = 4;
+
+  App.config.KNOWLEDGE_SUMMARIZE_SYSTEM =
+'You are the BOSS of an autonomous AI company doing a brief retrospective. You are given the user\'s goal and\n' +
+'the work your team just delivered for it. Distill the 1-3 most useful, REUSABLE lessons — the kind of\n' +
+'general engineering/design/process insight that would help the team on a DIFFERENT future project, not a\n' +
+'fact specific only to this one goal.\n' +
+'\n' +
+'Each learning: one short, self-contained, declarative sentence (a heuristic, gotcha, pattern, or decision\n' +
+'rule). Make it concrete enough to act on, general enough to transfer. Do NOT restate the goal, summarize the\n' +
+'deliverable, or praise the work. If there is no genuinely transferable lesson, return an empty array.\n' +
+'\n' +
+'You MUST reply with a SINGLE JSON object and NOTHING ELSE — no prose, no markdown, no code fences.\n' +
+'Schema:\n' +
+'{ "learnings": [<0-3 short reusable lesson strings>] }\n' +
+'\n' +
+'Rules:\n' +
+'- 0 to 3 items. Prefer fewer, higher-signal lessons over filler.\n' +
+'- Each item is ONE plain sentence; no numbering, no markdown, no leading dash.\n' +
+'- Do NOT include comments or trailing commas. Output valid JSON parseable by JSON.parse.';
+
+  // ---------------------------------------------------------------------------
+  // CONSULT section — bounds for the consult_teammate tool (tools.js). A worker
+  // may ask ONE specialized teammate a single question mid-task; the tool makes one
+  // bounded API.stream call as that teammate (their systemPrompt/persona + model)
+  // and returns the answer. CONSULT_MAX_TOKENS caps that reply so it stays cheap.
+  // ---------------------------------------------------------------------------
+  App.config.CONSULT_MAX_TOKENS = 700;
+
+  // ---------------------------------------------------------------------------
+  // BUILD TEMPLATES section — one-click starting points for PROJECT BUILD mode
+  // (ui.js renders a picker near the Build button; on pick it fills the goal input
+  // with template.goal and kicks off the build via dispatchBuild/runBuild). Each
+  // entry: { id, label, icon(emoji), goal, hint }. The goal is a STRONG, concrete
+  // build prompt that yields a real, runnable, multi-file project — not a vague
+  // one-liner. hint is a short helper line shown under the label in the picker.
+  // i18n keys for label/hint live in i18n.js; goal text stays here (it is the
+  // actual build instruction, language-neutral enough to drive the boss).
+  // ---------------------------------------------------------------------------
+  App.config.BUILD_TEMPLATES = [
+    {
+      id: 'game',
+      label: 'Arcade Game',
+      icon: '🎮',
+      goal: 'Build a complete, polished browser arcade game that runs by opening index.html with no build step or external libraries. ' +
+            'Use an HTML5 canvas with a real game loop (requestAnimationFrame), keyboard/touch controls, a scoring system, increasing ' +
+            'difficulty, collision detection, sound-free juice (particles, screen shake, color flashes), a start screen, a game-over ' +
+            'screen with restart, and a high score persisted in localStorage. Pick one cohesive concept (e.g. a neon space shooter or an ' +
+            'endless dodger) and implement it fully. Split the code into index.html, css/style.css, and js/game.js, plus a README.md ' +
+            'explaining the controls and how to play. Everything must actually work when opened in a browser.',
+      hint: 'Canvas game, controls, score, juice'
+    },
+    {
+      id: 'dashboard',
+      label: 'Data Dashboard',
+      icon: '📊',
+      goal: 'Build a responsive analytics dashboard web app that runs by opening index.html with no build step or external CDN dependencies. ' +
+            'Generate realistic sample data in JavaScript and render at least three distinct visualizations (e.g. a line chart, a bar chart, ' +
+            'and KPI stat cards) drawn on canvas or as styled DOM/SVG — implement the charts yourself, do not pull in a chart library. ' +
+            'Include a sidebar or top nav, a filter/date-range control that actually updates the charts, a data table with sorting, and a ' +
+            'clean dark theme. Split into index.html, css/style.css, js/data.js (sample data + helpers), and js/app.js (rendering + ' +
+            'interaction), plus a README.md. The dashboard must be interactive and fully functional offline.',
+      hint: 'Charts, KPIs, filters, dark theme'
+    },
+    {
+      id: 'landing',
+      label: 'Landing Page',
+      icon: '🚀',
+      goal: 'Build a modern, conversion-focused product landing page that runs by opening index.html with no build step or external ' +
+            'dependencies. Invent a plausible product (name, tagline, value prop) and include: a hero with a headline, subhead, and ' +
+            'call-to-action button; a features grid (at least three features with icons drawn via inline SVG or CSS); a social-proof / ' +
+            'testimonials section; a simple pricing table; an FAQ; and a footer. Make it fully responsive with a mobile nav, add tasteful ' +
+            'scroll-reveal animations and hover states in CSS, and ensure the CTA buttons and any form have working interactions. Split into ' +
+            'index.html, css/style.css, and js/main.js, plus a README.md. It must look polished and render correctly on mobile and desktop.',
+      hint: 'Hero, features, pricing, responsive'
+    },
+    {
+      id: 'tool',
+      label: 'Utility Tool',
+      icon: '🛠️',
+      goal: 'Build a genuinely useful single-purpose browser utility that runs by opening index.html with no build step or external ' +
+            'dependencies. Pick one focused tool (e.g. a markdown-to-HTML previewer, a JSON formatter/validator, a unit/currency converter, ' +
+            'or a pomodoro timer) and implement it completely with real logic — not a mockup. Include live input handling, instant output, ' +
+            'sensible validation and error states, a copy-to-clipboard or download action where relevant, persistence of the last input in ' +
+            'localStorage, keyboard shortcuts, and a clean accessible UI. Split into index.html, css/style.css, and js/app.js, plus a ' +
+            'README.md describing what the tool does and how to use it. Every feature must actually work.',
+      hint: 'Real logic, live I/O, persistence'
+    },
+    {
+      id: 'clone',
+      label: 'App Clone',
+      icon: '📋',
+      goal: 'Build a working clone of a small, well-known productivity app that runs by opening index.html with no build step or external ' +
+            'dependencies. Pick one (e.g. a Trello-style kanban board, a Todoist-style task manager, or a Notion-style note pad) and ' +
+            'implement its core flow for real: creating, editing, reordering (drag-and-drop where it fits), completing, and deleting items, ' +
+            'with all state persisted in localStorage so it survives a refresh. Include multiple lists/columns or categories, a clean ' +
+            'responsive layout, empty states, and keyboard support. Split into index.html, css/style.css, js/store.js (localStorage data ' +
+            'layer), and js/app.js (UI + interactions), plus a README.md. The clone must be fully interactive and usable, not a static mockup.',
+      hint: 'Kanban/todo/notes, drag, persistence'
+    }
+  ];
+
+  // templateById(id) -> the BUILD_TEMPLATES entry or null. Convenience for UI.
+  App.config.templateById = function (id) {
+    var arr = App.config.BUILD_TEMPLATES || [];
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i] && arr[i].id === id) return arr[i];
+    }
+    return null;
+  };
+
+  // ---------------------------------------------------------------------------
   // section 2 App.util — small, pure helpers. Date.now()/Math.random() live ONLY inside
   // these functions (this is real browser code; deterministic restriction does
   // not apply here).
@@ -3464,7 +3589,26 @@ window.App = window.App || {};
       'selfimprove.needServed': 'Self-improve needs a served context (GitHub Pages or localhost), not file://.',
       'selfimprove.needGithub': 'Set a GitHub token, owner, and repo in Settings to deploy.',
       'selfimprove.invalid': 'A proposed edit failed validation - deploy is blocked.',
-      'selfimprove.hint.ph': 'Optional: hint what to improve (e.g. accessibility, a bug)...'
+      'selfimprove.hint.ph': 'Optional: hint what to improve (e.g. accessibility, a bug)...',
+
+      // --- build templates (contract E) ---
+      'templates.btn': 'Templates',
+      'templates.title': 'Start from a project template',
+      'templates.modalTitle': 'PROJECT TEMPLATES',
+      'templates.intro': 'Pick a starting point. The builder turns it into a real, runnable multi-file project.',
+      'templates.empty': 'No project templates available.',
+      'templates.started': 'Building: ',
+
+      // --- company knowledge (contract F) ---
+      'knowledge.btn': 'Knowledge',
+      'knowledge.title': 'Company knowledge - learnings saved across projects',
+      'knowledge.modalTitle': 'COMPANY KNOWLEDGE',
+      'knowledge.intro': 'Reusable learnings the Boss distills after each build. Workers can recall these on new goals.',
+      'knowledge.empty': 'No saved knowledge yet. Finish a build and the Boss distills 1-3 reusable learnings here.',
+      'knowledge.clear': 'Clear all',
+      'knowledge.clearAsk': 'Clear all saved company knowledge? This cannot be undone.',
+      'knowledge.cleared': 'Knowledge cleared.',
+      'knowledge.unavailable': 'Knowledge base unavailable'
     },
 
     ko: {
@@ -3651,7 +3795,26 @@ window.App = window.App || {};
       'selfimprove.needServed': '자가 개선은 file://이 아니라 서버 환경(GitHub Pages 또는 localhost)이 필요합니다.',
       'selfimprove.needGithub': '배포하려면 설정에서 GitHub 토큰·소유자·저장소를 입력하세요.',
       'selfimprove.invalid': '제안된 수정이 검증을 통과하지 못해 배포가 차단되었습니다.',
-      'selfimprove.hint.ph': '선택: 개선 방향 힌트 (예: 접근성, 버그)...'
+      'selfimprove.hint.ph': '선택: 개선 방향 힌트 (예: 접근성, 버그)...',
+
+      // --- build templates (contract E) ---
+      'templates.btn': '템플릿',
+      'templates.title': '프로젝트 템플릿으로 시작',
+      'templates.modalTitle': '프로젝트 템플릿',
+      'templates.intro': '시작점을 고르세요. 빌더가 실제로 실행되는 멀티파일 프로젝트로 만들어줍니다.',
+      'templates.empty': '사용 가능한 프로젝트 템플릿이 없습니다.',
+      'templates.started': '빌드 중: ',
+
+      // --- company knowledge (contract F) ---
+      'knowledge.btn': '지식',
+      'knowledge.title': '회사 지식 - 프로젝트 전반에서 저장된 학습',
+      'knowledge.modalTitle': '회사 지식',
+      'knowledge.intro': '빌드가 끝날 때마다 보스가 정리한 재사용 가능한 학습입니다. 새 목표에서 워커가 참고할 수 있습니다.',
+      'knowledge.empty': '아직 저장된 지식이 없습니다. 빌드를 마치면 보스가 재사용할 학습 1~3개를 여기에 정리합니다.',
+      'knowledge.clear': '모두 지우기',
+      'knowledge.clearAsk': '저장된 회사 지식을 모두 지울까요? 되돌릴 수 없습니다.',
+      'knowledge.cleared': '지식을 지웠습니다.',
+      'knowledge.unavailable': '지식 베이스를 사용할 수 없습니다'
     }
   };
 
@@ -5154,6 +5317,173 @@ window.App = window.App || {};
   }
 
   // ---------------------------------------------------------------------------
+  // agent/api helpers — soft access to App.state.agents + creds. Never throw.
+  // ---------------------------------------------------------------------------
+  function agentList() {
+    try { return (App.state && Array.isArray(App.state.agents)) ? App.state.agents : []; }
+    catch (e) { return []; }
+  }
+
+  // Resolve a teammate by role key first, then case-insensitive name match.
+  function resolveTeammate(ref) {
+    ref = String(ref == null ? '' : ref).trim();
+    if (!ref) return null;
+    var list = agentList();
+    var i;
+    // 1) exact role key match (case-insensitive).
+    var lower = ref.toLowerCase();
+    for (i = 0; i < list.length; i++) {
+      var a = list[i];
+      if (a && a.role && String(a.role).toLowerCase() === lower) return a;
+    }
+    // 2) case-insensitive name match.
+    for (i = 0; i < list.length; i++) {
+      var b = list[i];
+      if (b && b.name && String(b.name).toLowerCase() === lower) return b;
+    }
+    return null;
+  }
+
+  // Has usable creds for a model? Defer to Agents.hasCredsFor when present;
+  // otherwise mirror the provider-aware check using settings keys.
+  function creds(model) {
+    try {
+      if (App.Agents && typeof App.Agents.hasCredsFor === 'function') {
+        return !!App.Agents.hasCredsFor(model);
+      }
+    } catch (e) {}
+    try {
+      var set = settings();
+      var cfg = App.config || {};
+      var prov = (cfg.providerOf ? cfg.providerOf(model)
+        : (App.util && App.util.providerOf ? App.util.providerOf(model) : 'anthropic'));
+      if (prov === 'gemini') return !!set.geminiKey;
+      if (prov === 'openai') return !!set.openaiKey;
+      return !!set.apiKey;
+    } catch (e2) { return false; }
+  }
+
+  function defaultModel() {
+    try { return settings().defaultModel || ''; }
+    catch (e) { return ''; }
+  }
+
+  // ---------------------------------------------------------------------------
+  // consult_teammate — a worker asks a specialized teammate one bounded question.
+  // Resolves the target agent (role key first, else name), then makes ONE
+  // App.API.stream call using THAT agent's systemPrompt + model and the question
+  // as a single user message. Bounded by config.CONSULT_MAX_TOKENS and a hard
+  // ~30s safety timeout so a stuck call can never hang the tool loop. Defensive:
+  // never throws, always resolves.
+  // ---------------------------------------------------------------------------
+  function consultTeammate(teammate, question) {
+    question = String(question == null ? '' : question).trim();
+    if (!question) return Promise.resolve(fail('question is required'));
+
+    var target;
+    try { target = resolveTeammate(teammate); }
+    catch (e) { target = null; }
+    if (!target) return Promise.resolve(fail('no teammate matching "' + String(teammate == null ? '' : teammate) + '"'));
+
+    var model = target.model || defaultModel();
+    if (!model) return Promise.resolve(fail('teammate has no model configured'));
+    if (!creds(model)) return Promise.resolve(fail('no API credentials for ' + model + ' (set a key in Settings)'));
+
+    if (!App.API || typeof App.API.stream !== 'function') {
+      return Promise.resolve(fail('API unavailable'));
+    }
+
+    var cfg = App.config || {};
+    var maxTokens = (typeof cfg.CONSULT_MAX_TOKENS === 'number' && cfg.CONSULT_MAX_TOKENS > 0)
+      ? cfg.CONSULT_MAX_TOKENS : 700;
+
+    var set = settings();
+    var name = target.name || target.role || 'teammate';
+    var role = target.role || '';
+    // Compose the system from systemPrompt plus persona identity when present.
+    var sys = String(target.systemPrompt || '');
+    try {
+      if (target.persona && target.persona.identity) {
+        sys += (sys ? '\n\n' : '') + String(target.persona.identity);
+      }
+    } catch (ep) {}
+    if (!sys) sys = 'You are ' + name + ', a helpful ' + (role || 'teammate') + '.';
+
+    return new Promise(function (resolve) {
+      var acc = '', settled = false, timer = null, handle = null;
+
+      function done(res) {
+        if (settled) return;
+        settled = true;
+        if (timer) { clearTimeout(timer); timer = null; }
+        try { if (handle && typeof handle.abort === 'function') handle.abort(); } catch (e) {}
+        resolve(res);
+      }
+
+      // Hard safety timeout — independent of the stream's own logic.
+      timer = setTimeout(function () {
+        var partial = acc.trim();
+        if (partial) done(ok(name + ' (' + role + '): ' + partial + '\n...(consult timed out)'));
+        else done(fail('consult timed out'));
+      }, 30000);
+
+      try {
+        handle = App.API.stream({
+          apiKey: set.apiKey,
+          openaiKey: set.openaiKey,
+          geminiKey: set.geminiKey,
+          model: model,
+          system: sys,
+          messages: [{ role: 'user', content: question }],
+          maxTokens: maxTokens,
+          onText: function (d) { acc += d; },
+          onDone: function (res) {
+            var answer = ((res && res.text) || acc || '').trim();
+            if (!answer) { done(fail('teammate returned no answer')); return; }
+            done(ok(name + ' (' + role + '): ' + answer));
+          },
+          onError: function (err) {
+            var msg = (err && err.message) ? err.message : 'consult failed';
+            done(fail('consult error: ' + msg));
+          }
+        });
+      } catch (e) {
+        done(fail('consult error: ' + (e && e.message ? e.message : e)));
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // recall_knowledge — read the company cross-project knowledge base. Returns up
+  // to config.KNOWLEDGE_INJECT_K entries (ranked by the query when given) joined
+  // as text. Never throws; degrades to a friendly message when empty/unavailable.
+  // ---------------------------------------------------------------------------
+  function recallKnowledge(query) {
+    query = String(query == null ? '' : query);
+    var none = 'no saved knowledge yet';
+    try {
+      if (!App.Store || typeof App.Store.getKnowledge !== 'function') return ok(none);
+      var cfg = App.config || {};
+      var k = (typeof cfg.KNOWLEDGE_INJECT_K === 'number' && cfg.KNOWLEDGE_INJECT_K > 0)
+        ? cfg.KNOWLEDGE_INJECT_K : 4;
+      var entries = App.Store.getKnowledge(query, k) || [];
+      if (!entries.length) return ok(none);
+      var lines = [];
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var text = (e && e.text != null) ? String(e.text) : String(e == null ? '' : e);
+        if (!text.trim()) continue;
+        var proj = (e && e.project) ? (' [' + String(e.project) + ']') : '';
+        lines.push('- ' + text + proj);
+      }
+      if (!lines.length) return ok(none);
+      return ok(lines.join('\n'));
+    } catch (e) {
+      return ok(none);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // public: enabled()
   // ---------------------------------------------------------------------------
   function enabled() {
@@ -5394,6 +5724,32 @@ window.App = window.App || {};
           },
           required: ['role', 'instruction']
         }
+      },
+      {
+        name: 'consult_teammate',
+        description: 'Ask a specialized teammate one focused question mid-task and get their answer in their own voice. ' +
+          'The teammate is resolved by role (e.g. "designer", "researcher", "qa") or by name. Use this for quick expert input ' +
+          'without delegating a whole subtask: e.g. ask the researcher for a fact, the designer for a layout opinion, or QA for an edge case.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            teammate: { type: 'string', description: 'The role key (e.g. "designer", "researcher", "engineer", "qa", "writer") or the name of the teammate to consult.' },
+            question: { type: 'string', description: 'A single self-contained question for the teammate to answer.' }
+          },
+          required: ['teammate', 'question']
+        }
+      },
+      {
+        name: 'recall_knowledge',
+        description: 'Recall reusable LEARNINGS the company has saved from past projects (the cross-project knowledge base). ' +
+          'Pass a query to retrieve the most relevant learnings, or omit it for the most recent. Use this before starting work to reuse hard-won lessons.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Optional topic to rank learnings by (keyword overlap). Omit to get the most recent learnings.' }
+          },
+          required: []
+        }
       }
     ];
   }
@@ -5441,6 +5797,10 @@ window.App = window.App || {};
           return httpRequest(input.method, input.url, input.headers, input.body, input.max_chars);
         case 'spawn_subtask':
           return spawnSubtask(input.role, input.instruction);
+        case 'consult_teammate':
+          return consultTeammate(input.teammate !== undefined ? input.teammate : input.role, input.question);
+        case 'recall_knowledge':
+          return Promise.resolve(recallKnowledge(input.query !== undefined ? input.query : ''));
         default:
           return Promise.resolve(fail('unknown tool: ' + name));
       }
@@ -5468,7 +5828,10 @@ window.App = window.App || {};
     _packageDocs: packageDocs,
     _httpRequest: httpRequest,
     _hostOf: hostOf,
-    _hostAllowed: hostAllowed
+    _hostAllowed: hostAllowed,
+    _consultTeammate: consultTeammate,
+    _recallKnowledge: recallKnowledge,
+    _resolveTeammate: resolveTeammate
   };
 })();
 </script>
@@ -12296,6 +12659,90 @@ window.App = window.App || {};
     return { facts: facts, plan: plan, progress: progress, updated: updated };
   }
 
+  // KNOWLEDGE: cap helper for the company-wide cross-project knowledge base
+  // (App.state.knowledge). Default 60 (config.KNOWLEDGE_CAP).
+  function knowledgeCap() {
+    var n = cfg().KNOWLEDGE_CAP;
+    return (typeof n === 'number' && n > 0) ? n : 60;
+  }
+
+  // KNOWLEDGE: default number of entries getKnowledge() returns when k is omitted
+  // (config.KNOWLEDGE_INJECT_K, default 4).
+  function knowledgeInjectK() {
+    var n = cfg().KNOWLEDGE_INJECT_K;
+    return (typeof n === 'number' && n > 0) ? Math.floor(n) : 4;
+  }
+
+  // KNOWLEDGE: sanitize a persisted tags array -> unique non-empty lowercased
+  // strings (cap 8 so a single entry cannot bloat the blob). Never throws.
+  function normalizeTags(arr) {
+    var out = [];
+    if (!Array.isArray(arr)) return out;
+    var seen = {};
+    for (var i = 0; i < arr.length && out.length < 8; i++) {
+      var v = arr[i];
+      if (v == null) continue;
+      var s = String(v).trim().toLowerCase();
+      if (!s) continue;
+      if (Object.prototype.hasOwnProperty.call(seen, s)) continue;
+      seen[s] = 1;
+      out.push(s);
+    }
+    return out;
+  }
+
+  // KNOWLEDGE: sanitize one knowledge entry -> {id, text, tags[], project, ts}.
+  // Coerces every field, clamps text length, drops entries with empty text.
+  // Returns null when there is nothing meaningful to keep. Never throws.
+  function normalizeKnowledgeEntry(e) {
+    if (!e || typeof e !== 'object') return null;
+    var TEXT_MAX = 600;   // a learning is a short reusable note, not a document
+    var text = (e.text == null) ? '' : String(e.text).trim();
+    if (!text) return null;
+    if (text.length > TEXT_MAX) text = text.slice(0, TEXT_MAX);
+    return {
+      id: e.id ? String(e.id) : uid('kn'),
+      text: text,
+      tags: normalizeTags(e.tags),
+      project: (e.project == null) ? '' : String(e.project),
+      ts: (typeof e.ts === 'number' && isFinite(e.ts)) ? e.ts : nowMs(),
+    };
+  }
+
+  // KNOWLEDGE: normalize + cap a knowledge array (keep most recent KNOWLEDGE_CAP,
+  // oldest dropped). Order preserved (assumed oldest..newest). Never throws.
+  function normalizeKnowledge(arr) {
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var ne = normalizeKnowledgeEntry(arr[i]);
+      if (ne) out.push(ne);
+    }
+    var cap = knowledgeCap();
+    if (out.length > cap) out = out.slice(out.length - cap);   // keep newest
+    return out;
+  }
+
+  // KNOWLEDGE: lowercase token set for simple keyword-overlap ranking. Splits on
+  // any non-alphanumeric run (handles unicode word chars loosely via the regex),
+  // drops 1-char tokens. Returns a plain { token: 1 } map. Never throws.
+  function knowledgeTokens(str) {
+    var map = {};
+    try {
+      var s = String(str == null ? '' : str).toLowerCase();
+      // Split on any run of NON-word chars. Keep ASCII alphanumerics AND any
+      // codepoint >= U+00C0 (covers accented Latin, CJK, Hangul, etc.) so that
+      // Korean/non-Latin learnings still tokenize. The class is built via
+      // RegExp with \u-escapes so this source stays pure ASCII (build-safe).
+      var parts = s.split(new RegExp('[^a-z0-9\\u00C0-\\uFFFF]+'));
+      for (var i = 0; i < parts.length; i++) {
+        var p = parts[i];
+        if (p && p.length > 1) map[p] = 1;
+      }
+    } catch (e) { /* return whatever we have */ }
+    return map;
+  }
+
   // WAVE 3: cap helper for the structured run-event trace (App.state.trace).
   function traceCap() {
     var n = cfg().TRACE_CAP;
@@ -12442,6 +12889,7 @@ window.App = window.App || {};
       artifacts: [],          // v3: Artifact[] (persisted, capped at ARTIFACT_MAX)
       trace: [],              // WAVE 3: structured run-event trace (persisted, capped at TRACE_CAP)
       files: {},              // v5: project workspace (path -> {content,lang,updatedBy,t}); persisted, capped at MAX_PROJECT_FILES
+      knowledge: [],          // KNOWLEDGE: cross-project company memory ({id,text,tags,project,ts}[]); persisted, capped at KNOWLEDGE_CAP
       credits: 0,             // Wave 4a: shared credit pool (earned per task; spent in the office shop)
       upgrades: [],           // Wave 4a: purchased OFFICE_UPGRADES ids (applied to layout on load)
       camera: defaultCamera(),
@@ -12479,6 +12927,7 @@ window.App = window.App || {};
     if (!Array.isArray(s.artifacts)) s.artifacts = [];
     if (!Array.isArray(s.trace)) s.trace = [];                   // WAVE 3: run-event trace
     if (!s.files || typeof s.files !== 'object') s.files = {};   // v5: project workspace map
+    if (!Array.isArray(s.knowledge)) s.knowledge = [];           // KNOWLEDGE: cross-project memory
     if (typeof s.credits !== 'number' || !isFinite(s.credits)) s.credits = 0;   // Wave 4a
     if (!Array.isArray(s.upgrades)) s.upgrades = [];                            // Wave 4a
     if (!s.camera || typeof s.camera !== 'object') s.camera = def.camera;
@@ -12686,6 +13135,9 @@ window.App = window.App || {};
     // v5: project workspace — normalize + cap (fresh plain map, no live refs)
     var files = normalizeFiles(s.files);
 
+    // KNOWLEDGE: cross-project company memory — normalize + cap newest KNOWLEDGE_CAP
+    var knowledge = normalizeKnowledge(s.knowledge);
+
     // layout: deep clone so we never persist live references
     var layout = deepClone(s.layout) || emptyLayout();
 
@@ -12714,6 +13166,7 @@ window.App = window.App || {};
       artifacts: artifacts,
       trace: trace,           // WAVE 3: structured run-event trace
       files: files,           // v5: project workspace
+      knowledge: knowledge,   // KNOWLEDGE: cross-project company memory
       credits: credits,       // Wave 4a: shared credit pool
       upgrades: upgrades,     // Wave 4a: purchased office-upgrade ids
       layout: layout,
@@ -12829,6 +13282,12 @@ window.App = window.App || {};
     for (var nfk in rebuiltFiles) {
       if (Object.prototype.hasOwnProperty.call(rebuiltFiles, nfk)) s.files[nfk] = rebuiltFiles[nfk];
     }
+
+    // --- KNOWLEDGE: cross-project company memory (normalize + cap; migrate -> []) ---
+    var rebuiltKnowledge = normalizeKnowledge(blob.knowledge);
+    if (!Array.isArray(s.knowledge)) s.knowledge = [];
+    s.knowledge.length = 0;   // clear in place to preserve the array reference
+    for (var kj = 0; kj < rebuiltKnowledge.length; kj++) s.knowledge.push(rebuiltKnowledge[kj]);
 
     // --- Wave 4a: gamification economy (credits + purchased upgrade ids) ---
     s.credits = normalizeCount(blob.credits, 0);
@@ -12985,6 +13444,7 @@ window.App = window.App || {};
       if (v < 7) {
         if (typeof blob.credits !== 'number' || !isFinite(blob.credits)) blob.credits = 0;
         if (!Array.isArray(blob.upgrades)) blob.upgrades = [];
+        if (!Array.isArray(blob.knowledge)) blob.knowledge = [];   // KNOWLEDGE: cross-project memory (load normalizer fills defaults)
         if (blob.settings && typeof blob.settings === 'object') {
           if (typeof blob.settings.bgm === 'undefined') blob.settings.bgm = false;
         }
@@ -13122,6 +13582,8 @@ window.App = window.App || {};
       for (var fk in s.files) {
         if (Object.prototype.hasOwnProperty.call(s.files, fk)) delete s.files[fk];
       }
+      if (!Array.isArray(s.knowledge)) s.knowledge = [];
+      s.knowledge.length = 0;   // KNOWLEDGE: fresh company starts with no saved learnings (clear in place)
       s.credits = 0;            // Wave 4a: fresh company starts with no credits
       s.upgrades = [];          // Wave 4a: and no purchased upgrades
       s.settings = defaultSettings();
@@ -13314,7 +13776,7 @@ window.App = window.App || {};
     } catch (e) {
       logErr('exportJSON', e);
       // 빈 회사라도 유효한 JSON 반환
-      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], files: {}, credits: 0, upgrades: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
+      return JSON.stringify({ v: schemaVersion(), agents: [], tasks: [], log: [], artifacts: [], files: {}, knowledge: [], credits: 0, upgrades: [], layout: emptyLayout(), settings: defaultSettings() }, null, 2);
     }
   }
 
@@ -13659,6 +14121,100 @@ window.App = window.App || {};
   }
 
   // ---------------------------------------------------------------------------
+  // KNOWLEDGE BASE (contract A) — cross-project company memory. Lives on
+  // App.state.knowledge ({id,text,tags[],project,ts}[]), persisted + capped at
+  // KNOWLEDGE_CAP. Orchestrator distills LEARNINGS here after a build finalizes;
+  // workers read them back via the recall_knowledge tool / decompose injection.
+  // Both methods are defensive and NEVER throw (the rAF loop must stay alive).
+  // ---------------------------------------------------------------------------
+
+  // addKnowledge(text, meta?) -> the stored entry (or null on empty/failure).
+  // Assigns id/ts; meta may set tags/project. No-ops on blank text. Caps the
+  // array (oldest dropped) and persists (debounced so rapid adds coalesce).
+  function addKnowledge(text, meta) {
+    try {
+      var s = ensureState();
+      if (!Array.isArray(s.knowledge)) s.knowledge = [];
+      var m = (meta && typeof meta === 'object') ? meta : {};
+      var entry = normalizeKnowledgeEntry({
+        text: text,
+        tags: m.tags,
+        project: m.project,
+        // id/ts intentionally derived by the normalizer (fresh entry)
+      });
+      if (!entry) return null;   // blank text -> no-op
+      s.knowledge.push(entry);
+      // cap newest KNOWLEDGE_CAP (oldest dropped)
+      var cap = knowledgeCap();
+      if (s.knowledge.length > cap) {
+        s.knowledge.splice(0, s.knowledge.length - cap);
+      }
+      saveDebounced();
+      return entry;
+    } catch (e) {
+      logErr('addKnowledge', e);
+      return null;
+    }
+  }
+
+  // getKnowledge(query?, k?) -> array of up to k entries (default
+  // KNOWLEDGE_INJECT_K). With a query, rank by lowercased keyword overlap
+  // (token intersection of query vs entry text+tags+project); ties + no-query
+  // fall back to most-recent first. Returns shallow copies. Never throws.
+  function getKnowledge(query, k) {
+    try {
+      var s = ensureState();
+      var list = Array.isArray(s.knowledge) ? s.knowledge : [];
+      var lim = (typeof k === 'number' && isFinite(k) && k > 0) ? Math.floor(k) : knowledgeInjectK();
+      if (!list.length) return [];
+
+      var q = (query == null) ? '' : String(query).trim();
+      var rows = [];
+      var i, e;
+
+      if (!q) {
+        // most-recent first
+        for (i = list.length - 1; i >= 0 && rows.length < lim; i--) {
+          e = list[i];
+          if (e && typeof e === 'object') {
+            rows.push({ id: e.id, text: e.text, tags: (e.tags || []).slice(), project: e.project, ts: e.ts });
+          }
+        }
+        return rows;
+      }
+
+      // keyword-overlap ranking
+      var qTokens = knowledgeTokens(q);
+      var scored = [];
+      for (i = 0; i < list.length; i++) {
+        e = list[i];
+        if (!e || typeof e !== 'object') continue;
+        var hay = String(e.text || '') + ' ' + ((e.tags || []).join(' ')) + ' ' + String(e.project || '');
+        var hTokens = knowledgeTokens(hay);
+        var overlap = 0;
+        for (var t in qTokens) {
+          if (Object.prototype.hasOwnProperty.call(qTokens, t) &&
+              Object.prototype.hasOwnProperty.call(hTokens, t)) overlap++;
+        }
+        scored.push({ e: e, score: overlap, idx: i });
+      }
+      // sort: higher overlap first, then most-recent (higher idx) as tie-break.
+      scored.sort(function (a, b) {
+        if (b.score !== a.score) return b.score - a.score;
+        return b.idx - a.idx;
+      });
+      for (i = 0; i < scored.length && rows.length < lim; i++) {
+        e = scored[i].e;
+        rows.push({ id: e.id, text: e.text, tags: (e.tags || []).slice(), project: e.project, ts: e.ts });
+      }
+      return rows;
+    } catch (e2) {
+      logErr('getKnowledge', e2);
+      return [];
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // PUBLIC API (§7.4 + compat alias §7.10)
   // ---------------------------------------------------------------------------
 
@@ -13680,6 +14236,9 @@ window.App = window.App || {};
     deleteSession: deleteSession,
     // WAVE A: swap the agent roster for a config preset.
     applyPreset: applyPreset,
+    // KNOWLEDGE (contract A): cross-project company memory.
+    addKnowledge: addKnowledge,
+    getKnowledge: getKnowledge,
   };
 
   // §7.10 REQUIRED compat alias: orch.md used App.Store.log
@@ -15712,6 +16271,10 @@ window.App = window.App || {};
     if (personaP) { pre.push(personaP); pre.push(''); }
     var memP = memoryBlock(boss, userText);
     if (memP) { pre.push(memP); pre.push(''); }
+    // Contract D: relevant cross-project learnings (prose ABOVE the GOAL line, so the
+    //   strict-JSON plan the boss returns is never corrupted). '' on a fresh company.
+    var learnP = pastLearningsBlock(userText);
+    if (learnP) { pre.push(learnP); pre.push(''); }
     // Contract C: attached input files digest (empty string when no attachments).
     if (attDigest) { pre.push(attDigest); pre.push(''); }
     var userMsg = pre.join('\n') + 'GOAL:\n' + userText + '\n\nReturn the JSON plan now.';
@@ -16015,7 +16578,12 @@ window.App = window.App || {};
       //   when api.js lacks rateState. Explicit-agent callers (QA revise, etc.)
       //   are never throttled here so in-flight work keeps progressing.
       if (cooldownActive()) return;
-      agent = ag.findIdle(task.role) || spawnTempWorker(task.role);
+      // Contract C: prefer the best idle role-match (level + memory relevance) over
+      //   the FIRST idle one. pickBestAgent falls back to findIdle internally, so a
+      //   single match (or none) behaves EXACTLY like before; only a tie of 2+ idle
+      //   agents of the same role changes (we pick the strongest). spawnTempWorker is
+      //   still the final fallback when no idle role-match exists.
+      agent = pickBestAgent(task.role, task) || spawnTempWorker(task.role);
     }
     if (!agent) return; // couldn't get an agent; remain queued for a later tick
 
@@ -16042,6 +16610,52 @@ window.App = window.App || {};
 
     runWorker(task);
   };
+
+  // pickBestAgent(role, task) — Contract C: among IDLE, non-busy, role-matching
+  //   agents, pick the strongest for this task by
+  //     score = level (primary) + memory-relevance (Agents.scoreMemories length) + tiny tie-break.
+  //   Reuses the same idle-finding predicate as Agents.findIdle (role===role && state
+  //   'idle' && !busy). When 0 or 1 candidate matches, returns EXACTLY what findIdle
+  //   would (null or that single agent) so there is NO behavior change vs today —
+  //   the ranking only matters when 2+ idle agents share a role. Cheap + fully
+  //   guarded: any failure falls back to findIdle(role). Never throws.
+  function pickBestAgent(role, task) {
+    var ag = AGENTS();
+    try {
+      var s = STATE();
+      if (!ag || !s || !Array.isArray(s.agents)) return ag ? ag.findIdle(role) : null;
+      // Collect idle role-matches with the SAME predicate findIdle uses.
+      var cands = [];
+      for (var i = 0; i < s.agents.length; i++) {
+        var a = s.agents[i];
+        if (a && a.role === role && a.state === 'idle' && !a.busy) cands.push(a);
+      }
+      if (!cands.length) return ag.findIdle ? ag.findIdle(role) : null;
+      if (cands.length === 1) return cands[0];   // single match → identical to findIdle
+
+      var query = (task && (task.desc || task.title)) || '';
+      var best = null, bestScore = -Infinity;
+      for (var c = 0; c < cands.length; c++) {
+        var cand = cands[c];
+        var lvl = (typeof cand.level === 'number' && isFinite(cand.level)) ? cand.level : 1;
+        var rel = 0;
+        try {
+          if (ag.scoreMemories && Array.isArray(cand.memories) && cand.memories.length) {
+            var hits = ag.scoreMemories(query, cand.memories) || [];
+            rel = hits.length;   // # of relevant memories surfaced for this task
+          }
+        } catch (e) {}
+        // level dominates; memory relevance breaks ties between equal levels; the
+        // tiny index term keeps selection STABLE (first-declared wins on a full tie,
+        // matching findIdle's first-match order).
+        var score = (lvl * 100) + rel - (c * 0.001);
+        if (score > bestScore) { bestScore = score; best = cand; }
+      }
+      return best || (ag.findIdle ? ag.findIdle(role) : null);
+    } catch (e) {
+      try { return ag && ag.findIdle ? ag.findIdle(role) : null; } catch (e2) { return null; }
+    }
+  }
 
   function spawnTempWorker(role) {
     var ag = AGENTS();
@@ -16971,6 +17585,133 @@ window.App = window.App || {};
     return (boss && boss.model) || settings.bossModel || CFG().BOSS_MODEL;
   }
 
+  // ===========================================================================
+  // COMPANY KNOWLEDGE BASE (Contract D) — cross-project learnings.
+  //   knowledgeInjectK(): config K for how many past learnings to inject (default 4).
+  //   pastLearningsBlock(goal): a "## RELEVANT PAST LEARNINGS" preamble built from
+  //     App.Store.getKnowledge(goal) — '' when the store helper is absent or empty
+  //     (so the boss decompose/build prompt is BYTE-identical to before on a fresh
+  //     company). Bounded + guarded; never throws; never corrupts the strict-JSON
+  //     manifest the boss returns (it is plain prose ABOVE the GOAL line).
+  //   accumulateKnowledge(root): after a goal/build finalizes, make ONE boss-model
+  //     stream call (config.KNOWLEDGE_SUMMARIZE_SYSTEM) to distill 1-3 reusable
+  //     LEARNINGS as strict JSON {learnings:[...]} → App.Store.addKnowledge each.
+  //     Creds-guarded, fires-and-forgets (NEVER blocks delivery), bounded to one call.
+  // ===========================================================================
+  function knowledgeInjectK() {
+    var n = CFG().KNOWLEDGE_INJECT_K;
+    return (typeof n === 'number' && isFinite(n) && n > 0) ? (n | 0) : 4;
+  }
+
+  // pastLearningsBlock(goal) — feature-detect App.Store.getKnowledge; '' if absent/empty.
+  function pastLearningsBlock(goal) {
+    try {
+      if (!App.Store || typeof App.Store.getKnowledge !== 'function') return '';
+      var entries = App.Store.getKnowledge(String(goal == null ? '' : goal), knowledgeInjectK());
+      if (!Array.isArray(entries) || !entries.length) return '';
+      var lines = [];
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var txt = e && (typeof e === 'string' ? e : e.text);
+        if (!txt) continue;
+        lines.push('- ' + truncate(String(txt), 200));
+      }
+      if (!lines.length) return '';
+      return '## RELEVANT PAST LEARNINGS (from earlier company projects)\n' +
+        lines.join('\n') +
+        '\n(These are hints from past work; apply only what fits this goal.)';
+    } catch (e) { return ''; }
+  }
+
+  // parseLearnings(raw) → string[] (tolerant strict-JSON {learnings:[...]}; capped 3).
+  function parseLearnings(raw) {
+    try {
+      if (!raw) return [];
+      var s = String(raw).replace(/^```(?:json|jsonc)?\s*/i, '').replace(/```\s*$/i, '');
+      var first = s.indexOf('{'), last = s.lastIndexOf('}');
+      if (first === -1 || last === -1 || last < first) return [];
+      var body = s.slice(first, last + 1).replace(/,(\s*[}\]])/g, '$1')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+      var obj = null;
+      try { obj = JSON.parse(body); }
+      catch (e) { var bal = braceBalancedPrefix(body); if (bal) { try { obj = JSON.parse(bal); } catch (e2) { obj = null; } } }
+      if (!obj || typeof obj !== 'object' || !Array.isArray(obj.learnings)) return [];
+      var out = [];
+      for (var i = 0; i < obj.learnings.length; i++) {
+        if (obj.learnings[i] == null) continue;
+        var t = String(obj.learnings[i]).trim();
+        if (t) out.push(truncate(t, 240));
+        if (out.length >= 3) break;
+      }
+      return out;
+    } catch (e) { return []; }
+  }
+
+  // accumulateKnowledge(root) — ONE bounded boss call to distill learnings, stored
+  //   via App.Store.addKnowledge. Fire-and-forget: called AFTER the root is already
+  //   marked done, so it can NEVER block or delay delivery. Guards:
+  //     - root._knowledgeDone (once per root)
+  //     - hasCredsFor(boss) + a config system prompt
+  //     - App.Store.addKnowledge present
+  //     - real work happened (>=1 terminal child)
+  function accumulateKnowledge(root) {
+    try {
+      if (!root || root._knowledgeDone) return;
+      if (!App.Store || typeof App.Store.addKnowledge !== 'function') return;
+      var sys = CFG().KNOWLEDGE_SUMMARIZE_SYSTEM;
+      var model = bossModelFor();
+      if (!sys || !hasCredsFor(model)) return;
+      if (!App.API || typeof App.API.stream !== 'function') return;  // don't consume the one-shot flag if we can't actually call
+      // Only if there was real work to learn from.
+      var kids = childrenOf(root.id);
+      if (!kids.length) return;
+      root._knowledgeDone = true;   // claim BEFORE the async call (one shot)
+
+      var settings = (STATE() && STATE().settings) || {};
+      var boss = ensureBoss();
+      var project = String(root.desc || root.title || '');
+      var content = "PROJECT GOAL:\n" + project +
+        "\n\nWHAT THE TEAM PRODUCED:\n" + truncate(gatherWorkerResults(root), 6000) +
+        "\n\nDistill 1-3 short, REUSABLE learnings for future projects. " +
+        "Reply with the strict JSON described in your instructions.";
+      var acc = '';
+      var handle = App.API.stream({
+        apiKey: settings.apiKey,
+        openaiKey: settings.openaiKey,
+        geminiKey: settings.geminiKey,
+        model: model,
+        system: sys,
+        messages: [{ role: 'user', content: content }],
+        onText: function (d) { acc += d; },
+        onDone: function (res) {
+          var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_knowledge'];
+          if (boss && res && res.usage) {
+            boss.stats.tokensIn += (res.usage.input_tokens || 0);
+            boss.stats.tokensOut += (res.usage.output_tokens || 0);
+          }
+          var learnings = parseLearnings((res && res.text) || acc);
+          var saved = 0;
+          for (var i = 0; i < learnings.length; i++) {
+            try {
+              App.Store.addKnowledge(learnings[i], { project: truncate(project, 80) });
+              saved++;
+            } catch (e) {}
+          }
+          if (saved) {
+            try { log('Boss', 'system', 'system', '📚 learned ' + saved + ' thing' + (saved === 1 ? '' : 's') + ' for next time'); } catch (e) {}
+            try { traceEvt({ type: 'knowledge', role: 'boss', taskId: root.id, text: 'saved ' + saved + ' learnings' }); } catch (e) {}
+            saveSoon();
+          }
+        },
+        onError: function () {
+          var s2 = STATE(); if (s2 && s2._activeStreams) delete s2._activeStreams['__boss_knowledge'];
+          // never surface / never block on a knowledge-distill failure.
+        },
+      });
+      var s = STATE(); if (s && s._activeStreams) s._activeStreams['__boss_knowledge'] = handle;
+    } catch (e) {}
+  }
+
   // prepareSynthesis(root) — orchestrate the optional pre-synth phases, then synth.
   function prepareSynthesis(root) {
     try {
@@ -17355,6 +18096,9 @@ window.App = window.App || {};
         try { if (App.UI && App.UI.notifyDone) App.UI.notifyDone(rootTask); } catch (e) {}
         saveSoon();
         if (s && s._activeStreams) delete s._activeStreams['__boss_synth'];
+        // Contract D: distill reusable learnings (fire-and-forget; AFTER delivery so
+        //   it can never block/delay the final answer). One bounded boss call, guarded.
+        try { accumulateKnowledge(rootTask); } catch (e) {}
       },
       onError: function (err) {
         var msg = (err && err.message) || 'error';
@@ -17555,6 +18299,10 @@ window.App = window.App || {};
     if (personaP) { pre.push(personaP); pre.push(''); }
     var memP = memoryBlock(boss, userText);
     if (memP) { pre.push(memP); pre.push(''); }
+    // Contract D: relevant cross-project learnings (prose ABOVE the GOAL line, so the
+    //   strict-JSON file manifest the boss returns is never corrupted). '' on fresh.
+    var learnP = pastLearningsBlock(userText);
+    if (learnP) { pre.push(learnP); pre.push(''); }
     // Contract C: attached input files digest (empty string when no attachments).
     if (attDigest) { pre.push(attDigest); pre.push(''); }
     var userMsg = pre.join('\n') + 'PROJECT GOAL:\n' + userText + '\n\nReturn the JSON file manifest now.';
@@ -17981,6 +18729,10 @@ window.App = window.App || {};
     try { if (App.UI && App.UI.openFiles) App.UI.openFiles(); } catch (e) {}
     try { if (App.UI && App.UI.notifyDone) App.UI.notifyDone(root); } catch (e) {}
     saveSoon();
+
+    // Contract D: distill reusable learnings from this build (fire-and-forget; AFTER
+    //   the root is done + Files opened, so it never blocks delivery). One boss call.
+    try { accumulateKnowledge(root); } catch (e) {}
 
     // SELF-REPAIR: when the project has an HTML entry, run it once and auto-fix any
     //   runtime errors (bounded). Guarded by ENABLE_SELF_REPAIR; never blocks/throws.
@@ -18598,6 +19350,11 @@ window.App = window.App || {};
   // PUBLISH + §7.10 REQUIRED compat aliases
   // ===========================================================================
   App.Orchestrator = Orchestrator;
+
+  // Contract C/D: expose the new level/memory-aware picker + knowledge distiller
+  //   (additive; assign() uses pickBestAgent internally — these are for tests/UI).
+  Orchestrator.pickBestAgent = pickBestAgent;
+  Orchestrator.accumulateKnowledge = accumulateKnowledge;
 
   Orchestrator.enqueue = Orchestrator.enqueueTask;     // orch.md name
   Orchestrator.runSubtask = function (task) { return runWorker(task); }; // orch.md name
@@ -21933,6 +22690,16 @@ window.App = window.App || {};
       // user to APPROVE before any deploy. Strictly human-in-the-loop.
       ensureSelfImproveButton();
 
+      // BUILD TEMPLATES (contract E): a small picker of config.BUILD_TEMPLATES near
+      // the Build button. Picking one fills the goal input + kicks off the build via
+      // the existing dispatchBuild/runBuild path. Only shown when templates exist.
+      ensureTemplatesButton();
+
+      // KNOWLEDGE viewer (contract F): a HUD button that opens a list of the
+      // cross-project company knowledge (state.knowledge) with a clear-all action.
+      // Only shown when the Store knowledge API is present.
+      ensureKnowledgeButton();
+
       // Mobile/responsive: wire the rail drawer toggles (shown <=820px via CSS).
       on($('btn-rail-crew'), 'click', function () { toggleRailDrawer('agent-list', 'btn-rail-crew'); });
       on($('btn-rail-log'),  'click', function () { toggleRailDrawer('log', 'btn-rail-log'); });
@@ -25021,6 +25788,289 @@ window.App = window.App || {};
     UI.toast(T('shop.bought', 'Installed: ') + (up.name || up.id), 'ok');
     renderShop();
     refreshHud();
+  }
+
+  // ===========================================================================
+  // BUILD TEMPLATES (contract E) — a small picker of config.BUILD_TEMPLATES near
+  // the Build button. Each template carries {id,label,icon,goal,hint}; picking one
+  // fills the goal input with template.goal and immediately starts a build through
+  // the SAME path the Build button uses (dispatchBuild -> Orchestrator.runBuild).
+  // Feature-detected: when config.BUILD_TEMPLATES is empty/absent the HUD button is
+  // never injected, so older builds are unaffected. Everything is guarded.
+  // ===========================================================================
+  function buildTemplates() {
+    var t = CFG().BUILD_TEMPLATES;
+    return (t && t.length) ? t : [];
+  }
+
+  // Inject the "Templates" HUD button next to the Build button (mirrors the
+  // SelfImprove button pattern: appended into #hud-controls before the .hud-sep).
+  function ensureTemplatesButton() {
+    if ($('btn-templates')) return;
+    if (!buildTemplates().length) return;
+    var controls = $('hud-controls');
+    if (!controls) return;
+    var b = el('button', 'btn');
+    b.id = 'btn-templates';
+    b.type = 'button';
+    b.title = T('templates.title', 'Start from a project template');
+    b.setAttribute('aria-label', T('templates.title', 'Start from a project template'));
+    b.appendChild(el('span', 'btn-ico', '▤')); // squared grid glyph
+    b.appendChild(el('span', 'btn-lbl', T('templates.btn', 'Templates')));
+    on(b, 'click', function () { UI.openTemplates(); });
+    // Sit right after the Build button when present, else before the separator.
+    var buildBtn = $('btn-build');
+    if (buildBtn && buildBtn.parentNode === controls && buildBtn.nextSibling) {
+      controls.insertBefore(b, buildBtn.nextSibling);
+    } else {
+      var sep = controls.querySelector ? controls.querySelector('.hud-sep') : null;
+      if (sep) controls.insertBefore(b, sep);
+      else controls.appendChild(b);
+    }
+  }
+
+  // Open (or rebuild) the Build Templates modal in #modal-root. Reuses the standard
+  // modal chrome (scrim + modal-card + panel-accent) used by the Shop/Artifacts.
+  UI.openTemplates = function () {
+    var tpls = buildTemplates();
+    if (!tpls.length) { UI.toast(T('templates.empty', 'No project templates available.')); return; }
+    var root = $('modal-root');
+    if (!root) { UI.toast(T('templates.empty', 'No project templates available.')); return; }
+    var prev = $('modal-templates');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-templates';
+    var scrim = el('div', 'modal-scrim');
+    on(scrim, 'click', function () { closeTemplates(); });
+
+    var card = el('div', 'modal-card');
+    card.appendChild(el('div', 'panel-accent'));
+
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', '▤ ' + T('templates.modalTitle', 'PROJECT TEMPLATES')));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', function () { closeTemplates(); });
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    var intro = el('div', 'tpl-intro', T('templates.intro',
+      'Pick a starting point. The builder turns it into a real, runnable multi-file project.'));
+    body.appendChild(intro);
+    var list = el('div', 'tpl-list'); list.id = 'tpl-list';
+    body.appendChild(list);
+
+    var foot = el('footer', 'modal-foot');
+    var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', function () { closeTemplates(); });
+    foot.appendChild(close);
+
+    card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+
+    renderTemplates();
+    applyI18n(modal);
+  };
+
+  function closeTemplates() {
+    var m = $('modal-templates');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
+  function renderTemplates() {
+    var list = $('tpl-list');
+    if (!list) return;
+    clear(list);
+    var tpls = buildTemplates();
+    if (!tpls.length) {
+      list.appendChild(el('div', 'pe-empty', T('templates.empty', 'No project templates available.')));
+      return;
+    }
+    for (var i = 0; i < tpls.length; i++) {
+      (function (tpl) {
+        if (!tpl) return;
+        var item = el('button', 'tpl-item');
+        item.type = 'button';
+        var ico = el('span', 'tpl-ico', tpl.icon || '■');
+        item.appendChild(ico);
+        var text = el('div', 'tpl-text');
+        text.appendChild(el('div', 'tpl-name', tpl.label || tpl.id || 'Template'));
+        if (tpl.hint) text.appendChild(el('div', 'tpl-hint', tpl.hint));
+        item.appendChild(text);
+        item.title = String(tpl.goal || tpl.hint || tpl.label || '');
+        on(item, 'click', function () { pickTemplate(tpl); });
+        list.appendChild(item);
+      })(tpls[i]);
+    }
+  }
+
+  // Fill the goal input with the template's prompt then start a build through the
+  // SAME path the Build button uses, so there is no duplicated pipeline. We write
+  // the goal into the HUD input (dispatchBuild reads HUD first, then board) and
+  // call dispatchBuild(); it consumes the input, opens the board, and runs
+  // Orchestrator.runBuild. Falls back to a direct runBuild if dispatchBuild is gone.
+  function pickTemplate(tpl) {
+    var goal = String((tpl && tpl.goal) || '').trim();
+    if (!goal) { UI.toast(T('templates.empty', 'No project templates available.')); return; }
+    closeTemplates();
+    var hud = $('hud-task-input');
+    if (hud) { hud.value = goal; }
+    else {
+      var board = $('board-input');
+      if (board) board.value = goal;
+    }
+    try {
+      if (hud || $('board-input')) { dispatchBuild(); }
+      else if (ORCH() && ORCH().runBuild) { _lastGoal = { text: goal, mode: 'build' }; ORCH().runBuild(goal); UI.openTaskBoard(); }
+      else { UI.showError(T('build.unavailable', 'Build mode is unavailable.')); return; }
+    } catch (e) { UI.showError('Build failed to start: ' + (e && e.message)); return; }
+    UI.toast(T('templates.started', 'Building: ') + (tpl.label || tpl.id || ''));
+  }
+
+  // ===========================================================================
+  // KNOWLEDGE VIEWER (contract F) — list the cross-project company knowledge base
+  // (App.state.knowledge: {id,text,tags,project,ts}[]) with a clear-all button.
+  // Reads via App.Store.getKnowledge() when available, else the raw state array.
+  // Feature-detected: the HUD button is only injected when the Store knowledge API
+  // (getKnowledge) is present, so older store.js builds are unaffected.
+  // ===========================================================================
+  function hasKnowledgeApi() {
+    try { return !!(App.Store && typeof App.Store.getKnowledge === 'function'); }
+    catch (e) { return false; }
+  }
+
+  // All knowledge entries (most-recent first), defensively. Prefers the Store API
+  // (no query -> recency order) but falls back to the raw state.knowledge array.
+  function allKnowledge() {
+    try {
+      if (App.Store && typeof App.Store.getKnowledge === 'function') {
+        var cap = CFG().KNOWLEDGE_CAP;
+        var k = (typeof cap === 'number' && cap > 0) ? cap : 60;
+        var out = App.Store.getKnowledge('', k);
+        if (Array.isArray(out)) return out;
+      }
+    } catch (e) {}
+    var s = STATE();
+    var raw = (s && Array.isArray(s.knowledge)) ? s.knowledge.slice() : [];
+    raw.reverse(); // newest first to match getKnowledge() recency order
+    return raw;
+  }
+
+  function ensureKnowledgeButton() {
+    if ($('btn-knowledge')) return;
+    if (!hasKnowledgeApi()) return;
+    var controls = $('hud-controls');
+    if (!controls) return;
+    var b = el('button', 'btn');
+    b.id = 'btn-knowledge';
+    b.type = 'button';
+    b.title = T('knowledge.title', 'Company knowledge — learnings saved across projects');
+    b.setAttribute('aria-label', T('knowledge.title', 'Company knowledge'));
+    b.appendChild(el('span', 'btn-ico', '💡')); // light-bulb
+    b.appendChild(el('span', 'btn-lbl', T('knowledge.btn', 'Knowledge')));
+    on(b, 'click', function () { UI.openKnowledge(); });
+    var sep = controls.querySelector ? controls.querySelector('.hud-sep') : null;
+    if (sep) controls.insertBefore(b, sep);
+    else controls.appendChild(b);
+  }
+
+  UI.openKnowledge = function () {
+    var root = $('modal-root');
+    if (!root) { UI.toast(T('knowledge.unavailable', 'Knowledge base unavailable')); return; }
+    var prev = $('modal-knowledge');
+    if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+
+    var modal = el('div', 'modal');
+    modal.id = 'modal-knowledge';
+    var scrim = el('div', 'modal-scrim');
+    on(scrim, 'click', function () { closeKnowledge(); });
+
+    var card = el('div', 'modal-card');
+    card.appendChild(el('div', 'panel-accent'));
+
+    var head = el('header', 'modal-head');
+    head.appendChild(el('h2', 'modal-title', '💡 ' + T('knowledge.modalTitle', 'COMPANY KNOWLEDGE')));
+    var x = el('button', 'panel-x', '✕'); x.type = 'button';
+    on(x, 'click', function () { closeKnowledge(); });
+    head.appendChild(x);
+
+    var body = el('div', 'modal-body');
+    var intro = el('div', 'kn-intro', T('knowledge.intro',
+      'Reusable learnings the Boss distills after each build. Workers can recall these on new goals.'));
+    body.appendChild(intro);
+    var list = el('div', 'kn-list'); list.id = 'kn-list';
+    body.appendChild(list);
+
+    var foot = el('footer', 'modal-foot');
+    var clearBtn = el('button', 'btn', '✕ ' + T('knowledge.clear', 'Clear all'));
+    clearBtn.type = 'button';
+    clearBtn.id = 'kn-clear';
+    on(clearBtn, 'click', function () { clearKnowledge(); });
+    var close = el('button', 'btn btn-primary', T('btn.close', 'Close'));
+    close.type = 'button';
+    on(close, 'click', function () { closeKnowledge(); });
+    foot.appendChild(clearBtn); foot.appendChild(close);
+
+    card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+    modal.appendChild(scrim); modal.appendChild(card);
+    root.appendChild(modal);
+
+    renderKnowledge();
+    applyI18n(modal);
+  };
+
+  function closeKnowledge() {
+    var m = $('modal-knowledge');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
+  function renderKnowledge() {
+    var list = $('kn-list');
+    if (!list) return;
+    clear(list);
+    var entries = allKnowledge();
+    var clearBtn = $('kn-clear');
+    if (!entries.length) {
+      list.appendChild(el('div', 'pe-empty', T('knowledge.empty',
+        'No saved knowledge yet. Finish a build and the Boss distills 1-3 reusable learnings here.')));
+      if (clearBtn) clearBtn.disabled = true;
+      return;
+    }
+    if (clearBtn) clearBtn.disabled = false;
+    for (var i = 0; i < entries.length; i++) {
+      (function (entry) {
+        if (!entry) return;
+        var item = el('div', 'kn-item');
+        var txt = el('div', 'kn-text', String(entry.text || ''));
+        item.appendChild(txt);
+        var meta = el('div', 'kn-meta');
+        if (entry.project) meta.appendChild(el('span', 'kn-project', String(entry.project)));
+        if (entry.tags && entry.tags.length) {
+          meta.appendChild(el('span', 'kn-tags', String(entry.tags.join(' · '))));
+        }
+        if (meta.childNodes.length) item.appendChild(meta);
+        list.appendChild(item);
+      })(entries[i]);
+    }
+  }
+
+  // Clear-all: the knowledge contract defines no clearKnowledge() Store method, so
+  // we empty App.state.knowledge directly (guarded) and persist via App.Store.save.
+  // Confirmed first; idempotent; never throws.
+  function clearKnowledge() {
+    var s = STATE();
+    var has = (s && Array.isArray(s.knowledge) && s.knowledge.length);
+    if (!has) { renderKnowledge(); return; }
+    try {
+      if (typeof window !== 'undefined' && window.confirm &&
+          !window.confirm(T('knowledge.clearAsk', 'Clear all saved company knowledge? This cannot be undone.'))) return;
+    } catch (e) {}
+    try { s.knowledge.length = 0; } catch (e) { s.knowledge = []; }
+    try { if (App.Store && App.Store.save) App.Store.save(); } catch (e) {}
+    UI.toast(T('knowledge.cleared', 'Knowledge cleared.'), 'ok');
+    renderKnowledge();
   }
 
   // ===========================================================================
