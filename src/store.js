@@ -1346,14 +1346,21 @@ window.App = window.App || {};
       var roles = rolesTable();
 
       // 시드 정의 — 색/모델은 ROLES에서 해석(§5.1, §6 defaults).
+      // Order matters: worker seats are consumed gy-sorted as
+      // [eng,des,eng,des,eng,des,res,res,res], so this order lands each role in
+      // its own room (engineers in the bay, designers in the studio, researchers
+      // in the lab) and fills the 3rd desk of each room with Generalist/Writer/QA.
       var defs = [
-        { name: 'Boss',       role: 'boss' },
-        { name: 'Engineer',   role: 'engineer' },
-        { name: 'Designer',   role: 'designer' },
-        { name: 'Researcher', role: 'researcher' },
-        { name: 'Writer',     role: 'writer' },
-        { name: 'QA',         role: 'qa' },
-        { name: 'Generalist', role: 'generalist' },
+        { name: 'Boss',         role: 'boss' },
+        { name: 'Engineer',     role: 'engineer' },
+        { name: 'Designer',     role: 'designer' },
+        { name: 'Engineer 2',   role: 'engineer' },
+        { name: 'Designer 2',   role: 'designer' },
+        { name: 'Generalist',   role: 'generalist' },
+        { name: 'Writer',       role: 'writer' },
+        { name: 'Researcher',   role: 'researcher' },
+        { name: 'Researcher 2', role: 'researcher' },
+        { name: 'QA',           role: 'qa' },
       ];
 
       // 좌석 할당: boss는 bossSeat 우선, 나머지는 남은 좌석을 순서대로.

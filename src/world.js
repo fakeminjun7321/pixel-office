@@ -446,8 +446,8 @@ window.App = window.App || {};
   };
 
   /* ===========================================================================
-   * DEFAULT LAYOUT — the seeded neon office (v2: bigger, multi-ROOM).
-   *   Deterministic. 46×30 grid, walled outer ring, one bottom DOOR.
+   * DEFAULT LAYOUT — the seeded neon office (v8: enlarged, multi-ROOM).
+   *   Deterministic. 54×36 grid, walled outer ring, one bottom DOOR.
    *
    *   Room map (top → bottom; interior walls with DOOR gaps between rooms):
    *     ┌───────── BOSS OFFICE (cyan CARPET, top-center) ─────────┐
@@ -456,17 +456,19 @@ window.App = window.App || {};
    *     │  LOUNGE / BREAK ROOM (coffee + sofa-chairs + plants)     │
    *     └──────────────────────────────────────────────────────────┘
    *
-   *   ≥6 desks total so workers AND temp workers get seats. The seeded agents'
-   *   desks are placed FIRST (in this order) so Store.seed lines up:
+   *   10 desks total (1 boss + 3 engineering + 3 design + 3 research) so a full
+   *   10-person company AND temp workers get seats. The seeded agents' desks are
+   *   placed FIRST (in this order) so Store.seed lines up:
    *     index 0 = Boss       → bossDesk.seat
    *     index 1 = Engineer   → engDesk.seat   (Engineering bay)
    *     index 2 = Designer   → desDesk.seat   (Design studio)
    *     index 3 = Researcher → resDesk.seat   (Research lab)
-   *   The remaining desks (spare engineering + spare design, etc.) are free for
-   *   writer/qa/generalist temps via freeDeskCell().
+   *   The remaining 6 desks (spare engineering/design/research) are free for
+   *   writer/qa/generalist + temps via freeDeskCell().
    *
-   *   This builder is robust to the grid being 30×20 (legacy) OR 46×30 (v2): it
-   *   derives every position from cols/rows, never hardcoding the larger size.
+   *   This builder is robust to the grid being 30×20 (legacy) / 46×30 (v2) /
+   *   54×36 (v8): it derives every position from cols/rows, never hardcoding a
+   *   size, and the three 3rd desks are guarded so short grids skip them cleanly.
    * ========================================================================= */
   World.defaultLayout = function () {
     var c = CFG();
@@ -711,11 +713,19 @@ window.App = window.App || {};
     // spare engineering desk (free for temps)
     var engDesk2 = place('desk', engColX, engRowBot, 'right');
     place('chair', engDesk2.seatGx, engDesk2.seatGy, 'left');
+    // v8: third engineering desk (free for temps) — the enlarged grid makes the bay
+    // tall enough for a third row of seating below engDesk2. Guarded so it is only
+    // placed when an interior row remains above the room's south wall (midBot).
+    var engRow3 = engRowBot + 2;
+    if (engRow3 <= midBot - 1) {
+      var engDesk3 = place('desk', engColX, engRow3, 'right');
+      place('chair', engDesk3.seatGx, engDesk3.seatGy, 'left');
+    }
     place('server', x0, engRowTop, 'down');        // a little server rack in the bay
     place('plant', engColX, (engRowTop + engRowBot) >> 1, 'down');
     // Engineering flair: a whiteboard + printer + bookshelf along the far wall.
     place('whiteboard', engColX, engRowTop - 1, 'down');         // sprint board over the desks
-    place('printer', x0, engRowBot - 1, 'down');                 // shared printer (fills the corner so no dead floor pocket)
+    place('printer', x0 + 2, engRowBot, 'down');                 // shared printer (mirrors the lab printer; sits clear of the bookshelf so no 1-cell dead pocket forms in the taller bay)
     place('bookshelf', x0 + 1, engRowTop, 'down');               // 1x2 reference shelf
 
     // ===== DESIGN STUDIO (upper-right room) =====
@@ -729,6 +739,13 @@ window.App = window.App || {};
     // spare design desk (free for temps)
     var desDesk2 = place('desk', desColX, desRowBot, 'left');
     place('chair', desDesk2.seatGx, desDesk2.seatGy, 'right');
+    // v8: third design desk (free for temps) — fits in the enlarged studio below
+    // desDesk2. Same guard as engineering so legacy/short grids skip it cleanly.
+    var desRow3 = desRowBot + 2;
+    if (desRow3 <= midBot - 1) {
+      var desDesk3 = place('desk', desColX, desRow3, 'left');
+      place('chair', desDesk3.seatGx, desDesk3.seatGy, 'right');
+    }
     place('whiteboard', desColX, desRowTop - 1, 'down');   // studio whiteboard
     place('plant', desColX + 1, (desRowTop + desRowBot) >> 1, 'down');
     // Design flair: a mood-board TV + printer + potted tree along the far wall.
@@ -746,6 +763,13 @@ window.App = window.App || {};
     // spare research desk (free for temps)
     var resDesk2 = place('desk', resColX, resRowBot, 'right');
     place('chair', resDesk2.seatGx, resDesk2.seatGy, 'left');
+    // v8: third research desk (free for temps) — the enlarged lab has room for a
+    // third row below resDesk2. Guarded against the lab's south wall (labBot).
+    var resRow3 = resRowBot + 2;
+    if (resRow3 <= labBot - 1) {
+      var resDesk3 = place('desk', resColX, resRow3, 'right');
+      place('chair', resDesk3.seatGx, resDesk3.seatGy, 'left');
+    }
     // research server racks (datacenter-ish cluster in the lab corner)
     place('server', x0, resRowTop, 'down');
     place('server', x0, resRowTop + 1, 'down');

@@ -577,8 +577,8 @@ window.App = window.App || {};
     // grid / world geometry
     TILE: 16,            // world px per cell edge
     PIXEL: 3,            // base upscale: 1 world px -> 3 screen px @ zoom 1 (cell = 48 screen px @ zoom1)
-    GRID_COLS: 46,       // v2: bigger multi-room office
-    GRID_ROWS: 30,       // v2: bigger multi-room office
+    GRID_COLS: 54,       // v8: enlarged so each department room fits a 3rd desk (10-person company)
+    GRID_ROWS: 36,       // v8: enlarged so each department room fits a 3rd desk (10-person company)
 
     // camera
     ZOOM_MIN: 0.5,
